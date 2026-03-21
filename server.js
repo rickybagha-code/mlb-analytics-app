@@ -92,12 +92,15 @@ app.get('/player/:id/gamelog', async (req, res) => {
 
     const last10 = splits.slice(-10);
 
-    const games = last10.map(game => ({
+    const games = splits.map(game => ({
       date: game.date,
       opponent: game.opponent?.name || null,
       hits: Number(game.stat?.hits || 0),
       homeRuns: Number(game.stat?.homeRuns || 0),
-      atBats: Number(game.stat?.atBats || 0)
+      atBats: Number(game.stat?.atBats || 0),
+      rbi: Number(game.stat?.rbi || 0),
+      runs: Number(game.stat?.runs || 0),
+      baseOnBalls: Number(game.stat?.baseOnBalls || 0),
     }));
 
     res.json({ games });
@@ -471,12 +474,18 @@ app.get('/games/probables', async (req, res) => {
       gamePk: game.gamePk,
       gameDate: game.gameDate,
       venue: game.venue?.name,
+      awayTeamId: game.teams?.away?.team?.id || null,
       awayTeam: game.teams?.away?.team?.name,
+      awayTeamAbbrev: game.teams?.away?.team?.abbreviation || null,
       awayProbablePitcher: game.teams?.away?.probablePitcher?.fullName || null,
       awayProbablePitcherId: game.teams?.away?.probablePitcher?.id || null,
+      awayProbablePitcherHand: game.teams?.away?.probablePitcher?.pitchHand?.code || null,
+      homeTeamId: game.teams?.home?.team?.id || null,
       homeTeam: game.teams?.home?.team?.name,
+      homeTeamAbbrev: game.teams?.home?.team?.abbreviation || null,
       homeProbablePitcher: game.teams?.home?.probablePitcher?.fullName || null,
-      homeProbablePitcherId: game.teams?.home?.probablePitcher?.id || null
+      homeProbablePitcherId: game.teams?.home?.probablePitcher?.id || null,
+      homeProbablePitcherHand: game.teams?.home?.probablePitcher?.pitchHand?.code || null,
     }));
 
     res.json({ date, games });
