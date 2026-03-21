@@ -22,33 +22,40 @@ function formatDateDisplay(dateStr) {
   return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 }
 
+// ─── Logo Mark ────────────────────────────────────────────────────────────────
+function LogoMark() {
+  return (
+    <svg width="30" height="30" viewBox="0 0 34 34" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M17 2L32 17L17 32L2 17Z" fill="#0f1e3a" stroke="#3b82f6" strokeWidth="1.5"/>
+      <path d="M17 6L28 17L17 28L6 17Z" fill="#1e3a5f" opacity="0.5"/>
+      <path d="M10 21L13.5 15.5L16.5 18L23 11" stroke="#60a5fa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      <circle cx="23" cy="11" r="2.2" fill="#3b82f6"/>
+      <circle cx="23" cy="11" r="1" fill="#93c5fd"/>
+    </svg>
+  );
+}
+
 // ─── Navbar ───────────────────────────────────────────────────────────────────
 function Navbar() {
   return (
-    <nav className="sticky top-0 z-50 border-b border-gray-800/60 bg-gray-950/90 backdrop-blur-xl">
+    <nav className="sticky top-0 z-50 border-b border-white/5 bg-gray-950/90 backdrop-blur-xl">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
           <Link href="/" className="flex items-center gap-2.5 group">
-            <span className="text-xl">⚾</span>
-            <span className="text-lg font-bold tracking-tight text-white group-hover:text-emerald-400 transition-colors">
-              PropEdge
+            <LogoMark />
+            <span className="text-base font-black tracking-tight text-white group-hover:text-blue-400 transition-colors">
+              Cook The Books
             </span>
           </Link>
 
           <div className="flex items-center gap-6">
-            <Link
-              href="/dashboard"
-              className="text-sm text-gray-400 hover:text-white transition-colors"
-            >
+            <Link href="/dashboard" className="text-sm text-gray-400 hover:text-white transition-colors">
               Dashboard
             </Link>
-            <span className="text-sm font-semibold text-emerald-400 border-b-2 border-emerald-400 pb-0.5">
+            <span className="text-sm font-semibold text-blue-400 border-b-2 border-blue-500 pb-0.5">
               Probable Pitchers
             </span>
-            <Link
-              href="/"
-              className="hidden sm:inline-flex text-sm text-gray-500 hover:text-gray-300 transition-colors"
-            >
+            <Link href="/" className="hidden sm:inline-flex text-sm text-gray-500 hover:text-gray-300 transition-colors">
               ← Home
             </Link>
           </div>
@@ -181,16 +188,16 @@ function GameCard({ game }) {
 
       {/* Pitcher ID helper */}
       {(awayPitcherId || homePitcherId) && (
-        <div className="mt-3 rounded-lg bg-emerald-500/5 border border-emerald-500/10 px-3 py-2">
+        <div className="mt-3 rounded-lg bg-blue-500/5 border border-blue-500/10 px-3 py-2">
           <p className="text-xs text-gray-500 mb-1.5">Copy pitcher ID to use in dashboard:</p>
           <div className="flex flex-wrap gap-2">
             {awayPitcherId && (
-              <span className="rounded bg-gray-800 px-2 py-0.5 font-mono text-xs text-emerald-400 select-all">
+              <span className="rounded bg-gray-800 px-2 py-0.5 font-mono text-xs text-blue-400 select-all">
                 {awayPitcherId}
               </span>
             )}
             {homePitcherId && (
-              <span className="rounded bg-gray-800 px-2 py-0.5 font-mono text-xs text-emerald-400 select-all">
+              <span className="rounded bg-gray-800 px-2 py-0.5 font-mono text-xs text-blue-400 select-all">
                 {homePitcherId}
               </span>
             )}
@@ -201,7 +208,7 @@ function GameCard({ game }) {
       {/* CTA */}
       <Link
         href="/dashboard"
-        className="mt-4 flex w-full items-center justify-center gap-1.5 rounded-lg border border-gray-700 py-2 text-xs font-semibold text-gray-400 transition-all hover:border-emerald-500/40 hover:text-emerald-400"
+        className="mt-4 flex w-full items-center justify-center gap-1.5 rounded-lg border border-gray-700 py-2 text-xs font-semibold text-gray-400 transition-all hover:border-blue-500/40 hover:text-blue-400"
       >
         Use in Dashboard
         <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -298,14 +305,14 @@ export default function ProbablesPage() {
                 htmlFor="date"
                 className="text-xs font-semibold uppercase tracking-wider text-gray-400"
               >
-                Date <span className="text-emerald-500">*</span>
+                Date <span className="text-blue-400">*</span>
               </label>
               <input
                 id="date"
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white outline-none transition-all focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/40 [color-scheme:dark]"
+                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white outline-none transition-all focus:border-blue-500 focus:ring-1 focus:ring-blue-500/40 [color-scheme:dark]"
               />
             </div>
 
@@ -324,7 +331,7 @@ export default function ProbablesPage() {
                 value={teamId}
                 onChange={(e) => setTeamId(e.target.value)}
                 placeholder="Optional — e.g. 119 for Dodgers"
-                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white placeholder-gray-600 outline-none transition-all focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/40"
+                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white placeholder-gray-600 outline-none transition-all focus:border-blue-500 focus:ring-1 focus:ring-blue-500/40"
               />
             </div>
           </div>
@@ -344,7 +351,7 @@ export default function ProbablesPage() {
           <button
             onClick={fetchProbables}
             disabled={loading}
-            className="w-full rounded-lg bg-emerald-500 py-3 text-sm font-bold text-white transition-all hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            className="w-full rounded-lg bg-blue-600 py-3 text-sm font-bold text-white transition-all hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             {loading ? (
               <>
@@ -385,19 +392,19 @@ export default function ProbablesPage() {
                 </h2>
                 <p className="text-sm text-gray-500 mt-0.5">{formatDateDisplay(date)}</p>
               </div>
-              <span className="rounded-full bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-400 ring-1 ring-emerald-500/20">
+              <span className="rounded-full bg-blue-500/10 px-3 py-1.5 text-xs font-semibold text-blue-400 ring-1 ring-blue-500/20">
                 MLB Schedule
               </span>
             </div>
 
             {/* Tip banner */}
-            <div className="mb-5 flex items-start gap-3 rounded-lg border border-emerald-500/15 bg-emerald-500/5 px-4 py-3">
-              <span className="text-emerald-400 text-sm mt-0.5">💡</span>
+            <div className="mb-5 flex items-start gap-3 rounded-lg border border-blue-500/15 bg-blue-500/5 px-4 py-3">
+              <span className="text-blue-400 text-sm mt-0.5">💡</span>
               <p className="text-xs text-gray-400">
                 Pitcher IDs are shown in{' '}
-                <span className="font-mono text-emerald-400">green monospace</span> below each
+                <span className="font-mono text-blue-400">green monospace</span> below each
                 pitcher name. Click to select and copy, then paste into the{' '}
-                <Link href="/dashboard" className="text-emerald-400 hover:underline">
+                <Link href="/dashboard" className="text-blue-400 hover:underline">
                   Dashboard
                 </Link>{' '}
                 to run a matchup analysis.
@@ -428,7 +435,7 @@ export default function ProbablesPage() {
                 setDate(getTodayString());
                 setGames(null);
               }}
-              className="mt-5 text-sm text-emerald-500 hover:text-emerald-400 transition-colors"
+              className="mt-5 text-sm text-blue-400 hover:text-blue-400 transition-colors"
             >
               Reset to today
             </button>
@@ -442,7 +449,7 @@ export default function ProbablesPage() {
             <p className="text-base font-semibold text-gray-400">Ready to search</p>
             <p className="text-sm text-gray-600 mt-1 max-w-xs">
               Select a date above and click{' '}
-              <span className="text-emerald-500 font-medium">Find Probable Pitchers</span> to load
+              <span className="text-blue-400 font-medium">Find Probable Pitchers</span> to load
               the day&apos;s MLB slate.
             </p>
           </div>
