@@ -13,6 +13,13 @@ const DEFAULT_SEASON = process.env.DEFAULT_SEASON || '2025';
 
 const app = express();
 
+// Allow Next.js frontend to call the API in development
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', process.env.FRONTEND_URL || 'http://localhost:3000');
+  res.setHeader('Access-Control-Allow-Methods', 'GET');
+  next();
+});
+
 function isNumeric(value) {
   return value !== undefined && value !== '' && !isNaN(Number(value));
 }
