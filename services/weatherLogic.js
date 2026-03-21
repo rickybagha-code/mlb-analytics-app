@@ -1,18 +1,20 @@
 function calculateWeatherAdjustment(weather) {
-  const temperature = Number(weather?.temperature ?? 70);
+  // temperature is in Celsius (Open-Meteo default: temperature_2m)
+  // Thresholds: 29°C = ~85°F, 24°C = ~75°F, 13°C = ~55°F
+  const temperature = Number(weather?.temperature ?? 21); // 21°C ≈ 70°F default
   const windSpeed = Number(weather?.windSpeed ?? 0);
   const windDirection = Number(weather?.windDirection ?? 0);
 
   let adjustment = 0;
   const notes = [];
 
-  if (temperature >= 85) {
+  if (temperature >= 29) {
     adjustment += 4;
     notes.push('Hot weather boosts carry');
-  } else if (temperature >= 75) {
+  } else if (temperature >= 24) {
     adjustment += 2;
     notes.push('Warm weather slightly boosts carry');
-  } else if (temperature <= 55) {
+  } else if (temperature <= 13) {
     adjustment -= 3;
     notes.push('Cold weather suppresses carry');
   }

@@ -1,43 +1,24 @@
+require('dotenv').config();
 console.log("RUNNING MLB ANALYTICS SERVER");
 
 const express = require('express');
 const { calculateRecencyScore } = require('./services/recencyLogic');
 const { calculateMatchupScore } = require('./services/matchupLogic');
 const { calculateWeatherAdjustment } = require('./services/weatherLogic');
+const { PARK_FACTORS } = require('./services/parkFactors');
+
+const PORT = process.env.PORT || 3001;
+const DEFAULT_SEASON = process.env.DEFAULT_SEASON || '2025';
 
 const app = express();
-const PARK_FACTORS = {
-  "Yankee Stadium": { runFactor: 1.05, hrFactor: 1.12 },
-  "Fenway Park": { runFactor: 1.04, hrFactor: 1.01 },
-  "Camden Yards": { runFactor: 1.02, hrFactor: 0.96 },
-  "Tropicana Field": { runFactor: 0.95, hrFactor: 0.92 },
-  "Rogers Centre": { runFactor: 1.03, hrFactor: 1.08 },
-  "Progressive Field": { runFactor: 1.00, hrFactor: 0.98 },
-  "Comerica Park": { runFactor: 0.96, hrFactor: 0.90 },
-  "Guaranteed Rate Field": { runFactor: 1.05, hrFactor: 1.10 },
-  "Kauffman Stadium": { runFactor: 0.98, hrFactor: 0.85 },
-  "Target Field": { runFactor: 0.99, hrFactor: 0.95 },
-  "Minute Maid Park": { runFactor: 1.02, hrFactor: 1.05 },
-  "Angel Stadium": { runFactor: 0.97, hrFactor: 0.92 },
-  "Oakland Coliseum": { runFactor: 0.92, hrFactor: 0.85 },
-  "T-Mobile Park": { runFactor: 0.94, hrFactor: 0.90 },
-  "Globe Life Field": { runFactor: 0.99, hrFactor: 0.97 },
-  "Braves Park": { runFactor: 1.02, hrFactor: 1.05 },
-  "Citizens Bank Park": { runFactor: 1.08, hrFactor: 1.10 },
-  "Nationals Park": { runFactor: 1.01, hrFactor: 0.99 },
-  "loanDepot Park": { runFactor: 0.94, hrFactor: 0.88 },
-  "Citi Field": { runFactor: 0.96, hrFactor: 0.90 },
-  "Wrigley Field": { runFactor: 1.03, hrFactor: 1.05 },
-  "Busch Stadium": { runFactor: 0.97, hrFactor: 0.92 },
-  "American Family Field": { runFactor: 1.04, hrFactor: 1.08 },
-  "Great American Ball Park": { runFactor: 1.10, hrFactor: 1.20 },
-  "PNC Park": { runFactor: 0.95, hrFactor: 0.90 },
-  "Coors Field": { runFactor: 1.20, hrFactor: 1.25 },
-  "Dodger Stadium": { runFactor: 0.98, hrFactor: 0.95 },
-  "Oracle Park": { runFactor: 0.92, hrFactor: 0.85 },
-  "Petco Park": { runFactor: 0.94, hrFactor: 0.90 },
-  "Chase Field": { runFactor: 1.05, hrFactor: 1.10 }
-};
+
+function isNumeric(value) {
+  return value !== undefined && value !== '' && !isNaN(Number(value));
+}
+
+function isValidDate(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
 
 async function fetchJsonWithTimeout(url, timeoutMs = 8000) {
   const response = await fetch(url, {
@@ -61,7 +42,7 @@ app.get('/player-test', (req, res) => {
 //PLAYER ID ROUTE
 app.get('/player/:id', async (req, res) => {
   const playerId = req.params.id;
-  const season = req.query.season || '2025';
+  const season = req.query.season || DEFAULT_SEASON;
 
   try {
     const url = `https://statsapi.mlb.com/api/v1/people/${playerId}?hydrate=stats(group=[hitting],type=[season],season=${season})`;
@@ -93,7 +74,7 @@ app.get('/player/:id', async (req, res) => {
 //Game Log Route 
 app.get('/player/:id/gamelog', async (req, res) => {
   const playerId = req.params.id;
-  const season = req.query.season || '2025';
+  const season = req.query.season || DEFAULT_SEASON;
 
   try {
     const url = `https://statsapi.mlb.com/api/v1/people/${playerId}/stats?stats=gameLog&group=hitting&season=${season}`;
@@ -122,7 +103,7 @@ app.get('/player/:id/gamelog', async (req, res) => {
 //Game Trends Route
 app.get('/player/:id/trends', async (req, res) => {
   const playerId = req.params.id;
-  const season = req.query.season || '2025';
+  const season = req.query.season || DEFAULT_SEASON;
 
   try {
     const url = `https://statsapi.mlb.com/api/v1/people/${playerId}/stats?stats=gameLog&group=hitting&season=${season}`;
@@ -192,7 +173,7 @@ app.get('/player/:id/trends', async (req, res) => {
 //Player Splits Route 
 app.get('/player/:id/splits', async (req, res) => {
   const playerId = req.params.id;
-  const season = req.query.season || '2025';
+  const season = req.query.season || DEFAULT_SEASON;
 
   try {
     const url = `https://statsapi.mlb.com/api/v1/people/${playerId}?hydrate=stats(group=[hitting],type=[vsPlayer,statSplits],sitCodes=[vl,vr],season=${season})`;
@@ -260,7 +241,7 @@ app.get('/player/:id/splits', async (req, res) => {
 // Pitcher Route
 app.get('/pitcher/:id', async (req, res) => {
   const pitcherId = req.params.id;
-  const season = req.query.season || '2025';
+  const season = req.query.season || DEFAULT_SEASON;
 
   try {
     const url = `https://statsapi.mlb.com/api/v1/people/${pitcherId}?hydrate=stats(group=[pitching],type=[season],season=${season})`;
@@ -323,10 +304,17 @@ app.get('/pitcher/:id', async (req, res) => {
 app.get('/matchup/batter/:batterId/pitcher/:pitcherId', async (req, res) => {
   const batterId = req.params.batterId;
   const pitcherId = req.params.pitcherId;
-  const season = req.query.season || '2025';
+  const season = req.query.season || DEFAULT_SEASON;
   const stadium = req.query.stadium || 'Neutral Park';
   const lat = req.query.lat;
   const lon = req.query.lon;
+
+  if (!isNumeric(batterId) || !isNumeric(pitcherId)) {
+    return res.status(400).json({ error: 'batterId and pitcherId must be numeric' });
+  }
+  if ((lat !== undefined || lon !== undefined) && (!isNumeric(lat) || !isNumeric(lon))) {
+    return res.status(400).json({ error: 'lat and lon must both be numeric' });
+  }
 
   try {
     const batterUrl = `https://statsapi.mlb.com/api/v1/people/${batterId}?hydrate=stats(group=[hitting],type=[vsPlayer,statSplits],sitCodes=[vl,vr],season=${season})`;
@@ -430,6 +418,9 @@ app.get('/games/probables', async (req, res) => {
       error: 'date is required, ex: ?date=2025-09-28'
     });
   }
+  if (!isValidDate(date)) {
+    return res.status(400).json({ error: 'date must be in YYYY-MM-DD format, ex: ?date=2025-09-28' });
+  }
 
   try {
     let url = `https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${date}&hydrate=probablePitcher,venue`;
@@ -466,7 +457,7 @@ app.get('/auto-matchup', async (req, res) => {
   const batterId = req.query.batterId;
   const date = req.query.date;
   const teamId = req.query.teamId;
-  const season = req.query.season || '2025';
+  const season = req.query.season || DEFAULT_SEASON;
   const lat = req.query.lat;
   const lon = req.query.lon;
 
@@ -474,6 +465,15 @@ app.get('/auto-matchup', async (req, res) => {
     return res.status(400).json({
       error: 'batterId, date, and teamId are required'
     });
+  }
+  if (!isNumeric(batterId) || !isNumeric(teamId)) {
+    return res.status(400).json({ error: 'batterId and teamId must be numeric' });
+  }
+  if (!isValidDate(date)) {
+    return res.status(400).json({ error: 'date must be in YYYY-MM-DD format, ex: ?date=2025-09-28' });
+  }
+  if ((lat !== undefined || lon !== undefined) && (!isNumeric(lat) || !isNumeric(lon))) {
+    return res.status(400).json({ error: 'lat and lon must both be numeric' });
   }
 
   try {
@@ -614,6 +614,6 @@ app.get('/auto-matchup', async (req, res) => {
     });
   }
 });
-app.listen(3001, () => {
-  console.log('Server running on port 3001');
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
