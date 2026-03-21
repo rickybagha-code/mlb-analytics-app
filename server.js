@@ -6,6 +6,7 @@ const { calculateRecencyScore } = require('./services/recencyLogic');
 const { calculateMatchupScore } = require('./services/matchupLogic');
 const { calculateWeatherAdjustment } = require('./services/weatherLogic');
 const { PARK_FACTORS } = require('./services/parkFactors');
+const { getCachedPlayer, setCachedPlayer, getCachedGameLog, setCachedGameLog, saveMatchupResult } = require('./services/cache');
 
 const PORT = process.env.PORT || 3001;
 const DEFAULT_SEASON = process.env.DEFAULT_SEASON || '2025';
@@ -321,9 +322,23 @@ app.get('/matchup/batter/:batterId/pitcher/:pitcherId', async (req, res) => {
     const pitcherUrl = `https://statsapi.mlb.com/api/v1/people/${pitcherId}?hydrate=stats(group=[pitching],type=[season],season=${season})`;
     const gameLogUrl = `https://statsapi.mlb.com/api/v1/people/${batterId}/stats?stats=gameLog&group=hitting&season=${season}`;
 
-    const batterData = await fetchJsonWithTimeout(batterUrl);
-    const pitcherData = await fetchJsonWithTimeout(pitcherUrl);
-    const gameLogData = await fetchJsonWithTimeout(gameLogUrl);
+    let batterData = await getCachedPlayer(batterId, season, 'hitting_splits');
+    if (!batterData) {
+      batterData = await fetchJsonWithTimeout(batterUrl);
+      setCachedPlayer(batterId, season, 'hitting_splits', batterData);
+    }
+
+    let pitcherData = await getCachedPlayer(pitcherId, season, 'pitching');
+    if (!pitcherData) {
+      pitcherData = await fetchJsonWithTimeout(pitcherUrl);
+      setCachedPlayer(pitcherId, season, 'pitching', pitcherData);
+    }
+
+    let gameLogData = await getCachedGameLog(batterId, season);
+    if (!gameLogData) {
+      gameLogData = await fetchJsonWithTimeout(gameLogUrl);
+      setCachedGameLog(batterId, season, gameLogData);
+    }
 
     let weatherData = null;
 
@@ -386,7 +401,7 @@ app.get('/matchup/batter/:batterId/pitcher/:pitcherId', async (req, res) => {
       weatherAdjustment: weatherImpact.adjustment
     });
 
-    res.json({
+    const result = {
       batter: batter.fullName,
       pitcher: pitcher.fullName,
       stadium,
@@ -400,7 +415,21 @@ app.get('/matchup/batter/:batterId/pitcher/:pitcherId', async (req, res) => {
       recency,
       score: matchup.score,
       recommendation: matchup.recommendation
+    };
+
+    saveMatchupResult({
+      batterId,
+      pitcherId,
+      batterName: batter.fullName,
+      pitcherName: pitcher.fullName,
+      season,
+      stadium,
+      score: matchup.score,
+      recommendation: matchup.recommendation,
+      fullResult: result,
     });
+
+    res.json(result);
   } catch (error) {
     res.status(500).json({
       error: 'Failed to calculate matchup',
@@ -519,9 +548,23 @@ app.get('/auto-matchup', async (req, res) => {
     const pitcherUrl = `https://statsapi.mlb.com/api/v1/people/${pitcherId}?hydrate=stats(group=[pitching],type=[season],season=${season})`;
     const gameLogUrl = `https://statsapi.mlb.com/api/v1/people/${batterId}/stats?stats=gameLog&group=hitting&season=${season}`;
 
-    const batterData = await fetchJsonWithTimeout(batterUrl);
-    const pitcherData = await fetchJsonWithTimeout(pitcherUrl);
-    const gameLogData = await fetchJsonWithTimeout(gameLogUrl);
+    let batterData = await getCachedPlayer(batterId, season, 'hitting_splits');
+    if (!batterData) {
+      batterData = await fetchJsonWithTimeout(batterUrl);
+      setCachedPlayer(batterId, season, 'hitting_splits', batterData);
+    }
+
+    let pitcherData = await getCachedPlayer(pitcherId, season, 'pitching');
+    if (!pitcherData) {
+      pitcherData = await fetchJsonWithTimeout(pitcherUrl);
+      setCachedPlayer(pitcherId, season, 'pitching', pitcherData);
+    }
+
+    let gameLogData = await getCachedGameLog(batterId, season);
+    if (!gameLogData) {
+      gameLogData = await fetchJsonWithTimeout(gameLogUrl);
+      setCachedGameLog(batterId, season, gameLogData);
+    }
 
     // STEP 3: Weather (optional)
     let weatherData = null;
@@ -588,7 +631,7 @@ app.get('/auto-matchup', async (req, res) => {
       weatherAdjustment: weatherImpact.adjustment
     });
 
-    res.json({
+    const autoResult = {
       date,
       game: {
         venue: stadium,
@@ -605,7 +648,21 @@ app.get('/auto-matchup', async (req, res) => {
       recency,
       score: matchup.score,
       recommendation: matchup.recommendation
+    };
+
+    saveMatchupResult({
+      batterId,
+      pitcherId,
+      batterName: batter.fullName,
+      pitcherName: pitcher.fullName,
+      season,
+      stadium,
+      score: matchup.score,
+      recommendation: matchup.recommendation,
+      fullResult: autoResult,
     });
+
+    res.json(autoResult);
 
   } catch (error) {
     res.status(500).json({
