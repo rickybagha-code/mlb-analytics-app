@@ -612,6 +612,9 @@ export default function DashboardPage() {
 
   // ── Load daily board ──────────────────────────────────────────────────────
   useEffect(() => {
+    // Fire a no-op ping to Render immediately so the cold-start wake-up begins
+    // as early as possible (before loadDailyBoard's first real fetch).
+    fetch(`${API_URL}/`).catch(() => {});
     loadDailyBoard();
   }, []);
 
@@ -832,9 +835,9 @@ export default function DashboardPage() {
   }
 
   async function fetchStreaks(playerIds) {
-    // Fetch 5 at a time to avoid hammering the backend
-    for (let i = 0; i < playerIds.length; i += 5) {
-      const batch = playerIds.slice(i, i + 5);
+    // Fetch 10 at a time — enough concurrency without hammering the backend
+    for (let i = 0; i < playerIds.length; i += 10) {
+      const batch = playerIds.slice(i, i + 10);
       await Promise.all(batch.map(async (pid) => {
         try {
           const r = await fetch(`${API_URL}/player/${pid}/gamelog?season=2025`);
