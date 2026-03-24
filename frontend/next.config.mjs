@@ -6,6 +6,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   outputFileTracingRoot: path.join(__dirname, '../'),
+  images: {
+    remotePatterns: [
+      { protocol: 'https', hostname: 'img.mlbstatic.com' },
+    ],
+  },
 };
 
 export default nextConfig;

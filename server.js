@@ -13,9 +13,20 @@ const DEFAULT_SEASON = process.env.DEFAULT_SEASON || '2025';
 
 const app = express();
 
-// Allow Next.js frontend to call the API in development
+// Allow Next.js frontend (local dev + Vercel production/preview)
+const ALLOWED_ORIGINS = [
+  process.env.FRONTEND_URL,
+  'http://localhost:3000',
+].filter(Boolean);
+
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', process.env.FRONTEND_URL || 'http://localhost:3000');
+  const origin = req.headers.origin || '';
+  const allowed =
+    ALLOWED_ORIGINS.includes(origin) ||
+    /\.vercel\.app$/.test(origin);
+  if (allowed) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET');
   next();
 });
