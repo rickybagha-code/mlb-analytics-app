@@ -615,6 +615,7 @@ export default function DashboardPage() {
   async function loadDailyBoard() {
     setBoardLoading(true);
     setBoardError(null);
+    setBoardPlayers([]); // clear stale data before rebuild
 
     try {
       const today = new Date().toISOString().split('T')[0];
@@ -684,10 +685,17 @@ export default function DashboardPage() {
           try {
             const rr = await fetch(`${MLB_API}/teams/${teamId}/roster?rosterType=active&season=2025`);
             const rd = await rr.json();
-            roster = (rd.roster||[]).map(p=>({ id:p.person.id, fullName:p.person.fullName, position:p.position?.abbreviation??'' }));
+            // Deduplicate by player id — API sometimes returns same player twice
+            const seen = new Set();
+            roster = (rd.roster||[])
+              .filter(p => seen.has(p.person.id) ? false : seen.add(p.person.id))
+              .map(p=>({ id:p.person.id, fullName:p.person.fullName, position:p.position?.abbreviation??'' }));
             setCached(rKey, roster);
           } catch { return; }
         }
+        // Deduplicate cached roster too (handles legacy entries saved before this fix)
+        const seenIds = new Set();
+        roster = roster.filter(p => seenIds.has(p.id) ? false : seenIds.add(p.id));
         if (!roster.length) return;
 
         // Batch season batting stats
@@ -778,13 +786,19 @@ export default function DashboardPage() {
         }
       }));
 
-      setBoardPlayers(allPlayers);
+      // Deduplicate by playerId — guards against roster API returning same player
+      // on multiple entries or a player appearing on two teams during a trade window
+      const uniqueMap = new Map();
+      for (const p of allPlayers) uniqueMap.set(p.playerId, p);
+      const dedupedPlayers = [...uniqueMap.values()];
+
+      setBoardPlayers(dedupedPlayers);
       setBoardLoading(false);
 
       // 6. Enrichment phase — run in parallel (non-blocking)
       const topIds = new Set();
       for (const cat of ['hitting','hr','runs']) {
-        [...allPlayers]
+        [...dedupedPlayers]
           .filter(p=>p.scores[cat]>0)
           .sort((a,b)=>b.scores[cat]-a.scores[cat])
           .slice(0,20)
@@ -992,8 +1006,22 @@ export default function DashboardPage() {
         ) : currentBoard.length === 0 ? (
           <div className="rounded-xl border border-dashed border-gray-800 bg-gray-900/30 py-16 text-center mb-10">
             <div className="mb-3 opacity-30"><LogoMark size={40}/></div>
-            <p className="text-gray-500 font-semibold">No games scheduled today</p>
-            <p className="text-sm text-gray-600 mt-1">Come back on a game day for today&apos;s top props.</p>
+            {boardPlayers.length === 0 ? (
+              <>
+                <p className="text-gray-500 font-semibold">No games scheduled today</p>
+                <p className="text-sm text-gray-600 mt-1">Come back on a game day for today&apos;s top props.</p>
+              </>
+            ) : category === 'pitching' ? (
+              <>
+                <p className="text-gray-500 font-semibold">No probable pitchers posted yet</p>
+                <p className="text-sm text-gray-600 mt-1">Pitching tab populates once pitchers are announced, usually by game day morning.</p>
+              </>
+            ) : (
+              <>
+                <p className="text-gray-500 font-semibold">No qualifying players for this category</p>
+                <p className="text-sm text-gray-600 mt-1">Try a different category.</p>
+              </>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-10">
