@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 
@@ -129,6 +129,24 @@ function computeDaysRest(starts) {
   if (!last?.date) return null;
   const diff = Math.floor((Date.now() - new Date(last.date).getTime()) / 86400000);
   return diff;
+}
+
+// ─── Math utilities (Poisson / EV) ───────────────────────────────────────────
+function poissonPMF(k, lambda) {
+  if (lambda <= 0) return k === 0 ? 1 : 0;
+  let logP = -lambda + k * Math.log(lambda);
+  for (let j = 1; j <= k; j++) logP -= Math.log(j);
+  return Math.exp(logP);
+}
+function poissonCDF(k, lambda) {
+  if (lambda <= 0) return 1;
+  let s = 0;
+  for (let i = 0; i <= k; i++) s += poissonPMF(i, lambda);
+  return Math.min(1, s);
+}
+function americanToDecimal(odds) {
+  const n = parseInt(odds) || -115;
+  return n < 0 ? Math.abs(n) / (Math.abs(n) + 100) : 100 / (n + 100);
 }
 
 // ─── Formatting helpers ───────────────────────────────────────────────────────
@@ -509,6 +527,89 @@ function PitcherContextRow({ starts, oppAbbrev, isHome }) {
   );
 }
 
+// ─── Pitcher chart categories ────────────────────────────────────────────────
+const PITCHER_CHART_CATS = [
+  { id:'k',   label:'K',          field:'strikeOuts',  defaultLine:4.5,  higherIsBetter:true  },
+  { id:'er',  label:'ER',         field:'earnedRuns',  defaultLine:2.5,  higherIsBetter:false },
+  { id:'outs',label:'Outs',       field:'_outs',       defaultLine:15.5, higherIsBetter:true  },
+  { id:'h',   label:'H Allowed',  field:'hits',        defaultLine:5.5,  higherIsBetter:false },
+  { id:'bb',  label:'BB',         field:'baseOnBalls', defaultLine:2.5,  higherIsBetter:false },
+  { id:'hr',  label:'HR Allowed', field:'homeRuns',    defaultLine:0.5,  higherIsBetter:false },
+];
+
+// ─── Pitcher Bar Chart (mirrors GameLogChart style) ───────────────────────────
+function PitcherGameLogChart({ starts, catId, line, win }) {
+  const cat = PITCHER_CHART_CATS.find(c => c.id === catId) || PITCHER_CHART_CATS[0];
+  const processed = starts.map(s => ({ ...s, _outs: Math.round(parseFloat(s.inningsPitched || '0') * 3) }));
+  const slice = processed.slice(-win);
+  if (!slice.length) return (
+    <div className="flex items-center justify-center h-40 text-gray-600 text-sm">No start data available.</div>
+  );
+  const vals    = slice.map(g => Number(g[cat.field]) || 0);
+  const maxVal  = Math.max(1, Math.ceil(line) + 2, ...vals);
+  const goodCnt = vals.filter(v => cat.higherIsBetter ? v > line : v <= line).length;
+  const BAR_W = 54, BAR_GAP = 10;
+  const VW = slice.length * (BAR_W + BAR_GAP) + BAR_GAP;
+  const H = 210, PT = 28, PB = 48, CH = H - PT - PB;
+  const yOf  = v => PT + CH * (1 - Math.min(v, maxVal) / maxVal);
+  const lineY = yOf(line);
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-4">
+          <span className={`text-sm font-black tabular-nums ${goodCnt/slice.length >= 0.6 ? 'text-emerald-400' : goodCnt/slice.length >= 0.4 ? 'text-yellow-400' : 'text-red-400'}`}>
+            {goodCnt}/{slice.length} {cat.higherIsBetter ? 'OVER' : 'UNDER'}
+          </span>
+          <div className="flex items-center gap-3 text-xs text-gray-500">
+            <span className="flex items-center gap-1"><span className="w-3 h-2.5 rounded-sm bg-emerald-500/80 inline-block"/>{cat.higherIsBetter ? 'Over' : 'Under'}</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-2.5 rounded-sm bg-red-500/80 inline-block"/>{cat.higherIsBetter ? 'Under' : 'Over'}</span>
+          </div>
+        </div>
+        <span className="text-xs font-bold text-amber-400">── Line: {line}</span>
+      </div>
+      <div className="overflow-x-auto pb-1">
+        <svg viewBox={`0 0 ${VW} ${H}`} style={{width:'100%', minWidth:Math.min(VW,320)}} preserveAspectRatio="xMidYMid meet">
+          {[0.25,0.5,0.75,1].map(pct => {
+            const gy = PT + CH * (1 - pct);
+            const gv = maxVal * pct;
+            return (
+              <g key={pct}>
+                <line x1={0} y1={gy} x2={VW} y2={gy} stroke="#1f2937" strokeWidth="1"/>
+                <text x={2} y={gy-3} fill="#374151" fontSize="9">{Number.isInteger(gv)?gv:''}</text>
+              </g>
+            );
+          })}
+          <line x1={0} y1={lineY} x2={VW} y2={lineY} stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="5 3" opacity="0.9"/>
+          {slice.map((game, i) => {
+            const val   = vals[i];
+            const isGood = cat.higherIsBetter ? val > line : val <= line;
+            const barX  = i * (BAR_W + BAR_GAP) + BAR_GAP;
+            const barH  = Math.max(3, (val / maxVal) * CH);
+            const barY  = yOf(val);
+            const lblY  = barY > PT + 18 ? barY - 6 : barY + 16;
+            const opp   = (game.opponent || '').split(' ').at(-1);
+            const resClr = game.isWin ? '#34d399' : game.isLoss ? '#f87171' : '#6b7280';
+            const resLbl = game.isWin ? 'W' : game.isLoss ? 'L' : 'ND';
+            return (
+              <g key={i}>
+                <rect x={barX+1} y={barY+1} width={BAR_W} height={barH} rx={5}
+                  fill={isGood ? '#16a34a' : val===0 ? '#111827' : '#b91c1c'} opacity="0.3"/>
+                <rect x={barX} y={barY} width={BAR_W} height={barH} rx={5}
+                  fill={val===0 ? '#1f2937' : isGood ? '#22c55e' : '#ef4444'} opacity="0.88"/>
+                {barH > 8 && <rect x={barX+4} y={barY+2} width={BAR_W-8} height={3} rx={2} fill="white" opacity="0.12"/>}
+                <text x={barX+BAR_W/2} y={lblY} textAnchor="middle" fill="white" fontSize="13" fontWeight="700" fontFamily="monospace">{val}</text>
+                <text x={barX+BAR_W/2} y={H-PB+14} textAnchor="middle" fill="#6b7280" fontSize="10">{fmtDate(game.date)}</text>
+                <text x={barX+BAR_W/2} y={H-PB+26} textAnchor="middle" fill="#4b5563" fontSize="9">{opp ? `@${opp}` : ''}</text>
+                <text x={barX+BAR_W/2} y={H-PB+38} textAnchor="middle" fill={resClr} fontSize="9" fontWeight="700">{resLbl}</text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+    </div>
+  );
+}
+
 // ─── Career H2H Matchup Card ─────────────────────────────────────────────────
 function H2HMatchupCard({ data, loading, pitcherId, pitcherName, pitcherHand }) {
   if (!pitcherId && !pitcherName) {
@@ -665,6 +766,317 @@ function H2HMatchupCard({ data, loading, pitcherId, pitcherName, pitcherHand }) 
   );
 }
 
+// ─── Projection & EV Section ─────────────────────────────────────────────────
+
+class ProjectionErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { hasError: false }; }
+  static getDerivedStateFromError() { return { hasError: true }; }
+  render() {
+    if (this.state.hasError) return (
+      <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-5 text-center">
+        <p className="text-sm text-red-400 font-semibold">Projection model error</p>
+        <p className="text-xs text-gray-600 mt-1">Could not compute EV — insufficient data for this pitcher.</p>
+      </div>
+    );
+    return this.props.children;
+  }
+}
+
+function useKProjection(pitcherStarts, seasonStats) {
+  return useMemo(() => {
+    if (!pitcherStarts?.length) return null;
+    const last5  = pitcherStarts.slice(-5);
+    const last10 = pitcherStarts.slice(-10);
+    const l5Ks = last5.map(s => s.strikeOuts);
+    const l5K  = l5Ks.reduce((a,b)=>a+b,0) / l5Ks.length;
+    const l5IP = last5.map(s => parseFloat(s.inningsPitched)||0);
+    const avgL5IP = Math.max(1, l5IP.reduce((a,b)=>a+b,0) / l5IP.length);
+    const k9 = parseFloat(seasonStats?.strikeoutsPer9Inn) || null;
+    const seasonK = k9 != null ? k9 / 9 * avgL5IP : null;
+    const leagueK = 5.5;
+    const projected = l5K * 0.60 + (seasonK ?? leagueK) * 0.30 + leagueK * 0.10;
+    const kVals = last10.map(s => s.strikeOuts);
+    const kMean = kVals.reduce((a,b)=>a+b,0) / kVals.length;
+    const kVar  = kVals.length > 1 ? kVals.reduce((a,v)=>a+(v-kMean)**2,0)/(kVals.length-1) : 4;
+    const kStdDev = Math.max(1.2, Math.sqrt(kVar));
+    const daysRest   = computeDaysRest(pitcherStarts);
+    const restFactor = daysRest != null ? (daysRest < 4 ? 0.95 : daysRest >= 6 ? 1.02 : 1.0) : 1.0;
+    const adj      = Math.round(projected * restFactor * 10) / 10;
+    const lower80  = Math.max(0, Math.round((adj - 1.28 * kStdDev) * 10) / 10);
+    const upper80  = Math.round((adj + 1.28 * kStdDev) * 10) / 10;
+    const projectedOuts = Math.round(avgL5IP * 3 * 10) / 10;
+    const outLower = Math.max(0, Math.round((avgL5IP - 1.2) * 3));
+    const outUpper = Math.round((avgL5IP + 1.2) * 3);
+    const confidence = pitcherStarts.length >= 10 ? 'High' : pitcherStarts.length >= 5 ? 'Medium' : 'Low';
+    const factorImpacts = [
+      { label:'L5 K avg',       impact: Math.round((l5K - leagueK) * 0.60 * 10)/10,                            dir: l5K > leagueK ? '↑' : l5K < leagueK ? '↓' : '—' },
+      { label:'Season K/start', impact: seasonK != null ? Math.round((seasonK - leagueK)*0.30*10)/10 : 0,       dir: (seasonK??leagueK) > leagueK ? '↑' : '↓', note: seasonK == null ? 'using L5 only' : null },
+      { label:'SwStr% edge',    impact: 0, dir:'—', note:'Savant — coming soon' },
+      { label:'Park factor',    impact: 0, dir:'—', note:'Coming soon' },
+      { label:'Umpire K/game',  impact: 0, dir:'—', note:'Coming soon' },
+      { label:'Rest/weather',   impact: Math.round((restFactor - 1) * projected * 10)/10, dir: restFactor > 1 ? '↑' : restFactor < 1 ? '↓' : '—' },
+    ];
+    return {
+      projected: adj, lower80, upper80, kStdDev: Math.round(kStdDev*10)/10,
+      l5K: Math.round(l5K*10)/10, seasonK: seasonK != null ? Math.round(seasonK*10)/10 : null,
+      avgL5IP: Math.round(avgL5IP*10)/10, projectedOuts, outLower, outUpper,
+      confidence, restFactor, daysRest, l5Ks, l5IPValues: l5IP,
+      factorImpacts, hasSeasStats: seasonK != null,
+    };
+  }, [pitcherStarts, seasonStats]);
+}
+
+function PoissonBarChart({ lambda, bookLine }) {
+  if (!lambda || lambda <= 0 || !bookLine) return (
+    <p className="text-xs text-gray-600 italic text-center py-6">Enter a book line to see distribution.</p>
+  );
+  const maxK  = Math.max(14, Math.ceil(lambda * 2.2));
+  const probs = Array.from({length: maxK+1}, (_, k) => poissonPMF(k, lambda));
+  const maxP  = Math.max(...probs, 0.001);
+  const floor = Math.floor(bookLine);
+  const pOver = 1 - poissonCDF(floor, lambda);
+  const pUnder = poissonCDF(floor, lambda);
+  const W=310, H=165, PB=28, PT=22, PL=8, PR=8;
+  const CH=H-PB-PT, CW=W-PL-PR;
+  const gap=1, barW=Math.max(10, CW/(maxK+1) - gap);
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%'}}>
+      <text x={W*0.28} y={13} textAnchor="middle" fill="#60a5fb" fontSize="8.5" fontWeight="700">P(Under) {(pUnder*100).toFixed(1)}%</text>
+      <text x={W*0.72} y={13} textAnchor="middle" fill="#f59e0b" fontSize="8.5" fontWeight="700">P(Over) {(pOver*100).toFixed(1)}%</text>
+      {probs.map((p, k) => {
+        const x = PL + k * (barW + gap);
+        const bH = Math.max(2, (p / maxP) * CH);
+        return <rect key={k} x={x} y={PT+CH-bH} width={barW} height={bH} rx={2} fill={k > floor ? '#f59e0b' : '#3b82f6'} opacity="0.85"/>;
+      })}
+      <line x1={PL+(floor+1)*(barW+gap)-gap/2} y1={PT-4} x2={PL+(floor+1)*(barW+gap)-gap/2} y2={H-PB+4}
+        stroke="#ef4444" strokeWidth="1.5" strokeDasharray="4 2"/>
+      {probs.map((_, k) => k%2===0 && (
+        <text key={k} x={PL+k*(barW+gap)+barW/2} y={H-PB+14} textAnchor="middle" fill="#6b7280" fontSize="7.5">{k}</text>
+      ))}
+      <text x={W/2} y={H} textAnchor="middle" fill="#374151" fontSize="7.5">Strikeouts</text>
+    </svg>
+  );
+}
+
+function EVGaugeSVG({ evPct }) {
+  const v    = isNaN(evPct) ? 0 : Math.max(-15, Math.min(15, evPct));
+  const norm = (v + 15) / 30;
+  const W=160, H=92, cx=80, cy=84, R=62, sw=16;
+  const d2r = deg => deg * Math.PI / 180;
+  const sweepDeg = norm * 180;
+  const sx = cx + R * Math.cos(d2r(180)), sy = cy + R * Math.sin(d2r(180));
+  const ex = cx + R * Math.cos(d2r(180+sweepDeg)), ey = cy + R * Math.sin(d2r(180+sweepDeg));
+  const col = v > 5 ? '#10b981' : v > 2 ? '#eab308' : v > -2 ? '#6b7280' : '#ef4444';
+  const lbl = `${evPct >= 0 ? '+' : ''}${(evPct||0).toFixed(1)}%`;
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{overflow:'visible'}}>
+      <path d={`M ${cx-R} ${cy} A ${R} ${R} 0 0 1 ${cx+R} ${cy}`} fill="none" stroke="#1f2937" strokeWidth={sw} strokeLinecap="round"/>
+      {sweepDeg > 0.5 && (
+        <path d={`M ${sx} ${sy} A ${R} ${R} 0 ${sweepDeg>180?1:0} 1 ${ex} ${ey}`} fill="none" stroke={col} strokeWidth={sw} strokeLinecap="round"/>
+      )}
+      <text x={cx} y={cy-28} textAnchor="middle" fontSize="22" fontWeight="900" fill={col} fontFamily="monospace">{lbl}</text>
+      <text x={cx} y={cy-12} textAnchor="middle" fontSize="9" fill="#6b7280">EV%</text>
+      <text x={cx-R-2} y={cy+16} textAnchor="end"   fontSize="8" fill="#374151">-15%</text>
+      <text x={cx+R+2} y={cy+16} textAnchor="start" fontSize="8" fill="#374151">+15%</text>
+    </svg>
+  );
+}
+
+function ProjectionEVCard({ pitcherStarts, seasonStats }) {
+  const [bookLine,  setBookLine]  = useState('');
+  const [overOdds,  setOverOdds]  = useState('-115');
+  const [underOdds, setUnderOdds] = useState('-115');
+  const [debLine,   setDebLine]   = useState('');
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebLine(bookLine), 300);
+    return () => clearTimeout(t);
+  }, [bookLine]);
+
+  const proj   = useKProjection(pitcherStarts, seasonStats);
+  const line   = parseFloat(debLine) || null;
+  const oOdds  = parseInt(overOdds)  || -115;
+  const uOdds  = parseInt(underOdds) || -115;
+
+  const evResult = useMemo(() => {
+    if (!proj || !line) return null;
+    const floor  = Math.floor(line);
+    const pOver  = 1 - poissonCDF(floor, proj.projected);
+    const pUnder = poissonCDF(floor, proj.projected);
+    const rawO = americanToDecimal(oOdds), rawU = americanToDecimal(uOdds);
+    const tot  = rawO + rawU;
+    return { pOver, pUnder, evOver:(pOver-rawO/tot)*100, evUnder:(pUnder-rawU/tot)*100 };
+  }, [proj, line, oOdds, uOdds]);
+
+  if (!proj) return (
+    <div className="rounded-xl border border-gray-800 bg-[#0f1117] p-6 text-center">
+      <p className="text-sm text-gray-600 italic">Need 3+ starts to compute a projection.</p>
+    </div>
+  );
+
+  const confColor = proj.confidence === 'High' ? 'text-emerald-400' : proj.confidence === 'Medium' ? 'text-yellow-400' : 'text-red-400';
+  const evBadge = evResult ? (() => {
+    const ev = evResult.evOver;
+    if (ev > 6)  return { label:'Strong Value',  cls:'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' };
+    if (ev > 3)  return { label:'Moderate Edge', cls:'bg-yellow-500/20  border-yellow-500/40  text-yellow-400'  };
+    if (ev > 1)  return { label:'Slight Edge',   cls:'bg-gray-700/50    border-gray-600        text-gray-400'   };
+    return             { label:'No Value',       cls:'bg-red-500/10     border-red-500/30      text-red-400'    };
+  })() : null;
+
+  return (
+    <div className="rounded-xl border border-gray-700/50 bg-[#0f1117] p-6">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+        <div className="flex items-center gap-3">
+          <span className="text-lg">🎰</span>
+          <div>
+            <h3 className="text-sm font-black text-white">Projection & EV%</h3>
+            <p className="text-xs text-gray-600">Strikeout prop model · Cook The Books</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className={`text-xs font-semibold ${confColor}`}>Confidence: {proj.confidence}</span>
+          {evBadge && <span className={`text-xs font-bold border rounded-full px-2.5 py-1 ${evBadge.cls}`}>{evBadge.label}</span>}
+        </div>
+      </div>
+
+      {/* Top 4 tiles */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+        <div className="rounded-lg border bg-blue-500/10 border-blue-500/30 p-3 text-center">
+          <div className="text-xl font-black text-blue-400 tabular-nums">{proj.projected.toFixed(1)}</div>
+          <div className="text-xs text-gray-600 mt-0.5">Projected Ks</div>
+        </div>
+        <div className="rounded-lg border bg-gray-800/50 border-gray-700 p-3 text-center">
+          <div className="text-sm font-black text-gray-300 tabular-nums">{proj.lower80} – {proj.upper80}</div>
+          <div className="text-xs text-gray-600 mt-0.5">80% Range</div>
+        </div>
+        <div className="rounded-lg border bg-gray-800/50 border-gray-700 p-3 text-center">
+          <input type="number" step="0.5" placeholder="e.g. 5.5" value={bookLine}
+            onChange={e => setBookLine(e.target.value)}
+            className="w-full bg-transparent text-center text-base font-black text-white tabular-nums outline-none placeholder-gray-700 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"/>
+          <div className="text-xs text-gray-600 mt-0.5">Book Line ↑ type here</div>
+        </div>
+        <div className={`rounded-lg border p-3 text-center ${evBadge ? evBadge.cls : 'bg-gray-800/50 border-gray-700'}`}>
+          <div className={`text-xl font-black tabular-nums ${evBadge ? '' : 'text-gray-600'}`}>
+            {evResult ? `${evResult.evOver>=0?'+':''}${evResult.evOver.toFixed(1)}%` : '—'}
+          </div>
+          <div className="text-xs text-gray-600 mt-0.5">EV Signal</div>
+        </div>
+      </div>
+
+      {/* 3-column main section */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mb-5">
+        {/* Col 1 — Poisson distribution */}
+        <div>
+          <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">K Distribution (Poisson)</p>
+          <PoissonBarChart lambda={proj.projected} bookLine={line || (proj.projected + 0.5)}/>
+          {!line && <p className="text-xs text-gray-700 italic mt-1 text-center">Enter a book line for probabilities</p>}
+        </div>
+
+        {/* Col 2 — EV gauge */}
+        <div className="flex flex-col items-center">
+          <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">EV% Gauge</p>
+          <EVGaugeSVG evPct={evResult?.evOver ?? 0}/>
+          {evResult ? (
+            <div className="flex gap-2 mt-2 flex-wrap justify-center">
+              <span className={`text-xs font-bold border rounded-full px-2 py-0.5 ${evResult.evOver>0?'text-emerald-400 border-emerald-500/30 bg-emerald-500/10':'text-red-400 border-red-500/30 bg-red-500/10'}`}>
+                Over {evResult.evOver>=0?'+':''}{evResult.evOver.toFixed(1)}%
+              </span>
+              <span className={`text-xs font-bold border rounded-full px-2 py-0.5 ${evResult.evUnder>0?'text-emerald-400 border-emerald-500/30 bg-emerald-500/10':'text-red-400 border-red-500/30 bg-red-500/10'}`}>
+                Under {evResult.evUnder>=0?'+':''}{evResult.evUnder.toFixed(1)}%
+              </span>
+            </div>
+          ) : (
+            <p className="text-xs text-gray-700 italic mt-3 text-center">Enter line & odds for EV%</p>
+          )}
+          <p className="text-xs text-gray-700 mt-3 text-center leading-relaxed px-2">
+            EV% measures edge vs book. <span className="text-emerald-700">EV &gt; 5% = strong value.</span>
+          </p>
+        </div>
+
+        {/* Col 3 — Factor breakdown */}
+        <div>
+          <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Factor Breakdown</p>
+          <table className="w-full text-xs">
+            <tbody>
+              {proj.factorImpacts.map((f, i) => (
+                <tr key={i} className="border-b border-gray-800/40">
+                  <td className="py-1.5 text-gray-500">{f.label}</td>
+                  <td className={`py-1.5 text-right tabular-nums ${f.note ? 'text-gray-700 italic' : f.impact > 0 ? 'text-emerald-400' : f.impact < 0 ? 'text-red-400' : 'text-gray-600'}`}>
+                    {f.note ? f.note : f.impact !== 0 ? `${f.impact>0?'+':''}${f.impact.toFixed(1)} K` : '—'}
+                  </td>
+                  <td className={`py-1.5 pl-2 text-right font-bold ${f.dir==='↑'?'text-emerald-400':f.dir==='↓'?'text-red-400':'text-gray-600'}`}>
+                    {f.note ? '' : f.dir}
+                  </td>
+                </tr>
+              ))}
+              <tr className="border-t-2 border-gray-700">
+                <td className="py-2 font-black text-white">Projected total</td>
+                <td className="py-2 text-right font-black text-blue-400 tabular-nums">{proj.projected.toFixed(1)} K</td>
+                <td className="py-2 pl-2 text-right text-gray-600">—</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Odds input row */}
+      <div className="rounded-lg border border-gray-800 bg-gray-900/60 px-4 py-3 mb-4">
+        <p className="text-xs text-gray-600 mb-2">Enter sportsbook odds for accurate EV%:</p>
+        <div className="flex flex-wrap items-center gap-3">
+          {[
+            { label:'Over line', val:bookLine,  set:setBookLine,  step:'0.5', ph:'5.5'  },
+            { label:'Over odds', val:overOdds,  set:setOverOdds,  step:'1',   ph:'-115' },
+            { label:'Under odds',val:underOdds, set:setUnderOdds, step:'1',   ph:'-105' },
+          ].map(inp => (
+            <label key={inp.label} className="flex items-center gap-1.5 text-xs text-gray-500">
+              {inp.label}:
+              <input type="number" step={inp.step} value={inp.val} placeholder={inp.ph}
+                onChange={e => inp.set(e.target.value)}
+                className="w-16 rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-white text-center tabular-nums outline-none focus:border-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"/>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {/* Projected Outs section */}
+      <div className="rounded-lg border border-gray-800/60 bg-gray-900/30 px-4 py-3">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Projected Outs (IP × 3)</p>
+          <p className="text-xs text-gray-600 tabular-nums">{proj.outLower} – {proj.outUpper} range</p>
+        </div>
+        <div className="flex items-center gap-6">
+          <div className="text-center">
+            <div className="text-lg font-black text-blue-400 tabular-nums">{proj.avgL5IP}</div>
+            <div className="text-xs text-gray-600">Proj IP</div>
+          </div>
+          <div className="text-center">
+            <div className="text-lg font-black text-white tabular-nums">{proj.projectedOuts}</div>
+            <div className="text-xs text-gray-600">Proj Outs</div>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-gray-700 mb-1">L5 IP per start</p>
+            <div className="flex items-end gap-1 h-8">
+              {proj.l5IPValues.map((ip, i) => {
+                const maxIP = Math.max(...proj.l5IPValues, 1);
+                return (
+                  <div key={i} className="flex-1 flex flex-col items-center gap-0.5 min-w-0">
+                    <div className="w-full rounded-sm bg-blue-500/60" style={{height:`${(ip/maxIP)*100}%`, minHeight:'4px'}}/>
+                    <span className="text-xs text-gray-700 tabular-nums leading-none">{ip.toFixed(1)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+        {proj.avgL5IP < 5 && (
+          <p className="text-xs text-amber-500/80 italic mt-2">⚠ Averaging &lt;5 IP — factor in bullpen usage for outs props.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function PlayerDetailPage() {
   const { id }      = useParams();
@@ -703,12 +1115,21 @@ export default function PlayerDetailPage() {
   // ── Pitcher-specific state ─────────────────────────────────────────────
   const [pitcherStarts, setPitcherStarts] = useState([]);
   const [pitcherSplits, setPitcherSplits] = useState(null);
+  const [pitcherChartCat,  setPitcherChartCat]  = useState('k');
+  const [pitcherChartLine, setPitcherChartLine] = useState(4.5);
+  const [pitcherChartWin,  setPitcherChartWin]  = useState(10);
 
   // ── On line change, reset to first valid line for new cat ─────────────────
   useEffect(() => {
     const cfg = PROP_CATS.find(c => c.id === cat);
     if (cfg && !cfg.lines.includes(line)) setLine(cfg.def);
   }, [cat]);
+
+  // ── Reset pitcher chart line when metric changes ───────────────────────
+  useEffect(() => {
+    const cfg = PITCHER_CHART_CATS.find(c => c.id === pitcherChartCat);
+    if (cfg) setPitcherChartLine(cfg.defaultLine);
+  }, [pitcherChartCat]);
 
   // ── Load data ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1015,6 +1436,58 @@ export default function PlayerDetailPage() {
               )}
             </div>
 
+            {/* ── Bar Chart (K / ER / Outs / H / BB / HR) ─────────────────── */}
+            <div className="rounded-xl border border-gray-800 bg-gray-900 p-5 mb-5">
+              {/* Controls row */}
+              <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
+                <div>
+                  <h3 className="text-sm font-bold text-white mb-1">
+                    {PITCHER_CHART_CATS.find(c=>c.id===pitcherChartCat)?.label} — Last {pitcherChartWin} Starts
+                  </h3>
+                  {!chartLoading && pitcherStarts.length > 0 && (() => {
+                    const cat = PITCHER_CHART_CATS.find(c=>c.id===pitcherChartCat);
+                    const processed = pitcherStarts.map(s=>({...s, _outs:Math.round(parseFloat(s.inningsPitched||'0')*3)}));
+                    const slice = processed.slice(-pitcherChartWin);
+                    const vals  = slice.map(g => Number(g[cat?.field||'strikeOuts'])||0);
+                    const avg   = vals.length ? (vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1) : '—';
+                    const good  = cat ? vals.filter(v => cat.higherIsBetter ? v > pitcherChartLine : v <= pitcherChartLine).length : 0;
+                    return <p className="text-xs text-gray-500">avg <span className="text-white font-semibold">{avg}</span> · {good}/{slice.length} {cat?.higherIsBetter ? 'over' : 'under'} {pitcherChartLine}</p>;
+                  })()}
+                </div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  {/* Metric toggle */}
+                  <div className="flex rounded-lg border border-gray-800 overflow-hidden flex-wrap">
+                    {PITCHER_CHART_CATS.map(c => (
+                      <button key={c.id} onClick={() => setPitcherChartCat(c.id)}
+                        className={`px-2.5 py-1.5 text-xs font-bold transition-colors ${
+                          pitcherChartCat === c.id ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-400 hover:text-white'
+                        }`}>{c.label}</button>
+                    ))}
+                  </div>
+                  {/* Window toggle */}
+                  <div className="flex rounded-lg border border-gray-800 overflow-hidden">
+                    {[5,10].map(w => (
+                      <button key={w} onClick={() => setPitcherChartWin(w)}
+                        className={`px-3 py-1.5 text-xs font-bold transition-colors ${
+                          pitcherChartWin === w ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-400 hover:text-white'
+                        }`}>L{w}</button>
+                    ))}
+                  </div>
+                  {/* Vegas line input */}
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-gray-600">Line:</span>
+                    <input type="number" step="0.5" value={pitcherChartLine}
+                      onChange={e => setPitcherChartLine(parseFloat(e.target.value)||0)}
+                      className="w-16 rounded-lg border border-amber-500/40 bg-amber-500/5 px-2 py-1.5 text-xs font-bold text-amber-400 text-center tabular-nums outline-none focus:border-amber-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"/>
+                  </div>
+                </div>
+              </div>
+              {chartLoading
+                ? <div className="h-40 flex items-center justify-center"><div className="text-gray-700 text-sm animate-pulse">Loading starts…</div></div>
+                : <PitcherGameLogChart starts={pitcherStarts} catId={pitcherChartCat} line={pitcherChartLine} win={pitcherChartWin}/>
+              }
+            </div>
+
             {/* ── L10 Starts Table ─────────────────────────────────────────── */}
             <div className="rounded-xl border border-gray-800 bg-gray-900 p-5 mb-5">
               <div className="flex items-center gap-2 mb-4">
@@ -1022,8 +1495,8 @@ export default function PlayerDetailPage() {
                 <h3 className="text-sm font-bold text-white">Last 10 Starts</h3>
                 {!chartLoading && pitcherStarts.length > 0 && (() => {
                   const last10 = pitcherStarts.slice(-10);
-                  const avgK = (last10.reduce((a,s)=>a+s.strikeOuts,0)/last10.length).toFixed(1);
-                  const avgER= (last10.reduce((a,s)=>a+s.earnedRuns,0)/last10.length).toFixed(2);
+                  const avgK  = (last10.reduce((a,s)=>a+s.strikeOuts,0)/last10.length).toFixed(1);
+                  const avgER = (last10.reduce((a,s)=>a+s.earnedRuns,0)/last10.length).toFixed(2);
                   return (
                     <span className="ml-auto text-xs text-gray-600">
                       avg <span className="text-emerald-400 font-bold">{avgK}K</span>
@@ -1041,7 +1514,6 @@ export default function PlayerDetailPage() {
               <Card title="K · ER · IP Trend" icon="📈">
                 <PitcherKTrendCard starts={pitcherStarts} loading={chartLoading}/>
               </Card>
-
               <Card title="Platoon Splits" icon="✂️">
                 <PitcherPlatoonCard splits={pitcherSplits} loading={loading}/>
               </Card>
@@ -1066,14 +1538,14 @@ export default function PlayerDetailPage() {
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {[
-                    { label:'Strikeouts', value: seasonStats.strikeOuts || 0, cls: statCls(parseInt(seasonStats.strikeOuts)||0, 150, 100) },
-                    { label:'Innings Pitched', value: seasonStats.inningsPitched || '0', cls: statCls(parseFloat(seasonStats.inningsPitched)||0, 150, 100) },
-                    { label:'HR Allowed',   value: seasonStats.homeRuns || 0, cls: statCls(20-(parseInt(seasonStats.homeRuns)||0), 10, 5) },
-                    { label:'Walks',        value: seasonStats.baseOnBalls || 0, cls: statCls(60-(parseInt(seasonStats.baseOnBalls)||0), 20, 0) },
-                    { label:'Wins',         value: seasonStats.wins || 0, cls: statCls(parseInt(seasonStats.wins)||0, 15, 10) },
-                    { label:'Losses',       value: seasonStats.losses || 0, cls: { text:'text-gray-400', bg:'bg-gray-800/50 border-gray-800' } },
-                    { label:'Hits Allowed', value: seasonStats.hits || 0, cls: statCls(200-(parseInt(seasonStats.hits)||0), 80, 30) },
-                    { label:'Starts',       value: seasonStats.gamesStarted || seasonStats.gamesPlayed || 0, cls: { text:'text-blue-400', bg:'bg-blue-500/10 border-blue-500/30' } },
+                    { label:'Strikeouts',     value: seasonStats.strikeOuts || 0,          cls: statCls(parseInt(seasonStats.strikeOuts)||0, 150, 100) },
+                    { label:'Innings Pitched',value: seasonStats.inningsPitched || '0',     cls: statCls(parseFloat(seasonStats.inningsPitched)||0, 150, 100) },
+                    { label:'HR Allowed',     value: seasonStats.homeRuns || 0,             cls: statCls(20-(parseInt(seasonStats.homeRuns)||0), 10, 5) },
+                    { label:'Walks',          value: seasonStats.baseOnBalls || 0,          cls: statCls(60-(parseInt(seasonStats.baseOnBalls)||0), 20, 0) },
+                    { label:'Wins',           value: seasonStats.wins || 0,                 cls: statCls(parseInt(seasonStats.wins)||0, 15, 10) },
+                    { label:'Losses',         value: seasonStats.losses || 0,               cls: { text:'text-gray-400', bg:'bg-gray-800/50 border-gray-800' } },
+                    { label:'Hits Allowed',   value: seasonStats.hits || 0,                 cls: statCls(200-(parseInt(seasonStats.hits)||0), 80, 30) },
+                    { label:'Starts',         value: seasonStats.gamesStarted || seasonStats.gamesPlayed || 0, cls: { text:'text-blue-400', bg:'bg-blue-500/10 border-blue-500/30' } },
                   ].map(item => (
                     <div key={item.label} className={`rounded-lg border p-3 text-center ${item.cls.bg}`}>
                       <div className={`text-lg font-black tabular-nums ${item.cls.text}`}>{item.value}</div>
@@ -1092,6 +1564,11 @@ export default function PlayerDetailPage() {
               </div>
               <PitcherContextRow starts={pitcherStarts} oppAbbrev={spOppAbbrev} isHome={spIsHome}/>
             </div>
+
+            {/* ── Projection & EV% ─────────────────────────────────────────── */}
+            <ProjectionErrorBoundary>
+              <ProjectionEVCard pitcherStarts={pitcherStarts} seasonStats={seasonStats}/>
+            </ProjectionErrorBoundary>
           </>
         )}
 
