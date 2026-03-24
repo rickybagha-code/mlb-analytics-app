@@ -112,6 +112,11 @@ function pitcherScoreFromERA(era) {
   if (era == null) return null;
   return Math.round(Math.max(10, Math.min(95, 50 + (4.50 - era) * 15)));
 }
+function pitcherScoreFromKProj(projected) {
+  if (projected == null) return null;
+  // League avg K/start ≈ 5.5; scale ±10 points per K above/below
+  return Math.round(Math.max(10, Math.min(99, 50 + (projected - 5.5) * 10)));
+}
 function getStartResult(s) {
   if (s.isWin)  return { label:'W', cls:'text-emerald-400' };
   if (s.isLoss) return { label:'L', cls:'text-red-400' };
@@ -1315,10 +1320,20 @@ export default function PlayerDetailPage() {
     ['SP', 'RP', 'P'].includes(playerInfo.position || '');
 
   const pitcherFIP   = useMemo(() => computeFIP(seasonStats), [seasonStats]);
-  const pitcherScore = useMemo(() => {
+  const pitcherERAScore = useMemo(() => {
     if (!isPitcherView || !seasonStats?.era) return null;
     return pitcherScoreFromERA(parseFloat(seasonStats.era));
   }, [isPitcherView, seasonStats]);
+
+  // Page-level K projection (mirrors ProjectionEVCard)
+  const pageKProj = useKProjection(isPitcherView ? pitcherStarts : [], isPitcherView ? seasonStats : null);
+  const kProjScore = useMemo(() => {
+    if (!isPitcherView || !pageKProj) return null;
+    return pitcherScoreFromKProj(pageKProj.projected);
+  }, [isPitcherView, pageKProj]);
+
+  // Main pitcher score is K projection; fall back to ERA score
+  const pitcherScore = kProjScore ?? pitcherERAScore;
 
   const pitcherKPct = useMemo(() => {
     if (!seasonStats) return null;
@@ -1379,16 +1394,32 @@ export default function PlayerDetailPage() {
               )}
             </div>
             {/* Score ring */}
-            <div className="flex-shrink-0 text-center">
+            <div className="flex-shrink-0 flex items-center gap-3">
               {isPitcherView
-                ? pitcherScore != null
-                  ? <><ScoreRing score={pitcherScore} size={64}/><p className="text-xs text-gray-600 mt-1">ERA Score</p></>
-                  : loading
-                    ? <Skeleton className="w-16 h-16 rounded-full"/>
-                    : <div className="w-16 h-16 rounded-full border-2 border-gray-800 bg-gray-800/50 flex items-center justify-center"><span className="text-gray-700 text-xs">N/A</span></div>
-                : modelScore != null
-                  ? <><ScoreRing score={modelScore} size={64}/><p className="text-xs text-gray-600 mt-1">Model</p></>
-                  : <div className="w-16 h-16 rounded-full border-2 border-gray-800 bg-gray-800/50 flex items-center justify-center"><span className="text-gray-700 text-xs">N/A</span></div>
+                ? <>
+                    {/* K Projection — main score */}
+                    <div className="text-center">
+                      {kProjScore != null
+                        ? <><ScoreRing score={kProjScore} size={64}/><p className="text-xs text-gray-600 mt-1">K Proj</p></>
+                        : loading
+                          ? <Skeleton className="w-16 h-16 rounded-full"/>
+                          : <div className="w-16 h-16 rounded-full border-2 border-gray-800 bg-gray-800/50 flex items-center justify-center"><span className="text-gray-700 text-xs">N/A</span></div>
+                      }
+                    </div>
+                    {/* ERA — secondary score */}
+                    <div className="text-center">
+                      {pitcherERAScore != null
+                        ? <><ScoreRing score={pitcherERAScore} size={44}/><p className="text-xs text-gray-600 mt-1">ERA</p></>
+                        : !loading && <div className="w-11 h-11 rounded-full border-2 border-gray-800 bg-gray-800/50 flex items-center justify-center"><span className="text-gray-700 text-xs">—</span></div>
+                      }
+                    </div>
+                  </>
+                : <div className="text-center">
+                    {modelScore != null
+                      ? <><ScoreRing score={modelScore} size={64}/><p className="text-xs text-gray-600 mt-1">Model</p></>
+                      : <div className="w-16 h-16 rounded-full border-2 border-gray-800 bg-gray-800/50 flex items-center justify-center"><span className="text-gray-700 text-xs">N/A</span></div>
+                    }
+                  </div>
               }
             </div>
           </div>
@@ -1488,26 +1519,10 @@ export default function PlayerDetailPage() {
               }
             </div>
 
-            {/* ── L10 Starts Table ─────────────────────────────────────────── */}
-            <div className="rounded-xl border border-gray-800 bg-gray-900 p-5 mb-5">
-              <div className="flex items-center gap-2 mb-4">
-                <span className="text-base">📋</span>
-                <h3 className="text-sm font-bold text-white">Last 10 Starts</h3>
-                {!chartLoading && pitcherStarts.length > 0 && (() => {
-                  const last10 = pitcherStarts.slice(-10);
-                  const avgK  = (last10.reduce((a,s)=>a+s.strikeOuts,0)/last10.length).toFixed(1);
-                  const avgER = (last10.reduce((a,s)=>a+s.earnedRuns,0)/last10.length).toFixed(2);
-                  return (
-                    <span className="ml-auto text-xs text-gray-600">
-                      avg <span className="text-emerald-400 font-bold">{avgK}K</span>
-                      {' · '}
-                      <span className="text-yellow-400 font-bold">{avgER} ER</span>
-                    </span>
-                  );
-                })()}
-              </div>
-              <PitcherStartsTable starts={pitcherStarts} loading={chartLoading}/>
-            </div>
+            {/* ── Projection & EV% ─────────────────────────────────────────── */}
+            <ProjectionErrorBoundary>
+              <ProjectionEVCard pitcherStarts={pitcherStarts} seasonStats={seasonStats}/>
+            </ProjectionErrorBoundary>
 
             {/* ── K Trend + Platoon Splits (2-col) ─────────────────────────── */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
@@ -1565,10 +1580,6 @@ export default function PlayerDetailPage() {
               <PitcherContextRow starts={pitcherStarts} oppAbbrev={spOppAbbrev} isHome={spIsHome}/>
             </div>
 
-            {/* ── Projection & EV% ─────────────────────────────────────────── */}
-            <ProjectionErrorBoundary>
-              <ProjectionEVCard pitcherStarts={pitcherStarts} seasonStats={seasonStats}/>
-            </ProjectionErrorBoundary>
           </>
         )}
 
