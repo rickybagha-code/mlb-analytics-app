@@ -99,6 +99,38 @@ function computeL10Avg(games) {
   return ab >= 15 ? h / ab : null;
 }
 
+// ─── Pitcher helpers ──────────────────────────────────────────────────────────
+function computeFIP(st) {
+  const ip = parseFloat(st?.inningsPitched) || 0;
+  const hr = parseInt(st?.homeRuns)         || 0;
+  const bb = parseInt(st?.baseOnBalls)      || 0;
+  const k  = parseInt(st?.strikeOuts)       || 0;
+  if (ip < 1) return null;
+  return (13 * hr + 3 * bb - 2 * k) / ip + 3.10;
+}
+function pitcherScoreFromERA(era) {
+  if (era == null) return null;
+  return Math.round(Math.max(10, Math.min(95, 50 + (4.50 - era) * 15)));
+}
+function getStartResult(s) {
+  if (s.isWin)  return { label:'W', cls:'text-emerald-400' };
+  if (s.isLoss) return { label:'L', cls:'text-red-400' };
+  return { label:'ND', cls:'text-gray-500' };
+}
+function pitcherAvgCls(avg) {
+  const v = parseFloat(avg) || 0.250;
+  if (v <= 0.200) return { text:'text-emerald-400', bg:'bg-emerald-500/10 border-emerald-500/30' };
+  if (v <= 0.250) return { text:'text-yellow-400',  bg:'bg-yellow-500/10  border-yellow-500/30'  };
+  return             { text:'text-red-400',      bg:'bg-red-500/10     border-red-500/30'     };
+}
+function computeDaysRest(starts) {
+  if (!starts?.length) return null;
+  const last = starts[starts.length - 1];
+  if (!last?.date) return null;
+  const diff = Math.floor((Date.now() - new Date(last.date).getTime()) / 86400000);
+  return diff;
+}
+
 // ─── Formatting helpers ───────────────────────────────────────────────────────
 function fmt(v, d=3) { if (v==null) return '—'; const n=parseFloat(v); return isNaN(n)?'—':n.toFixed(d); }
 function fmtDate(s) {
@@ -291,6 +323,192 @@ function Skeleton({ className }) {
   return <div className={`rounded bg-gray-800 animate-pulse ${className}`}/>;
 }
 
+// ─── Sparkline (pure SVG — no Chart.js) ──────────────────────────────────────
+function Sparkline({ values, width=160, height=28, color='#3b82f6' }) {
+  if (!values || values.length < 2) return <span className="text-gray-700 text-xs">—</span>;
+  const max = Math.max(...values, 1);
+  const min = Math.min(...values, 0);
+  const range = max - min || 1;
+  const pts = values.map((v, i) => {
+    const x = (i / (values.length - 1)) * (width - 4) + 2;
+    const y = (height - 4) - ((v - min) / range) * (height - 8) + 2;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  const last = values[values.length - 1];
+  const lx = width - 2;
+  const ly = (height - 4) - ((last - min) / range) * (height - 8) + 2;
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{overflow:'visible'}}>
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.85"/>
+      <circle cx={lx} cy={ly} r="3" fill={color}/>
+    </svg>
+  );
+}
+
+// ─── Pitcher L10 Starts Table ─────────────────────────────────────────────────
+function PitcherStartsTable({ starts, loading }) {
+  if (loading) return (
+    <div className="space-y-2">{[1,2,3,4,5].map(i=><Skeleton key={i} className="h-8 w-full"/>)}</div>
+  );
+  if (!starts?.length) return <p className="text-sm text-gray-600 italic">No starts found this season.</p>;
+  const last10 = [...starts].slice(-10).reverse();
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="text-gray-600 border-b border-gray-800">
+            {['Date','Opp','IP','K','BB','HR','ER','Res'].map(h=>(
+              <th key={h} className={`py-2 font-semibold ${h==='Date'||h==='Opp'?'text-left pr-3':'text-center px-2'} ${h==='Res'?'text-right pl-2':''}`}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {last10.map((s, i) => {
+            const opp = (s.opponent || '').split(' ').at(-1);
+            const res = getStartResult(s);
+            const kCls = s.strikeOuts >= 9 ? 'text-emerald-400 font-black' : s.strikeOuts >= 7 ? 'text-emerald-400 font-bold' : s.strikeOuts >= 5 ? 'text-yellow-400' : s.strikeOuts >= 3 ? 'text-white' : 'text-red-400';
+            const erCls= s.earnedRuns === 0 ? 'text-emerald-400' : s.earnedRuns <= 2 ? 'text-yellow-400' : s.earnedRuns <= 4 ? 'text-orange-400' : 'text-red-400';
+            return (
+              <tr key={i} className="border-b border-gray-800/50 hover:bg-gray-800/20 transition-colors">
+                <td className="py-2 pr-3 text-gray-500">{fmtDate(s.date)}</td>
+                <td className="py-2 pr-3 text-gray-400 font-medium">{opp||'—'}</td>
+                <td className="py-2 px-2 text-center text-white tabular-nums">{s.inningsPitched||'0'}</td>
+                <td className={`py-2 px-2 text-center tabular-nums ${kCls}`}>{s.strikeOuts}</td>
+                <td className="py-2 px-2 text-center text-gray-400 tabular-nums">{s.baseOnBalls}</td>
+                <td className="py-2 px-2 text-center tabular-nums">{s.homeRuns>0?<span className="text-red-400">{s.homeRuns}</span>:<span className="text-gray-700">0</span>}</td>
+                <td className={`py-2 px-2 text-center tabular-nums ${erCls}`}>{s.earnedRuns}</td>
+                <td className={`py-2 pl-2 text-right font-black tabular-nums ${res.cls}`}>{res.label}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ─── Pitcher K Trend Card ─────────────────────────────────────────────────────
+function PitcherKTrendCard({ starts, loading }) {
+  const last10 = starts.slice(-10);
+  if (loading) return <div className="space-y-3">{[1,2,3].map(i=><Skeleton key={i} className="h-10 w-full"/>)}</div>;
+  if (!last10.length) return <p className="text-sm text-gray-600 italic">No starts data available.</p>;
+
+  const kVals  = last10.map(s => s.strikeOuts);
+  const erVals = last10.map(s => s.earnedRuns);
+  const ipVals = last10.map(s => parseFloat(s.inningsPitched) || 0);
+  const avg = arr => arr.length ? (arr.reduce((a,b)=>a+b,0)/arr.length) : 0;
+
+  return (
+    <div className="space-y-5">
+      {[
+        { label:'K per Start',  values: kVals,  avg: avg(kVals).toFixed(1),  color:'#34d399', note: `${Math.max(...kVals)} peak` },
+        { label:'ER per Start', values: erVals, avg: avg(erVals).toFixed(1), color:'#f87171', note: `${Math.min(...erVals)} min` },
+        { label:'IP per Start', values: ipVals, avg: avg(ipVals).toFixed(1), color:'#60a5fa', note: `${Math.max(...ipVals)} max` },
+      ].map(({ label, values, avg: avgV, color, note }) => (
+        <div key={label}>
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-xs text-gray-500">{label}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-600">{note}</span>
+              <span className="text-xs font-bold text-white tabular-nums">avg {avgV}</span>
+            </div>
+          </div>
+          <Sparkline values={values} width={220} height={30} color={color}/>
+        </div>
+      ))}
+      <p className="text-xs text-gray-700 pt-1 border-t border-gray-800/50">Last {last10.length} starts · newest right</p>
+    </div>
+  );
+}
+
+// ─── Pitcher Platoon Splits Card ──────────────────────────────────────────────
+function PitcherPlatoonCard({ splits, loading }) {
+  if (loading && !splits) return (
+    <div className="space-y-2">{[1,2,3].map(i=><Skeleton key={i} className="h-16 w-full"/>)}</div>
+  );
+  if (!splits) return <p className="text-sm text-gray-600 italic">Splits data not available yet this season.</p>;
+
+  return (
+    <div className="space-y-3">
+      {[
+        { label:'vs LHB', data: splits.vsLeftHandedBatters },
+        { label:'vs RHB', data: splits.vsRightHandedBatters },
+      ].map(({ label, data }) => (
+        <div key={label} className="rounded-lg border border-gray-800 bg-gray-800/30 p-3">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold text-gray-400">{label}</span>
+            {data && <span className="text-xs text-gray-600 tabular-nums">{data.battersFaced} BF</span>}
+          </div>
+          {data ? (
+            <div className="grid grid-cols-4 gap-1 text-center">
+              {[
+                { l:'AVG vs', v: fmt(data.avg,3),  c: pitcherAvgCls(data.avg) },
+                { l:'OPS vs', v: fmt(data.ops,3),  c: pitcherAvgCls(data.ops ? String(parseFloat(data.ops)-0.200) : null) },
+                { l:'K%',    v: data.kPct != null  ? `${(data.kPct*100).toFixed(0)}%`  : '—', c: statCls((data.kPct||0)*100, 28, 22) },
+                { l:'BB%',   v: data.bbPct != null ? `${(data.bbPct*100).toFixed(0)}%` : '—', c: statCls(12-(data.bbPct||0)*100, 4, 0) },
+              ].map(s => (
+                <div key={s.l}>
+                  <div className={`text-sm font-black tabular-nums ${s.c.text}`}>{s.v}</div>
+                  <div className="text-xs text-gray-600">{s.l}</div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-gray-600 italic">No data</p>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Pitcher Contextual Factors Row ──────────────────────────────────────────
+function PitcherContextRow({ starts, oppAbbrev, isHome }) {
+  const daysRest = computeDaysRest(starts);
+  const items = [
+    {
+      icon: '📅',
+      label: 'Days Rest',
+      value: daysRest != null ? `${daysRest}d` : '—',
+      sub:   daysRest != null ? (daysRest >= 5 ? 'Well rested' : daysRest >= 4 ? 'Normal rest' : 'Short rest') : '—',
+      cls:   daysRest != null ? (daysRest >= 5 ? 'text-emerald-400' : daysRest >= 4 ? 'text-yellow-400' : 'text-orange-400') : 'text-gray-600',
+    },
+    {
+      icon: '🏟️',
+      label: 'Park K Factor',
+      value: '—',
+      sub:   'Coming Soon',
+      cls:   'text-gray-600',
+    },
+    {
+      icon: '🌤️',
+      label: 'Weather',
+      value: '—',
+      sub:   'Coming Soon',
+      cls:   'text-gray-600',
+    },
+    {
+      icon: '⚖️',
+      label: 'Ump K/Game',
+      value: '—',
+      sub:   'Coming Soon',
+      cls:   'text-gray-600',
+    },
+  ];
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      {items.map(item => (
+        <div key={item.label} className="rounded-xl border border-gray-800 bg-gray-900 p-4 text-center">
+          <div className="text-xl mb-1">{item.icon}</div>
+          <div className={`text-lg font-black tabular-nums ${item.cls}`}>{item.value}</div>
+          <div className="text-xs text-white mt-0.5 font-medium">{item.label}</div>
+          <div className="text-xs text-gray-600 mt-0.5">{item.sub}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── Career H2H Matchup Card ─────────────────────────────────────────────────
 function H2HMatchupCard({ data, loading, pitcherId, pitcherName, pitcherHand }) {
   if (!pitcherId && !pitcherName) {
@@ -462,6 +680,7 @@ export default function PlayerDetailPage() {
   const spName        = sp.get('name')        || '';
   const spTeamAbbrev  = sp.get('teamAbbrev')  || '';
   const spTeamName    = sp.get('teamName')    || '';
+  const spPosition    = sp.get('position')   || '';
 
   // ── State ─────────────────────────────────────────────────────────────────
   const [cat,         setCat]         = useState('hits');
@@ -481,6 +700,10 @@ export default function PlayerDetailPage() {
   const [loading,     setLoading]     = useState(true);
   const [chartLoading,setChartLoading]= useState(true);
 
+  // ── Pitcher-specific state ─────────────────────────────────────────────
+  const [pitcherStarts, setPitcherStarts] = useState([]);
+  const [pitcherSplits, setPitcherSplits] = useState(null);
+
   // ── On line change, reset to first valid line for new cat ─────────────────
   useEffect(() => {
     const cfg = PROP_CATS.find(c => c.id === cat);
@@ -496,70 +719,110 @@ export default function PlayerDetailPage() {
   }, [id]);
 
   async function loadData() {
+    const isPitcherLoad = ['SP', 'RP', 'P'].includes(spPosition);
     try {
-      // Phase 1: game log (for chart — show ASAP)
-      const glRes = await fetch(`${API_URL}/player/${id}/gamelog?season=2025`);
-      if (glRes.ok) {
-        const d = await glRes.json();
-        setGameLog(d.games || []);
-      }
-      setChartLoading(false);
+      if (isPitcherLoad) {
+        // ── Pitcher loading path ──────────────────────────────────────────
+        // Phase 1: game log (for table & sparklines)
+        const glRes = await fetch(`${API_URL}/pitcher/${id}/gamelog?season=2025`);
+        if (glRes.ok) {
+          const d = await glRes.json();
+          setPitcherStarts(d.starts || []);
+        }
+        setChartLoading(false);
 
-      // Phase 2: everything else in parallel
-      const [mlbRes, splitsRes, statcastRes, pitcherRes, h2hRes] = await Promise.allSettled([
-        fetch(`${MLB_API}/people/${id}?hydrate=stats(group=hitting,type=season,season=2025)`),
-        fetch(`${API_URL}/player/${id}/splits?season=2025`),
-        fetch(`${API_URL}/statcast/batters?season=2025`),
-        spPitcherId ? fetch(`${API_URL}/pitcher/${spPitcherId}`) : Promise.resolve(null),
-        spPitcherId ? fetch(`${API_URL}/career-matchup/batter/${id}/pitcher/${spPitcherId}`) : Promise.resolve(null),
-      ]);
+        // Phase 2: season stats + splits in parallel
+        const [mlbRes, splitsRes] = await Promise.allSettled([
+          fetch(`${MLB_API}/people/${id}?hydrate=stats(group=pitching,type=season,season=2025)`),
+          fetch(`${API_URL}/pitcher/${id}/splits?season=2025`),
+        ]);
 
-      // Player info + season stats
-      if (mlbRes.status === 'fulfilled' && mlbRes.value?.ok) {
-        const d = await mlbRes.value.json();
-        const p = d.people?.[0];
-        if (p) {
-          setPlayerInfo({
-            fullName:   p.fullName,
-            teamName:   p.currentTeam?.name    || spTeamName,
-            teamAbbrev: p.currentTeam?.abbreviation || spTeamAbbrev,
-            position:   p.primaryPosition?.abbreviation || '',
-            batSide:    p.batSide?.code || '',
-          });
-          const st = p.stats?.find(s => s.group?.displayName === 'hitting')?.splits?.[0]?.stat;
-          if (st) setSeasonStats(st);
+        if (mlbRes.status === 'fulfilled' && mlbRes.value?.ok) {
+          const d = await mlbRes.value.json();
+          const p = d.people?.[0];
+          if (p) {
+            setPlayerInfo({
+              fullName:   p.fullName,
+              teamName:   p.currentTeam?.name         || spTeamName,
+              teamAbbrev: p.currentTeam?.abbreviation || spTeamAbbrev,
+              position:   p.primaryPosition?.abbreviation || spPosition,
+              pitchHand:  p.pitchHand?.code || '',
+            });
+            const st = p.stats?.find(s => s.group?.displayName === 'pitching')?.splits?.[0]?.stat;
+            if (st) setSeasonStats(st);
+          }
+        }
+
+        if (splitsRes.status === 'fulfilled' && splitsRes.value?.ok) {
+          const d = await splitsRes.value.json();
+          setPitcherSplits(d.splits || null);
+        }
+
+      } else {
+        // ── Batter loading path ───────────────────────────────────────────
+        // Phase 1: game log (for chart — show ASAP)
+        const glRes = await fetch(`${API_URL}/player/${id}/gamelog?season=2025`);
+        if (glRes.ok) {
+          const d = await glRes.json();
+          setGameLog(d.games || []);
+        }
+        setChartLoading(false);
+
+        // Phase 2: everything else in parallel
+        const [mlbRes, splitsRes, statcastRes, pitcherRes, h2hRes] = await Promise.allSettled([
+          fetch(`${MLB_API}/people/${id}?hydrate=stats(group=hitting,type=season,season=2025)`),
+          fetch(`${API_URL}/player/${id}/splits?season=2025`),
+          fetch(`${API_URL}/statcast/batters?season=2025`),
+          spPitcherId ? fetch(`${API_URL}/pitcher/${spPitcherId}`) : Promise.resolve(null),
+          spPitcherId ? fetch(`${API_URL}/career-matchup/batter/${id}/pitcher/${spPitcherId}`) : Promise.resolve(null),
+        ]);
+
+        // Player info + season stats
+        if (mlbRes.status === 'fulfilled' && mlbRes.value?.ok) {
+          const d = await mlbRes.value.json();
+          const p = d.people?.[0];
+          if (p) {
+            setPlayerInfo({
+              fullName:   p.fullName,
+              teamName:   p.currentTeam?.name    || spTeamName,
+              teamAbbrev: p.currentTeam?.abbreviation || spTeamAbbrev,
+              position:   p.primaryPosition?.abbreviation || '',
+              batSide:    p.batSide?.code || '',
+            });
+            const st = p.stats?.find(s => s.group?.displayName === 'hitting')?.splits?.[0]?.stat;
+            if (st) setSeasonStats(st);
+          }
+        }
+
+        // Splits
+        if (splitsRes.status === 'fulfilled' && splitsRes.value?.ok) {
+          const d = await splitsRes.value.json();
+          setSplits(d.splits || null);
+        }
+
+        // Statcast
+        if (statcastRes.status === 'fulfilled' && statcastRes.value?.ok) {
+          const d = await statcastRes.value.json();
+          const pid = parseInt(id);
+          setStatcast(d[pid] || d[id] || null);
+        }
+
+        // Pitcher
+        if (pitcherRes.status === 'fulfilled' && pitcherRes.value?.ok) {
+          const d = await pitcherRes.value.json();
+          setPitcher(prev => ({
+            ...prev,
+            ...d.pitcher,
+            stats: d.pitchingStats || null,
+          }));
+        }
+
+        // Career H2H
+        if (h2hRes.status === 'fulfilled' && h2hRes.value?.ok) {
+          const d = await h2hRes.value.json();
+          setH2hData(d);
         }
       }
-
-      // Splits
-      if (splitsRes.status === 'fulfilled' && splitsRes.value?.ok) {
-        const d = await splitsRes.value.json();
-        setSplits(d.splits || null);
-      }
-
-      // Statcast
-      if (statcastRes.status === 'fulfilled' && statcastRes.value?.ok) {
-        const d = await statcastRes.value.json();
-        const pid = parseInt(id);
-        setStatcast(d[pid] || d[id] || null);
-      }
-
-      // Pitcher
-      if (pitcherRes.status === 'fulfilled' && pitcherRes.value?.ok) {
-        const d = await pitcherRes.value.json();
-        setPitcher(prev => ({
-          ...prev,
-          ...d.pitcher,
-          stats: d.pitchingStats || null,
-        }));
-      }
-
-      // Career H2H
-      if (h2hRes.status === 'fulfilled' && h2hRes.value?.ok) {
-        const d = await h2hRes.value.json();
-        setH2hData(d);
-      }
-
     } catch {}
     setLoading(false);
   }
@@ -626,6 +889,30 @@ export default function PlayerDetailPage() {
   const kPct = pa > 0 ? (parseInt(st?.strikeOuts)||0) / pa : null;
   const bbPct= pa > 0 ? (parseInt(st?.baseOnBalls)||0) / pa : null;
 
+  // ── Pitcher-specific derived ─────────────────────────────────────────────
+  const isPitcherView = ['SP', 'RP', 'P'].includes(spPosition) ||
+    ['SP', 'RP', 'P'].includes(playerInfo.position || '');
+
+  const pitcherFIP   = useMemo(() => computeFIP(seasonStats), [seasonStats]);
+  const pitcherScore = useMemo(() => {
+    if (!isPitcherView || !seasonStats?.era) return null;
+    return pitcherScoreFromERA(parseFloat(seasonStats.era));
+  }, [isPitcherView, seasonStats]);
+
+  const pitcherKPct = useMemo(() => {
+    if (!seasonStats) return null;
+    const k  = parseInt(seasonStats.strikeOuts)   || 0;
+    const bf = parseInt(seasonStats.battersFaced) || 0;
+    return bf > 0 ? k / bf : null;
+  }, [seasonStats]);
+
+  const pitcherBBPct = useMemo(() => {
+    if (!seasonStats) return null;
+    const bb = parseInt(seasonStats.baseOnBalls) || 0;
+    const bf = parseInt(seasonStats.battersFaced) || 0;
+    return bf > 0 ? bb / bf : null;
+  }, [seasonStats]);
+
   return (
     <div className="min-h-screen bg-gray-950">
       {/* ── Navbar ─────────────────────────────────────────────────────────── */}
@@ -660,6 +947,7 @@ export default function PlayerDetailPage() {
                 {playerInfo.position && <span>{playerInfo.position} · </span>}
                 {playerInfo.teamName || playerInfo.teamAbbrev}
                 {playerInfo.batSide && <span className="ml-2 text-gray-600">Bats {playerInfo.batSide}</span>}
+                {playerInfo.pitchHand && <span className="ml-2 text-gray-600">Throws {playerInfo.pitchHand}</span>}
               </p>
               {(pitcher || spOppAbbrev) && (
                 <p className="text-sm text-blue-400 mt-1">
@@ -669,22 +957,43 @@ export default function PlayerDetailPage() {
                 </p>
               )}
             </div>
-            {/* Model score */}
+            {/* Score ring */}
             <div className="flex-shrink-0 text-center">
-              {modelScore != null
-                ? <>
-                    <ScoreRing score={modelScore} size={64}/>
-                    <p className="text-xs text-gray-600 mt-1">Model</p>
-                  </>
-                : <div className="w-16 h-16 rounded-full border-2 border-gray-800 bg-gray-800/50 flex items-center justify-center">
-                    <span className="text-gray-700 text-xs">N/A</span>
-                  </div>
+              {isPitcherView
+                ? pitcherScore != null
+                  ? <><ScoreRing score={pitcherScore} size={64}/><p className="text-xs text-gray-600 mt-1">ERA Score</p></>
+                  : loading
+                    ? <Skeleton className="w-16 h-16 rounded-full"/>
+                    : <div className="w-16 h-16 rounded-full border-2 border-gray-800 bg-gray-800/50 flex items-center justify-center"><span className="text-gray-700 text-xs">N/A</span></div>
+                : modelScore != null
+                  ? <><ScoreRing score={modelScore} size={64}/><p className="text-xs text-gray-600 mt-1">Model</p></>
+                  : <div className="w-16 h-16 rounded-full border-2 border-gray-800 bg-gray-800/50 flex items-center justify-center"><span className="text-gray-700 text-xs">N/A</span></div>
               }
             </div>
           </div>
 
-          {/* Rec banner */}
-          {rec && (
+          {/* Pitcher stat pills */}
+          {isPitcherView && seasonStats && (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {[
+                { l:'ERA',  v: fmt(parseFloat(seasonStats.era),2),  cls: eraCls(parseFloat(seasonStats.era)||4.5) },
+                { l:'FIP',  v: pitcherFIP!=null ? fmt(pitcherFIP,2) : '—', cls: eraCls(pitcherFIP||4.5) },
+                { l:'WHIP', v: fmt(parseFloat(seasonStats.whip),2), cls: whipCls(parseFloat(seasonStats.whip)||1.3) },
+                { l:'K/9',  v: fmt(parseFloat(seasonStats.strikeoutsPer9Inn),1), cls: statCls(parseFloat(seasonStats.strikeoutsPer9Inn)||0,10,8) },
+                { l:'K%',   v: pitcherKPct!=null ? `${(pitcherKPct*100).toFixed(0)}%` : '—', cls: statCls((pitcherKPct||0)*100,28,22) },
+                { l:'BB%',  v: pitcherBBPct!=null ? `${(pitcherBBPct*100).toFixed(0)}%` : '—', cls: statCls(12-(pitcherBBPct||0)*100,4,0) },
+                { l:'W-L',  v: `${seasonStats.wins||0}-${seasonStats.losses||0}`, cls:{ text:'text-blue-400', bg:'bg-blue-500/10 border-blue-500/30' } },
+              ].map(s => (
+                <span key={s.l} className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold ${s.cls.bg}`}>
+                  <span className={s.cls.text}>{s.v}</span>
+                  <span className="text-gray-600">{s.l}</span>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Batter rec banner */}
+          {!isPitcherView && rec && (
             <div className={`mt-4 rounded-lg border px-4 py-2 flex items-center justify-between ${rec.bg}`}>
               <span className={`text-sm font-bold ${rec.color}`}>{rec.label}</span>
               <span className="text-xs text-gray-600">Cook The Books Model · {catCfg?.label}</span>
@@ -692,236 +1001,290 @@ export default function PlayerDetailPage() {
           )}
         </div>
 
-        {/* ── Category Tabs ─────────────────────────────────────────────────── */}
-        <div className="flex items-center gap-2 flex-wrap mb-5">
-          {PROP_CATS.map(c => (
-            <button key={c.id} onClick={() => setCat(c.id)}
-              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-                cat === c.id
-                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
-                  : 'bg-gray-900 border border-gray-800 text-gray-400 hover:text-white hover:border-gray-600'
-              }`}>
-              {c.label}
-            </button>
-          ))}
-        </div>
-
-        {/* ── Chart Card ────────────────────────────────────────────────────── */}
-        <div className="rounded-xl border border-gray-800 bg-gray-900 p-5 mb-6">
-          {/* Chart controls */}
-          <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
-            <div>
-              <h2 className="text-sm font-bold text-white mb-0.5">
-                {catCfg?.label} — Last {win} Games
-              </h2>
-              {l5Summary && (
-                <p className="text-xs text-gray-500">
-                  L5 avg: <span className="text-white font-semibold">{l5Summary.avg.toFixed(1)}</span>
-                  <span className="mx-1">·</span>
-                  {l5Summary.over}/{l5Summary.total} over {line}
-                </p>
+        {/* ═══════════════ PITCHER DASHBOARD ═══════════════════════════════ */}
+        {isPitcherView && (
+          <>
+            {/* ── Section header label ──────────────────────────────────────── */}
+            <div className="flex items-center gap-3 mb-5">
+              <h2 className="text-xs font-bold text-gray-600 uppercase tracking-widest">Pitcher Dashboard · 2025</h2>
+              <div className="flex-1 h-px bg-gray-800"/>
+              {spOppAbbrev && (
+                <span className="text-xs text-blue-400 font-semibold">
+                  {spIsHome ? 'vs' : '@'} {spOppAbbrev}
+                </span>
               )}
             </div>
-            <div className="flex items-center gap-3 flex-wrap">
-              {/* Window toggle */}
-              <div className="flex rounded-lg border border-gray-800 overflow-hidden">
-                {[5,10].map(w => (
-                  <button key={w} onClick={() => setWin(w)}
-                    className={`px-3 py-1.5 text-xs font-bold transition-colors ${
-                      win === w ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-400 hover:text-white'
-                    }`}>L{w}</button>
-                ))}
+
+            {/* ── L10 Starts Table ─────────────────────────────────────────── */}
+            <div className="rounded-xl border border-gray-800 bg-gray-900 p-5 mb-5">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="text-base">📋</span>
+                <h3 className="text-sm font-bold text-white">Last 10 Starts</h3>
+                {!chartLoading && pitcherStarts.length > 0 && (() => {
+                  const last10 = pitcherStarts.slice(-10);
+                  const avgK = (last10.reduce((a,s)=>a+s.strikeOuts,0)/last10.length).toFixed(1);
+                  const avgER= (last10.reduce((a,s)=>a+s.earnedRuns,0)/last10.length).toFixed(2);
+                  return (
+                    <span className="ml-auto text-xs text-gray-600">
+                      avg <span className="text-emerald-400 font-bold">{avgK}K</span>
+                      {' · '}
+                      <span className="text-yellow-400 font-bold">{avgER} ER</span>
+                    </span>
+                  );
+                })()}
               </div>
-              {/* Line selector */}
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-gray-600">Line:</span>
-                <div className="flex rounded-lg border border-gray-800 overflow-hidden">
-                  {(catCfg?.lines || [0.5]).map(l => (
-                    <button key={l} onClick={() => setLine(l)}
-                      className={`px-3 py-1.5 text-xs font-bold tabular-nums transition-colors ${
-                        line === l ? 'bg-amber-500/80 text-black' : 'bg-gray-900 text-gray-400 hover:text-white'
-                      }`}>{l}</button>
+              <PitcherStartsTable starts={pitcherStarts} loading={chartLoading}/>
+            </div>
+
+            {/* ── K Trend + Platoon Splits (2-col) ─────────────────────────── */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
+              <Card title="K · ER · IP Trend" icon="📈">
+                <PitcherKTrendCard starts={pitcherStarts} loading={chartLoading}/>
+              </Card>
+
+              <Card title="Platoon Splits" icon="✂️">
+                <PitcherPlatoonCard splits={pitcherSplits} loading={loading}/>
+              </Card>
+            </div>
+
+            {/* ── Pitch Arsenal placeholder ─────────────────────────────────── */}
+            <div className="rounded-xl border border-dashed border-gray-800 bg-gray-900/30 p-5 mb-5">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-base">🎯</span>
+                <h3 className="text-sm font-bold text-gray-500">Pitch Arsenal</h3>
+                <span className="ml-auto text-xs text-gray-700 border border-gray-800 rounded-full px-2 py-0.5">Coming Soon</span>
+              </div>
+              <p className="text-xs text-gray-700">Per-pitch usage %, whiff %, and CSW% from Baseball Savant. In development.</p>
+            </div>
+
+            {/* ── Season Stats grid ─────────────────────────────────────────── */}
+            {seasonStats && (
+              <div className="rounded-xl border border-gray-800 bg-gray-900 p-5 mb-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-base">📊</span>
+                  <h3 className="text-sm font-bold text-white">2025 Season Stats</h3>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    { label:'Strikeouts', value: seasonStats.strikeOuts || 0, cls: statCls(parseInt(seasonStats.strikeOuts)||0, 150, 100) },
+                    { label:'Innings Pitched', value: seasonStats.inningsPitched || '0', cls: statCls(parseFloat(seasonStats.inningsPitched)||0, 150, 100) },
+                    { label:'HR Allowed',   value: seasonStats.homeRuns || 0, cls: statCls(20-(parseInt(seasonStats.homeRuns)||0), 10, 5) },
+                    { label:'Walks',        value: seasonStats.baseOnBalls || 0, cls: statCls(60-(parseInt(seasonStats.baseOnBalls)||0), 20, 0) },
+                    { label:'Wins',         value: seasonStats.wins || 0, cls: statCls(parseInt(seasonStats.wins)||0, 15, 10) },
+                    { label:'Losses',       value: seasonStats.losses || 0, cls: { text:'text-gray-400', bg:'bg-gray-800/50 border-gray-800' } },
+                    { label:'Hits Allowed', value: seasonStats.hits || 0, cls: statCls(200-(parseInt(seasonStats.hits)||0), 80, 30) },
+                    { label:'Starts',       value: seasonStats.gamesStarted || seasonStats.gamesPlayed || 0, cls: { text:'text-blue-400', bg:'bg-blue-500/10 border-blue-500/30' } },
+                  ].map(item => (
+                    <div key={item.label} className={`rounded-lg border p-3 text-center ${item.cls.bg}`}>
+                      <div className={`text-lg font-black tabular-nums ${item.cls.text}`}>{item.value}</div>
+                      <div className="text-xs text-gray-600 mt-0.5">{item.label}</div>
+                    </div>
                   ))}
                 </div>
               </div>
-            </div>
-          </div>
-
-          {chartLoading
-            ? <div className="h-40 flex items-center justify-center"><div className="text-gray-700 text-sm animate-pulse">Loading game log…</div></div>
-            : <GameLogChart games={gameLog} field={catCfg?.field || 'hits'} line={line} win={win}/>
-          }
-        </div>
-
-        {/* ── Detail Grid ───────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-
-          {/* Career H2H — spans full width */}
-          <div className="col-span-1 sm:col-span-2">
-            <H2HMatchupCard
-              data={h2hData}
-              loading={loading}
-              pitcherId={spPitcherId}
-              pitcherName={spPitcherName}
-              pitcherHand={spPitcherHand}
-            />
-          </div>
-
-          {/* vs L/R Splits */}
-          <Card title="Handedness Splits" icon="✂️">
-            {!splits ? (
-              loading
-                ? <div className="space-y-2">{[1,2,3].map(i=><Skeleton key={i} className="h-5 w-full"/>)}</div>
-                : <p className="text-sm text-gray-600 italic">Splits data unavailable — may not have enough PA yet this season.</p>
-            ) : (
-              <div className="space-y-3">
-                {[
-                  { label:'vs Left', data: splits.vsLeftHandedPitching,  relevant: spPitcherHand === 'L' },
-                  { label:'vs Right', data: splits.vsRightHandedPitching, relevant: spPitcherHand === 'R' },
-                ].map(({ label, data, relevant }) => (
-                  <div key={label} className={`rounded-lg p-3 border ${relevant ? 'border-blue-500/30 bg-blue-500/5' : 'border-gray-800 bg-gray-800/30'}`}>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className={`text-xs font-bold ${relevant ? 'text-blue-400' : 'text-gray-400'}`}>{label}</span>
-                      {relevant && <span className="text-xs text-blue-500 bg-blue-500/10 px-2 py-0.5 rounded-full">Today</span>}
-                    </div>
-                    {data ? (
-                      <div className="grid grid-cols-4 gap-1 text-center">
-                        {[
-                          { l:'AVG', v: fmt(data.avg,3),  c: statCls(parseFloat(data.avg)||0,0.28,0.25) },
-                          { l:'OBP', v: fmt(data.obp,3),  c: statCls(parseFloat(data.obp)||0,0.36,0.32) },
-                          { l:'SLG', v: fmt(data.slg,3),  c: statCls(parseFloat(data.slg)||0,0.45,0.38) },
-                          { l:'OPS', v: fmt(data.ops,3),  c: statCls(parseFloat(data.ops)||0,0.80,0.70) },
-                        ].map(s => (
-                          <div key={s.l}>
-                            <div className={`text-sm font-black ${s.c.text}`}>{s.v}</div>
-                            <div className="text-xs text-gray-600">{s.l}</div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-gray-600 italic">No data</p>
-                    )}
-                  </div>
-                ))}
-              </div>
             )}
-          </Card>
 
-          {/* Statcast Quality of Contact */}
-          <Card title="Statcast Quality" icon="⚡">
-            {!statcast ? (
-              loading
-                ? <div className="space-y-2">{[1,2,3,4].map(i=><Skeleton key={i} className="h-5 w-full"/>)}</div>
-                : <p className="text-sm text-gray-600 italic">Statcast data not available.</p>
-            ) : (
-              <div className="space-y-1">
-                <StatRow
-                  label="xwOBA (Expected)"
-                  value={fmt(statcast.xwoba, 3)}
-                  highlight={statCls(statcast.xwoba||0, 0.37, 0.32).text}
-                  sub="luck-adjusted"
-                />
-                <StatRow
-                  label="Barrel %"
-                  value={statcast.barrelPct != null ? `${statcast.barrelPct.toFixed(1)}%` : '—'}
-                  highlight={statCls(statcast.barrelPct||0, 12, 6).text}
-                />
-                <StatRow
-                  label="Hard Hit % (95+ mph)"
-                  value={statcast.hardHitPct != null ? `${statcast.hardHitPct.toFixed(1)}%` : '—'}
-                  highlight={statCls(statcast.hardHitPct||0, 50, 40).text}
-                />
-                <StatRow
-                  label="Avg Exit Velocity"
-                  value={statcast.exitVelo != null ? `${statcast.exitVelo.toFixed(1)} mph` : '—'}
-                  highlight={statCls(statcast.exitVelo||0, 92, 88).text}
-                />
-                <div className="mt-3 pt-3 border-t border-gray-800/60 text-xs text-gray-600 italic">
-                  Source: Baseball Savant 2025 · Updated every 6h
+            {/* ── Contextual Factors ────────────────────────────────────────── */}
+            <div className="rounded-xl border border-gray-800 bg-gray-900 p-5 mb-5">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="text-base">🔮</span>
+                <h3 className="text-sm font-bold text-white">Contextual Factors</h3>
+              </div>
+              <PitcherContextRow starts={pitcherStarts} oppAbbrev={spOppAbbrev} isHome={spIsHome}/>
+            </div>
+          </>
+        )}
+
+        {/* ═══════════════ BATTER DASHBOARD ════════════════════════════════ */}
+        {!isPitcherView && (
+          <>
+            {/* ── Category Tabs ──────────────────────────────────────────── */}
+            <div className="flex items-center gap-2 flex-wrap mb-5">
+              {PROP_CATS.map(c => (
+                <button key={c.id} onClick={() => setCat(c.id)}
+                  className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                    cat === c.id
+                      ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
+                      : 'bg-gray-900 border border-gray-800 text-gray-400 hover:text-white hover:border-gray-600'
+                  }`}>
+                  {c.label}
+                </button>
+              ))}
+            </div>
+
+            {/* ── Chart Card ─────────────────────────────────────────────── */}
+            <div className="rounded-xl border border-gray-800 bg-gray-900 p-5 mb-6">
+              <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
+                <div>
+                  <h2 className="text-sm font-bold text-white mb-0.5">
+                    {catCfg?.label} — Last {win} Games
+                  </h2>
+                  {l5Summary && (
+                    <p className="text-xs text-gray-500">
+                      L5 avg: <span className="text-white font-semibold">{l5Summary.avg.toFixed(1)}</span>
+                      <span className="mx-1">·</span>
+                      {l5Summary.over}/{l5Summary.total} over {line}
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="flex rounded-lg border border-gray-800 overflow-hidden">
+                    {[5,10].map(w => (
+                      <button key={w} onClick={() => setWin(w)}
+                        className={`px-3 py-1.5 text-xs font-bold transition-colors ${
+                          win === w ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-400 hover:text-white'
+                        }`}>L{w}</button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-gray-600">Line:</span>
+                    <div className="flex rounded-lg border border-gray-800 overflow-hidden">
+                      {(catCfg?.lines || [0.5]).map(l => (
+                        <button key={l} onClick={() => setLine(l)}
+                          className={`px-3 py-1.5 text-xs font-bold tabular-nums transition-colors ${
+                            line === l ? 'bg-amber-500/80 text-black' : 'bg-gray-900 text-gray-400 hover:text-white'
+                          }`}>{l}</button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
-            )}
-          </Card>
-        </div>
-
-        {/* ── Recent Form ───────────────────────────────────────────────────── */}
-        <div className="rounded-xl border border-gray-800 bg-gray-900 p-5 mb-6">
-          <div className="flex items-center gap-2 mb-4">
-            <span className="text-base">🔥</span>
-            <h3 className="text-sm font-bold text-white">Recent Form</h3>
-          </div>
-          {chartLoading ? (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {[1,2,3,4].map(i=><Skeleton key={i} className="h-16 rounded-lg"/>)}
+              {chartLoading
+                ? <div className="h-40 flex items-center justify-center"><div className="text-gray-700 text-sm animate-pulse">Loading game log…</div></div>
+                : <GameLogChart games={gameLog} field={catCfg?.field || 'hits'} line={line} win={win}/>
+              }
             </div>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+
+            {/* ── Detail Grid ────────────────────────────────────────────── */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+              <div className="col-span-1 sm:col-span-2">
+                <H2HMatchupCard
+                  data={h2hData}
+                  loading={loading}
+                  pitcherId={spPitcherId}
+                  pitcherName={spPitcherName}
+                  pitcherHand={spPitcherHand}
+                />
+              </div>
+
+              <Card title="Handedness Splits" icon="✂️">
+                {!splits ? (
+                  loading
+                    ? <div className="space-y-2">{[1,2,3].map(i=><Skeleton key={i} className="h-5 w-full"/>)}</div>
+                    : <p className="text-sm text-gray-600 italic">Splits data unavailable — may not have enough PA yet this season.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {[
+                      { label:'vs Left', data: splits.vsLeftHandedPitching,  relevant: spPitcherHand === 'L' },
+                      { label:'vs Right', data: splits.vsRightHandedPitching, relevant: spPitcherHand === 'R' },
+                    ].map(({ label, data, relevant }) => (
+                      <div key={label} className={`rounded-lg p-3 border ${relevant ? 'border-blue-500/30 bg-blue-500/5' : 'border-gray-800 bg-gray-800/30'}`}>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className={`text-xs font-bold ${relevant ? 'text-blue-400' : 'text-gray-400'}`}>{label}</span>
+                          {relevant && <span className="text-xs text-blue-500 bg-blue-500/10 px-2 py-0.5 rounded-full">Today</span>}
+                        </div>
+                        {data ? (
+                          <div className="grid grid-cols-4 gap-1 text-center">
+                            {[
+                              { l:'AVG', v: fmt(data.avg,3),  c: statCls(parseFloat(data.avg)||0,0.28,0.25) },
+                              { l:'OBP', v: fmt(data.obp,3),  c: statCls(parseFloat(data.obp)||0,0.36,0.32) },
+                              { l:'SLG', v: fmt(data.slg,3),  c: statCls(parseFloat(data.slg)||0,0.45,0.38) },
+                              { l:'OPS', v: fmt(data.ops,3),  c: statCls(parseFloat(data.ops)||0,0.80,0.70) },
+                            ].map(s => (
+                              <div key={s.l}>
+                                <div className={`text-sm font-black ${s.c.text}`}>{s.v}</div>
+                                <div className="text-xs text-gray-600">{s.l}</div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-gray-600 italic">No data</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+
+              <Card title="Statcast Quality" icon="⚡">
+                {!statcast ? (
+                  loading
+                    ? <div className="space-y-2">{[1,2,3,4].map(i=><Skeleton key={i} className="h-5 w-full"/>)}</div>
+                    : <p className="text-sm text-gray-600 italic">Statcast data not available.</p>
+                ) : (
+                  <div className="space-y-1">
+                    <StatRow label="xwOBA (Expected)" value={fmt(statcast.xwoba,3)} highlight={statCls(statcast.xwoba||0,0.37,0.32).text} sub="luck-adjusted"/>
+                    <StatRow label="Barrel %" value={statcast.barrelPct!=null?`${statcast.barrelPct.toFixed(1)}%`:'—'} highlight={statCls(statcast.barrelPct||0,12,6).text}/>
+                    <StatRow label="Hard Hit % (95+ mph)" value={statcast.hardHitPct!=null?`${statcast.hardHitPct.toFixed(1)}%`:'—'} highlight={statCls(statcast.hardHitPct||0,50,40).text}/>
+                    <StatRow label="Avg Exit Velocity" value={statcast.exitVelo!=null?`${statcast.exitVelo.toFixed(1)} mph`:'—'} highlight={statCls(statcast.exitVelo||0,92,88).text}/>
+                    <div className="mt-3 pt-3 border-t border-gray-800/60 text-xs text-gray-600 italic">
+                      Source: Baseball Savant 2025 · Updated every 6h
+                    </div>
+                  </div>
+                )}
+              </Card>
+            </div>
+
+            {/* ── Recent Form ────────────────────────────────────────────── */}
+            <div className="rounded-xl border border-gray-800 bg-gray-900 p-5 mb-6">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="text-base">🔥</span>
+                <h3 className="text-sm font-bold text-white">Recent Form</h3>
+              </div>
+              {chartLoading ? (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[1,2,3,4].map(i=><Skeleton key={i} className="h-16 rounded-lg"/>)}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    { label:'Hitting Streak', value:`${streak} game${streak!==1?'s':''}`, cls:statCls(streak,5,3) },
+                    { label:'L10 AVG', value:l10Avg!=null?l10Avg.toFixed(3):'—', cls:l10Avg!=null?statCls(l10Avg,0.280,0.250):{text:'text-gray-600',bg:'bg-gray-800/50 border-gray-800'} },
+                    {
+                      label:'vs Season AVG',
+                      value: l10Avg!=null&&(parseFloat(st?.avg)||0)>0
+                        ? `${l10Avg>parseFloat(st.avg)?'▲':'▼'} ${Math.abs(((l10Avg-parseFloat(st.avg))/parseFloat(st.avg))*100).toFixed(0)}%`
+                        : '—',
+                      cls: l10Avg!=null&&st?.avg ? statCls(l10Avg-parseFloat(st.avg),0.010,-0.010) : {text:'text-gray-600',bg:'bg-gray-800/50 border-gray-800'},
+                    },
+                    {
+                      label:`L5 ${catCfg?.label||'Hits'}/G`,
+                      value: (() => {
+                        const cfg=PROP_CATS.find(c=>c.id===cat);
+                        if(!cfg||!gameLog.length) return '—';
+                        const vals=gameLog.slice(-5).map(g=>Number(g[cfg.field])||0);
+                        return (vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(2);
+                      })(),
+                      cls:{text:'text-blue-400',bg:'bg-blue-500/10 border-blue-500/30'},
+                    },
+                  ].map(item => (
+                    <div key={item.label} className={`rounded-lg border p-3 text-center ${item.cls.bg}`}>
+                      <div className={`text-lg font-black tabular-nums ${item.cls.text}`}>{item.value}</div>
+                      <div className="text-xs text-gray-600 mt-0.5">{item.label}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* ── Reserved Real Estate ───────────────────────────────────── */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
               {[
-                {
-                  label: 'Hitting Streak',
-                  value: `${streak} game${streak !== 1 ? 's' : ''}`,
-                  cls: statCls(streak, 5, 3),
-                },
-                {
-                  label: 'L10 AVG',
-                  value: l10Avg != null ? l10Avg.toFixed(3) : '—',
-                  cls: l10Avg != null ? statCls(l10Avg, 0.280, 0.250) : { text:'text-gray-600', bg:'bg-gray-800/50 border-gray-800' },
-                },
-                {
-                  label: 'vs Season AVG',
-                  value: l10Avg != null && (parseFloat(st?.avg)||0) > 0
-                    ? `${l10Avg > parseFloat(st.avg) ? '▲' : '▼'} ${Math.abs(((l10Avg - parseFloat(st.avg)) / parseFloat(st.avg)) * 100).toFixed(0)}%`
-                    : '—',
-                  cls: l10Avg != null && st?.avg
-                    ? statCls(l10Avg - parseFloat(st.avg), 0.010, -0.010)
-                    : { text:'text-gray-600', bg:'bg-gray-800/50 border-gray-800' },
-                },
-                {
-                  label: `L5 ${catCfg?.label || 'Hits'}/G`,
-                  value: (() => {
-                    const cfg = PROP_CATS.find(c => c.id === cat);
-                    if (!cfg || !gameLog.length) return '—';
-                    const vals = gameLog.slice(-5).map(g => Number(g[cfg.field]) || 0);
-                    return (vals.reduce((a,b)=>a+b,0) / vals.length).toFixed(2);
-                  })(),
-                  cls: { text:'text-blue-400', bg:'bg-blue-500/10 border-blue-500/30' },
-                },
+                { icon:'🏟️', title:'Park Factor', desc:'How this stadium affects HR, hits, and run scoring relative to league average.', tag:'Coming Soon' },
+                { icon:'📍', title:'Lineup Position', desc:'Expected batting order position — drives R/RBI opportunity context.', tag:'Posts ~3h Before Game' },
               ].map(item => (
-                <div key={item.label} className={`rounded-lg border p-3 text-center ${item.cls.bg}`}>
-                  <div className={`text-lg font-black tabular-nums ${item.cls.text}`}>{item.value}</div>
-                  <div className="text-xs text-gray-600 mt-0.5">{item.label}</div>
+                <div key={item.title} className="rounded-xl border border-dashed border-gray-800 bg-gray-900/30 p-5">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-base">{item.icon}</span>
+                    <h3 className="text-sm font-bold text-gray-500">{item.title}</h3>
+                  </div>
+                  <p className="text-xs text-gray-700 mb-3">{item.desc}</p>
+                  <span className="text-xs text-gray-700 border border-gray-800 rounded-full px-2 py-0.5">{item.tag}</span>
                 </div>
               ))}
             </div>
-          )}
-        </div>
-
-        {/* ── Reserved Real Estate ──────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-          {[
-            {
-              icon: '🏟️',
-              title: 'Park Factor',
-              desc: 'How this stadium affects HR, hits, and run scoring relative to league average.',
-              tag: 'Coming Soon',
-            },
-            {
-              icon: '📍',
-              title: 'Lineup Position',
-              desc: 'Expected batting order position — drives R/RBI opportunity context.',
-              tag: 'Posts ~3h Before Game',
-            },
-          ].map(item => (
-            <div key={item.title} className="rounded-xl border border-dashed border-gray-800 bg-gray-900/30 p-5">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-base">{item.icon}</span>
-                <h3 className="text-sm font-bold text-gray-500">{item.title}</h3>
-              </div>
-              <p className="text-xs text-gray-700 mb-3">{item.desc}</p>
-              <span className="text-xs text-gray-700 border border-gray-800 rounded-full px-2 py-0.5">{item.tag}</span>
-            </div>
-          ))}
-        </div>
+          </>
+        )}
 
       </main>
     </div>

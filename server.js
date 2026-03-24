@@ -894,6 +894,90 @@ app.get('/statcast/batters', async (req, res) => {
   }
 });
 
+// Pitcher Game Log Route
+app.get('/pitcher/:id/gamelog', async (req, res) => {
+  const pitcherId = req.params.id;
+  const season = req.query.season || DEFAULT_SEASON;
+
+  try {
+    const url = `https://statsapi.mlb.com/api/v1/people/${pitcherId}/stats?stats=gameLog&group=pitching&season=${season}`;
+    const data = await fetchJsonWithTimeout(url);
+    const splits = data.stats?.[0]?.splits || [];
+
+    const starts = splits.map(game => ({
+      date:           game.date,
+      opponent:       game.opponent?.name || null,
+      isHome:         game.isHome ?? null,
+      inningsPitched: game.stat?.inningsPitched || '0.0',
+      strikeOuts:     Number(game.stat?.strikeOuts       || 0),
+      baseOnBalls:    Number(game.stat?.baseOnBalls      || 0),
+      homeRuns:       Number(game.stat?.homeRuns         || 0),
+      earnedRuns:     Number(game.stat?.earnedRuns       || 0),
+      hits:           Number(game.stat?.hits             || 0),
+      pitchesThrown:  Number(game.stat?.numberOfPitches  || 0),
+      isWin:          Number(game.stat?.wins   || 0) > 0,
+      isLoss:         Number(game.stat?.losses || 0) > 0,
+    }));
+
+    res.json({ starts });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch pitcher game log', details: error.message });
+  }
+});
+
+// Pitcher Splits Route (vs LHB / vs RHB)
+app.get('/pitcher/:id/splits', async (req, res) => {
+  const pitcherId = req.params.id;
+  const season = req.query.season || DEFAULT_SEASON;
+
+  try {
+    const url = `https://statsapi.mlb.com/api/v1/people/${pitcherId}?hydrate=stats(group=[pitching],type=[statSplits],sitCodes=[vl,vr],season=${season})`;
+    const data = await fetchJsonWithTimeout(url);
+    const pitcher = data.people?.[0];
+    if (!pitcher) return res.status(404).json({ error: 'Pitcher not found' });
+
+    const stats = pitcher.stats || [];
+    let splitData = [];
+    for (const statGroup of stats) {
+      if (statGroup.splits?.length > 0) { splitData = statGroup.splits; break; }
+    }
+
+    const vsLeft  = splitData.find(s => s.split?.code === 'vl');
+    const vsRight = splitData.find(s => s.split?.code === 'vr');
+
+    const fmtSplit = (s) => {
+      if (!s) return null;
+      const bf = Number(s.stat?.battersFaced || 0);
+      const k  = Number(s.stat?.strikeOuts   || 0);
+      const bb = Number(s.stat?.baseOnBalls  || 0);
+      return {
+        gamesPlayed:  Number(s.stat?.gamesPlayed || 0),
+        battersFaced: bf,
+        strikeOuts:   k,
+        baseOnBalls:  bb,
+        homeRuns:     Number(s.stat?.homeRuns || 0),
+        hits:         Number(s.stat?.hits     || 0),
+        avg:          s.stat?.avg  || null,
+        obp:          s.stat?.obp  || null,
+        slg:          s.stat?.slg  || null,
+        ops:          s.stat?.ops  || null,
+        kPct:         bf > 0 ? k / bf : null,
+        bbPct:        bf > 0 ? bb / bf : null,
+      };
+    };
+
+    res.json({
+      pitcherId, season,
+      splits: {
+        vsLeftHandedBatters:  fmtSplit(vsLeft),
+        vsRightHandedBatters: fmtSplit(vsRight),
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch pitcher splits', details: error.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });

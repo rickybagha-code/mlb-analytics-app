@@ -1056,6 +1056,7 @@ export default function DashboardPage() {
                 isHome:      player.matchup?.isHome ? 'true' : 'false',
                 teamName:    player.teamName        || '',
                 teamAbbrev:  player.teamAbbrev      || '',
+                position:    player.position        || '',
               });
               return (
                 <Link key={player.playerId} href={`/dashboard/player/${player.playerId}?${params}`} className="block">
