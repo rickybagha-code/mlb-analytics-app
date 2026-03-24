@@ -40,6 +40,7 @@ function Navbar() {
           <div className="hidden md:flex items-center gap-8">
             <a href="#how-it-works" className="text-sm text-gray-400 hover:text-white transition-colors">How It Works</a>
             <a href="#features" className="text-sm text-gray-400 hover:text-white transition-colors">Features</a>
+            <a href="#pitcher-model" className="text-sm text-gray-400 hover:text-white transition-colors">EV Model</a>
             <a href="#pricing" className="text-sm text-gray-400 hover:text-white transition-colors">Pricing</a>
             <Link href="/dashboard" className="text-sm text-gray-400 hover:text-white transition-colors">Dashboard</Link>
           </div>
@@ -251,8 +252,8 @@ function Hero() {
               {[
                 { icon: '⚡', text: 'xwOBA + Barrel% model' },
                 { icon: '📊', text: 'L5 / L10 bar charts' },
+                { icon: '🎯', text: 'Poisson K projection' },
                 { icon: '⚔️', text: 'Career vs pitcher data' },
-                { icon: '✂️', text: 'Auto handedness splits' },
               ].map(p => (
                 <div key={p.text} className="flex items-center gap-1.5 text-sm text-gray-500">
                   <span>{p.icon}</span>
@@ -466,6 +467,16 @@ const features = [
     title: 'Full Prop Categories',
     description: 'Hits, Runs, RBI, Home Runs, and Stolen Bases — each with selectable Vegas lines and their own model scoring context.',
   },
+  {
+    num: '07',
+    icon: (
+      <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 5-5"/>
+      </svg>
+    ),
+    title: 'Pitcher K Projection + EV%',
+    description: 'Poisson distribution over every K total, 80% confidence band, and an EV% gauge that compares model probability to the devigged book price.',
+  },
 ];
 
 function FeaturesSection() {
@@ -504,6 +515,248 @@ function FeaturesSection() {
               <p className="text-sm leading-relaxed text-gray-500 group-hover:text-gray-400 transition-colors">{f.description}</p>
             </div>
           ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ─── Pitcher EV Model Showcase ────────────────────────────────────────────────
+function SampleProjectionCard() {
+  // Static Poisson distribution for lambda=7.2, bookLine=6.5
+  // Heights as fraction of max bar (k=7 is peak)
+  const bars = [
+    { k:0,  h:3,   over:false },
+    { k:1,  h:4,   over:false },
+    { k:2,  h:15,  over:false },
+    { k:3,  h:34,  over:false },
+    { k:4,  h:62,  over:false },
+    { k:5,  h:90,  over:false },
+    { k:6,  h:107, over:false },
+    { k:7,  h:110, over:true  },
+    { k:8,  h:99,  over:true  },
+    { k:9,  h:79,  over:true  },
+    { k:10, h:57,  over:true  },
+    { k:11, h:37,  over:true  },
+    { k:12, h:23,  over:true  },
+    { k:13, h:12,  over:true  },
+    { k:14, h:7,   over:true  },
+  ];
+  const W=320, H=148, PT=22, PB=26, PL=8, PR=8;
+  const CH=H-PT-PB, barW=19, gap=2.2;
+
+  // EV gauge for +4.7%
+  const evPct = 4.7;
+  const norm  = (evPct + 15) / 30;
+  const sweep = norm * 180;
+  const cx=80, cy=72, R=54, sw=13;
+  const d2r = d => d * Math.PI / 180;
+  const sx = cx + R * Math.cos(d2r(180));
+  const sy = cy + R * Math.sin(d2r(180));
+  const ex = cx + R * Math.cos(d2r(180 + sweep));
+  const ey = cy + R * Math.sin(d2r(180 + sweep));
+
+  return (
+    <div className="relative rounded-2xl border border-blue-500/20 bg-gray-900 p-5 shadow-2xl shadow-blue-500/10">
+      <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-blue-500/5 to-cyan-500/5 pointer-events-none"/>
+      <div className="absolute -inset-px rounded-2xl ring-1 ring-blue-500/10 pointer-events-none"/>
+
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <img
+            src="https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_213,q_auto:best/v1/people/605483/headshot/67/current"
+            alt="Pitcher" width={36} height={36}
+            className="rounded-full border border-gray-700 bg-gray-800 object-cover flex-shrink-0"
+            style={{width:36,height:36}}
+          />
+          <div>
+            <p className="text-sm font-bold text-white leading-tight">SP Analysis</p>
+            <p className="text-xs text-gray-500">RHP · 2025 Season</p>
+          </div>
+        </div>
+        <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-400 ring-1 ring-emerald-500/20">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"/>Live
+        </span>
+      </div>
+
+      {/* 4 summary tiles */}
+      <div className="grid grid-cols-4 gap-1.5 mb-4">
+        {[
+          { label:'Proj Ks',  val:'7.2', cls:'text-blue-400',    bg:'bg-blue-500/10 border-blue-500/30' },
+          { label:'80% CI',   val:'5.1–9.3', cls:'text-gray-300', bg:'bg-gray-800/60 border-gray-700/40' },
+          { label:'Book Line',val:'6.5', cls:'text-amber-400',   bg:'bg-amber-500/10 border-amber-500/30' },
+          { label:'EV Signal',val:'+4.7%', cls:'text-yellow-400', bg:'bg-yellow-500/10 border-yellow-500/30' },
+        ].map(t => (
+          <div key={t.label} className={`rounded-lg border p-2 text-center ${t.bg}`}>
+            <div className={`text-xs font-black tabular-nums ${t.cls}`}>{t.val}</div>
+            <div className="text-gray-600 mt-0.5" style={{fontSize:8}}>{t.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Two-column: Poisson chart + EV gauge */}
+      <div className="grid grid-cols-5 gap-2 mb-3">
+        {/* Poisson chart — 3 cols */}
+        <div className="col-span-3 rounded-xl bg-gray-950/60 border border-gray-800/50 px-1 pt-1 pb-0.5">
+          <svg viewBox={`0 0 ${W} ${H}`} width="100%" preserveAspectRatio="xMidYMid meet">
+            <text x={W*0.28} y={13} textAnchor="middle" fill="#60a5fb" fontSize="8" fontWeight="700">P(Under) 40.0%</text>
+            <text x={W*0.72} y={13} textAnchor="middle" fill="#f59e0b" fontSize="8" fontWeight="700">P(Over) 60.0%</text>
+            {bars.map(({ k, h, over }) => {
+              const x = PL + k * (barW + gap);
+              const y = PT + CH - h;
+              return (
+                <g key={k}>
+                  <rect x={x} y={y} width={barW} height={h} rx={2}
+                    fill={over ? '#f59e0b' : '#3b82f6'} opacity="0.85"/>
+                </g>
+              );
+            })}
+            <line x1={PL+7*(barW+gap)-1} y1={PT-4} x2={PL+7*(barW+gap)-1} y2={H-PB+4}
+              stroke="#ef4444" strokeWidth="1.5" strokeDasharray="4 2"/>
+            {bars.map(({ k }) => k % 2 === 0 && (
+              <text key={k} x={PL+k*(barW+gap)+barW/2} y={H-PB+12} textAnchor="middle" fill="#6b7280" fontSize="7">{k}</text>
+            ))}
+            <text x={W/2} y={H-1} textAnchor="middle" fill="#374151" fontSize="7">Strikeouts</text>
+          </svg>
+        </div>
+
+        {/* EV gauge — 2 cols */}
+        <div className="col-span-2 flex items-center justify-center">
+          <svg width={cx*2} height={cy+20} viewBox={`0 0 ${cx*2} ${cy+20}`} style={{overflow:'visible'}}>
+            {/* Track */}
+            <path d={`M ${cx-R} ${cy} A ${R} ${R} 0 0 1 ${cx+R} ${cy}`}
+              fill="none" stroke="#1f2937" strokeWidth={sw} strokeLinecap="round"/>
+            {/* Fill arc */}
+            <path d={`M ${sx} ${sy} A ${R} ${R} 0 0 1 ${ex} ${ey}`}
+              fill="none" stroke="#eab308" strokeWidth={sw} strokeLinecap="round"/>
+            <text x={cx} y={cy-20} textAnchor="middle" fontSize="18" fontWeight="900" fill="#eab308" fontFamily="monospace">+4.7%</text>
+            <text x={cx} y={cy-6}  textAnchor="middle" fontSize="8"  fill="#6b7280">EV Edge</text>
+            <text x={cx-R-2} y={cy+14} textAnchor="end"   fontSize="7" fill="#374151">-15%</text>
+            <text x={cx+R+2} y={cy+14} textAnchor="start" fontSize="7" fill="#374151">+15%</text>
+          </svg>
+        </div>
+      </div>
+
+      {/* Factor table */}
+      <div className="rounded-lg border border-gray-800 bg-gray-950/40 overflow-hidden">
+        <div className="flex items-center gap-2 px-3 py-1.5 border-b border-gray-800">
+          <span className="text-xs font-bold text-gray-400">Factor Breakdown</span>
+        </div>
+        {[
+          { label:'L5 K avg',       impact:'+1.70', dir:'↑', cls:'text-emerald-400' },
+          { label:'Season K/start', impact:'+0.30', dir:'↑', cls:'text-emerald-400' },
+          { label:'Rest/weather',   impact:'+0.20', dir:'↑', cls:'text-emerald-400' },
+          { label:'Park factor',    impact:'—',     dir:'',  cls:'text-gray-600'    },
+        ].map(f => (
+          <div key={f.label} className="flex items-center justify-between px-3 py-1.5 border-b border-gray-800/50 last:border-0">
+            <span className="text-xs text-gray-500">{f.label}</span>
+            <span className={`text-xs font-bold tabular-nums ${f.cls}`}>{f.dir} {f.impact}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PitcherEVSection() {
+  return (
+    <section id="pitcher-model" className="py-24 relative overflow-hidden">
+      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-blue-950/10 to-transparent pointer-events-none"/>
+      <div className="absolute top-1/2 left-1/4 -translate-y-1/2 w-96 h-96 bg-blue-600/5 blur-3xl rounded-full pointer-events-none"/>
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+
+          {/* Left copy */}
+          <div>
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/10 px-4 py-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse"/>
+              <span className="text-xs font-semibold uppercase tracking-widest text-blue-400">Pitcher Intelligence</span>
+            </div>
+
+            <h2 className="text-3xl font-bold text-white sm:text-4xl leading-tight">
+              Know the K Line Before<br/>
+              <span className="bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
+                You Place the Bet
+              </span>
+            </h2>
+
+            <p className="mt-4 text-gray-400 leading-relaxed">
+              Our Poisson-based strikeout projection model combines a pitcher&apos;s L5 average, season K rate, rest days, and park factors to build a full probability distribution — not just a single guess.
+            </p>
+
+            <div className="mt-8 space-y-4">
+              {[
+                {
+                  icon: (
+                    <svg className="w-5 h-5 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 5-5"/>
+                    </svg>
+                  ),
+                  title: 'Poisson Distribution',
+                  desc: 'Full P(k) curve across every possible strikeout total — so you see P(Under) and P(Over) for any book line, not just the average.',
+                },
+                {
+                  icon: (
+                    <svg className="w-5 h-5 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>
+                    </svg>
+                  ),
+                  title: 'EV% Signal',
+                  desc: 'Expected value calculated by comparing model probability to the devigged book price. Positive EV means the line is mispriced in your favor.',
+                },
+                {
+                  icon: (
+                    <svg className="w-5 h-5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+                    </svg>
+                  ),
+                  title: '80% Confidence Band',
+                  desc: 'The projection shows a lower and upper bound so you know the realistic floor and ceiling — not just the mean outcome.',
+                },
+                {
+                  icon: (
+                    <svg className="w-5 h-5 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                    </svg>
+                  ),
+                  title: 'K Projection Score',
+                  desc: 'Each pitcher gets a 0–100 K Proj score derived from their projection — visible right on the player card alongside their ERA score.',
+                },
+              ].map(f => (
+                <div key={f.title} className="flex items-start gap-3.5">
+                  <div className="flex-shrink-0 mt-0.5 inline-flex h-9 w-9 items-center justify-center rounded-lg bg-gray-800/80 border border-gray-700/50">
+                    {f.icon}
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-white">{f.title}</p>
+                    <p className="text-sm text-gray-500 mt-0.5 leading-relaxed">{f.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-8">
+              <Link
+                href="/dashboard"
+                className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-blue-500/25 hover:bg-blue-500 transition-all hover:-translate-y-0.5"
+              >
+                Try It on a Live Pitcher
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6"/>
+                </svg>
+              </Link>
+            </div>
+          </div>
+
+          {/* Right preview card */}
+          <div className="flex justify-center lg:justify-end">
+            <div className="w-full max-w-sm">
+              <SampleProjectionCard/>
+            </div>
+          </div>
+
         </div>
       </div>
     </section>
@@ -770,6 +1023,7 @@ export default function LandingPage() {
         <StatsBar/>
         <HowItWorks/>
         <FeaturesSection/>
+        <PitcherEVSection/>
         <PricingSection/>
         <BottomCTA/>
       </main>
