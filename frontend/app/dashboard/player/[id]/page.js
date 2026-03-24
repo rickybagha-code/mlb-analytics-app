@@ -288,6 +288,162 @@ function Skeleton({ className }) {
   return <div className={`rounded bg-gray-800 animate-pulse ${className}`}/>;
 }
 
+// ─── Career H2H Matchup Card ─────────────────────────────────────────────────
+function H2HMatchupCard({ data, loading, pitcherId, pitcherName, pitcherHand }) {
+  if (!pitcherId && !pitcherName) {
+    return (
+      <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-base">⚔️</span>
+          <h3 className="text-sm font-bold text-white">Career Head-to-Head</h3>
+        </div>
+        <p className="text-sm text-gray-600 italic">No probable pitcher found for today.</p>
+      </div>
+    );
+  }
+
+  if (loading && !data) {
+    return (
+      <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
+        <div className="flex items-center gap-2 mb-4">
+          <span className="text-base">⚔️</span>
+          <h3 className="text-sm font-bold text-white">Career Head-to-Head</h3>
+        </div>
+        <div className="space-y-3">
+          <Skeleton className="h-16 w-full rounded-lg"/>
+          <Skeleton className="h-10 w-full rounded-lg"/>
+          <Skeleton className="h-10 w-full rounded-lg"/>
+        </div>
+      </div>
+    );
+  }
+
+  const batter  = data?.batter;
+  const pitcher = data?.pitcher;
+  const match   = data?.careerMatchup;
+  const hasData = data?.hasData && match;
+  const lowSample = hasData && (match.atBats || 0) < 20;
+
+  const displayPitcherName = pitcher?.fullName || pitcherName || '—';
+  const displayPitcherHand = pitcher?.pitchHand || pitcherHand;
+
+  const rateStats = hasData ? [
+    { l:'AVG',  v: fmt(match.avg,3),  cls: statCls(parseFloat(match.avg)||0,  0.28, 0.25) },
+    { l:'OBP',  v: fmt(match.obp,3),  cls: statCls(parseFloat(match.obp)||0,  0.36, 0.32) },
+    { l:'SLG',  v: fmt(match.slg,3),  cls: statCls(parseFloat(match.slg)||0,  0.45, 0.38) },
+    { l:'OPS',  v: fmt(match.ops,3),  cls: statCls(parseFloat(match.ops)||0,  0.80, 0.70) },
+    { l:'wOBA', v: fmt(match.woba,3), cls: statCls(parseFloat(match.woba)||0, 0.37, 0.32) },
+  ] : [];
+
+  const countStats = hasData ? [
+    { l:'AB',  v: match.atBats      || 0 },
+    { l:'H',   v: match.hits        || 0 },
+    { l:'1B',  v: match.singles     || 0 },
+    { l:'2B',  v: match.doubles     || 0 },
+    { l:'3B',  v: match.triples     || 0 },
+    { l:'HR',  v: match.homeRuns    || 0 },
+    { l:'RBI', v: match.rbi         || 0 },
+    { l:'BB',  v: match.baseOnBalls || 0 },
+    { l:'K',   v: match.strikeOuts  || 0 },
+  ] : [];
+
+  return (
+    <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center gap-2">
+          <span className="text-base">⚔️</span>
+          <h3 className="text-sm font-bold text-white">Career Head-to-Head</h3>
+        </div>
+        {hasData && (
+          <span className="text-xs text-gray-500 bg-gray-800 px-2.5 py-1 rounded-full tabular-nums">
+            {match.atBats} AB · {match.plateAppearances} PA career
+          </span>
+        )}
+      </div>
+
+      {/* Players row */}
+      <div className="grid grid-cols-[1fr_60px_1fr] items-center gap-3 mb-5">
+        {/* Batter */}
+        <div className="flex items-center gap-3">
+          <PlayerHeadshot playerId={batter?.id} name={batter?.fullName} size={52}/>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-bold text-white leading-tight truncate">{batter?.fullName || '—'}</p>
+            <p className="text-xs text-gray-500 truncate">{batter?.teamAbbrev}{batter?.position ? ` · ${batter.position}` : ''}</p>
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              {batter?.batSide && <span className="text-xs text-gray-600">Bats {batter.batSide}</span>}
+              {batter?.seasonAvg != null && <span className="text-xs text-blue-400 font-semibold tabular-nums">{fmt(batter.seasonAvg,3)}</span>}
+              {batter?.seasonOps != null && <span className="text-xs text-gray-600 tabular-nums">{fmt(batter.seasonOps,3)} OPS</span>}
+            </div>
+          </div>
+        </div>
+
+        {/* VS badge */}
+        <div className="flex justify-center">
+          <div className="w-11 h-11 rounded-full border-2 border-gray-700 bg-gray-800 flex items-center justify-center shadow-inner">
+            <span className="text-xs font-black text-gray-400 tracking-wider">VS</span>
+          </div>
+        </div>
+
+        {/* Pitcher */}
+        <div className="flex items-center gap-3 flex-row-reverse">
+          <PlayerHeadshot playerId={pitcher?.id} name={displayPitcherName} size={52}/>
+          <div className="min-w-0 flex-1 text-right">
+            <p className="text-sm font-bold text-white leading-tight truncate">{displayPitcherName}</p>
+            <p className="text-xs text-gray-500 truncate">{pitcher?.teamAbbrev}{displayPitcherHand ? ` · ${displayPitcherHand}HP` : ''}</p>
+            <div className="flex items-center gap-2 mt-1 flex-wrap justify-end">
+              {pitcher?.era != null && <span className={`text-xs font-semibold tabular-nums ${eraCls(pitcher.era).text}`}>{fmt(pitcher.era,2)} ERA</span>}
+              {pitcher?.whip != null && <span className="text-xs text-gray-600 tabular-nums">{fmt(pitcher.whip,3)} WHIP</span>}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Section divider */}
+      <div className="flex items-center gap-3 mb-4">
+        <div className="flex-1 h-px bg-gray-800"/>
+        <span className="text-xs font-bold text-gray-600 uppercase tracking-widest whitespace-nowrap">Career Matchup Stats</span>
+        <div className="flex-1 h-px bg-gray-800"/>
+      </div>
+
+      {!hasData ? (
+        <p className="text-sm text-gray-600 italic text-center py-3">
+          No career matchup history found — these two may not have faced each other yet.
+        </p>
+      ) : (
+        <>
+          {lowSample && (
+            <div className="mb-3 flex items-center gap-2 rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2">
+              <span className="text-amber-400 text-sm">⚠</span>
+              <span className="text-xs text-amber-400/80">Small sample ({match.atBats} AB) — interpret with caution</span>
+            </div>
+          )}
+
+          {/* Rate stats */}
+          <div className="grid grid-cols-5 gap-2 mb-3">
+            {rateStats.map(s => (
+              <div key={s.l} className={`rounded-lg border p-3 text-center ${s.cls.bg}`}>
+                <div className={`text-sm font-black tabular-nums ${s.cls.text}`}>{s.v}</div>
+                <div className="text-xs text-gray-600 mt-0.5">{s.l}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Counting stats */}
+          <div className="grid grid-cols-9 gap-1.5">
+            {countStats.map(s => (
+              <div key={s.l} className="rounded-lg bg-gray-800/50 border border-gray-700/40 py-2.5 text-center">
+                <div className="text-sm font-black text-white tabular-nums">{s.v}</div>
+                <div className="text-xs text-gray-600">{s.l}</div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function PlayerDetailPage() {
   const { id }      = useParams();
@@ -318,6 +474,7 @@ export default function PlayerDetailPage() {
   const [pitcher,     setPitcher]     = useState(
     spPitcherName ? { id: spPitcherId, name: spPitcherName, hand: spPitcherHand } : null
   );
+  const [h2hData,     setH2hData]     = useState(null);
   const [loading,     setLoading]     = useState(true);
   const [chartLoading,setChartLoading]= useState(true);
 
@@ -346,11 +503,12 @@ export default function PlayerDetailPage() {
       setChartLoading(false);
 
       // Phase 2: everything else in parallel
-      const [mlbRes, splitsRes, statcastRes, pitcherRes] = await Promise.allSettled([
+      const [mlbRes, splitsRes, statcastRes, pitcherRes, h2hRes] = await Promise.allSettled([
         fetch(`${MLB_API}/people/${id}?hydrate=stats(group=hitting,type=season,season=2025)`),
         fetch(`${API_URL}/player/${id}/splits?season=2025`),
         fetch(`${API_URL}/statcast/batters?season=2025`),
         spPitcherId ? fetch(`${API_URL}/pitcher/${spPitcherId}`) : Promise.resolve(null),
+        spPitcherId ? fetch(`${API_URL}/career-matchup/batter/${id}/pitcher/${spPitcherId}`) : Promise.resolve(null),
       ]);
 
       // Player info + season stats
@@ -391,6 +549,12 @@ export default function PlayerDetailPage() {
           ...d.pitcher,
           stats: d.pitchingStats || null,
         }));
+      }
+
+      // Career H2H
+      if (h2hRes.status === 'fulfilled' && h2hRes.value?.ok) {
+        const d = await h2hRes.value.json();
+        setH2hData(d);
       }
 
     } catch {}
@@ -589,73 +753,16 @@ export default function PlayerDetailPage() {
         {/* ── Detail Grid ───────────────────────────────────────────────────── */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
 
-          {/* Today's Matchup */}
-          <Card title="Today's Matchup" icon="⚔️">
-            {!spOppAbbrev && !pitcher ? (
-              <p className="text-sm text-gray-600 italic">No game found for today.</p>
-            ) : (
-              <div className="space-y-1">
-                <StatRow label="Opponent" value={spOppAbbrev || '—'}/>
-                <StatRow label="Location" value={spIsHome ? 'Home' : 'Away'}/>
-                {pitcher?.name && <StatRow label="Pitcher" value={pitcher.name} highlight="text-white"/>}
-                {spPitcherHand && <StatRow label="Throws" value={spPitcherHand === 'R' ? 'Right' : 'Left'}/>}
-                {pitcher?.stats && <>
-                  <StatRow label="ERA"  value={fmt(pitcher.stats.era, 2)}  highlight={eraCls(pitcher.stats.era).text}/>
-                  <StatRow label="WHIP" value={fmt(pitcher.stats.whip, 3)} highlight={whipCls(pitcher.stats.whip).text}/>
-                  <StatRow label="K/9"  value={fmt(pitcher.stats.k9 ?? pitcher.stats.strikeOutsPer9Inn, 2)}/>
-                  <StatRow label="Avg Against" value={fmt(pitcher.stats.avgAgainst, 3)}/>
-                </>}
-                {!pitcher?.stats && spPitcherName && (
-                  <p className="text-xs text-gray-600 italic pt-1">Pitcher season stats unavailable.</p>
-                )}
-              </div>
-            )}
-          </Card>
-
-          {/* Season Stats */}
-          <Card title="Season Stats" icon="📊">
-            {!st ? (
-              loading
-                ? <div className="space-y-2">{[1,2,3,4].map(i=><Skeleton key={i} className="h-5 w-full"/>)}</div>
-                : <p className="text-sm text-gray-600 italic">No season stats found.</p>
-            ) : (
-              <div className="space-y-1">
-                <StatRow label="AVG"  value={fmt(st.avg,3)}   highlight={statCls(parseFloat(st.avg)||0,0.28,0.25).text}/>
-                <StatRow label="OBP"  value={fmt(st.obp,3)}   highlight={statCls(parseFloat(st.obp)||0,0.36,0.32).text}/>
-                <StatRow label="SLG"  value={fmt(st.slg,3)}   highlight={statCls(parseFloat(st.slg)||0,0.45,0.38).text}/>
-                <StatRow label="OPS"  value={fmt(st.ops,3)}   highlight={statCls(parseFloat(st.ops)||0,0.80,0.70).text}/>
-                <div className="grid grid-cols-4 gap-2 pt-2 border-t border-gray-800/60">
-                  {[
-                    { l:'HR',  v: st.homeRuns },
-                    { l:'RBI', v: st.rbi },
-                    { l:'R',   v: st.runs },
-                    { l:'SB',  v: st.stolenBases ?? '—' },
-                  ].map(x => (
-                    <div key={x.l} className="text-center">
-                      <div className="text-sm font-black text-white">{x.v}</div>
-                      <div className="text-xs text-gray-600">{x.l}</div>
-                    </div>
-                  ))}
-                </div>
-                {(kPct != null || bbPct != null) && (
-                  <div className="grid grid-cols-3 gap-2 pt-2 border-t border-gray-800/60">
-                    <div className="text-center">
-                      <div className={`text-sm font-black ${statCls(1-(kPct||0), 0.75, 0.5).text}`}>{kPct != null ? `${(kPct*100).toFixed(1)}%` : '—'}</div>
-                      <div className="text-xs text-gray-600">K%</div>
-                    </div>
-                    <div className="text-center">
-                      <div className={`text-sm font-black ${statCls(bbPct||0, 0.12, 0.08).text}`}>{bbPct != null ? `${(bbPct*100).toFixed(1)}%` : '—'}</div>
-                      <div className="text-xs text-gray-600">BB%</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-sm font-black text-white">{fmt(st.babip,3)}</div>
-                      <div className="text-xs text-gray-600">BABIP</div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </Card>
+          {/* Career H2H — spans full width */}
+          <div className="col-span-1 sm:col-span-2">
+            <H2HMatchupCard
+              data={h2hData}
+              loading={loading}
+              pitcherId={spPitcherId}
+              pitcherName={spPitcherName}
+              pitcherHand={spPitcherHand}
+            />
+          </div>
 
           {/* vs L/R Splits */}
           <Card title="Handedness Splits" icon="✂️">
@@ -787,18 +894,12 @@ export default function PlayerDetailPage() {
         </div>
 
         {/* ── Reserved Real Estate ──────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
           {[
             {
               icon: '🏟️',
               title: 'Park Factor',
               desc: 'How this stadium affects HR, hits, and run scoring relative to league average.',
-              tag: 'Coming Soon',
-            },
-            {
-              icon: '📋',
-              title: 'Career vs Pitcher',
-              desc: 'Head-to-head historical AVG, OPS, and HR rate vs today\'s probable pitcher.',
               tag: 'Coming Soon',
             },
             {

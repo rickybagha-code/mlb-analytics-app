@@ -734,6 +734,104 @@ app.get('/auto-matchup', async (req, res) => {
     });
   }
 });
+// Career Head-to-Head Matchup Route
+app.get('/career-matchup/batter/:batterId/pitcher/:pitcherId', async (req, res) => {
+  const { batterId, pitcherId } = req.params;
+  const season = req.query.season || DEFAULT_SEASON;
+
+  if (!isNumeric(batterId) || !isNumeric(pitcherId)) {
+    return res.status(400).json({ error: 'batterId and pitcherId must be numeric' });
+  }
+
+  try {
+    const [h2hData, batterData, pitcherData] = await Promise.all([
+      fetchJsonWithTimeout(
+        `https://statsapi.mlb.com/api/v1/people/${batterId}?hydrate=stats(group=[hitting],type=[vsPlayerTotal],opposingPlayerId=${pitcherId})`
+      ),
+      fetchJsonWithTimeout(
+        `https://statsapi.mlb.com/api/v1/people/${batterId}?hydrate=stats(group=[hitting],type=[season],season=${season})`
+      ),
+      fetchJsonWithTimeout(
+        `https://statsapi.mlb.com/api/v1/people/${pitcherId}?hydrate=stats(group=[pitching],type=[season],season=${season})`
+      ),
+    ]);
+
+    const h2hPerson     = h2hData.people?.[0];
+    const batterPerson  = batterData.people?.[0];
+    const pitcherPerson = pitcherData.people?.[0];
+
+    const h2hStat   = h2hPerson?.stats?.find(s => s.type?.displayName === 'vsPlayerTotal')?.splits?.[0]?.stat || null;
+    const batterStat  = batterPerson?.stats?.find(s => s.group?.displayName === 'hitting')?.splits?.[0]?.stat || null;
+    const pitcherStat = pitcherPerson?.stats?.find(s => s.group?.displayName === 'pitching')?.splits?.[0]?.stat || null;
+
+    // Compute wOBA from career H2H components
+    let woba = null;
+    if (h2hStat) {
+      const ab  = parseInt(h2hStat.atBats)       || 0;
+      const pa  = parseInt(h2hStat.plateAppearances) || ab;
+      const h   = parseInt(h2hStat.hits)          || 0;
+      const dbl = parseInt(h2hStat.doubles)       || 0;
+      const tri = parseInt(h2hStat.triples)       || 0;
+      const hr  = parseInt(h2hStat.homeRuns)      || 0;
+      const bb  = parseInt(h2hStat.baseOnBalls)   || 0;
+      const singles = Math.max(0, h - dbl - tri - hr);
+      if (pa > 0) {
+        woba = Math.round(((bb*0.690 + singles*0.888 + dbl*1.271 + tri*1.616 + hr*2.101) / pa) * 1000) / 1000;
+      }
+    }
+
+    res.json({
+      batter: {
+        id:         parseInt(batterId),
+        fullName:   batterPerson?.fullName   || h2hPerson?.fullName,
+        team:       batterPerson?.currentTeam?.name,
+        teamAbbrev: batterPerson?.currentTeam?.abbreviation,
+        position:   batterPerson?.primaryPosition?.abbreviation,
+        batSide:    batterPerson?.batSide?.code,
+        seasonAvg:  batterStat?.avg  || null,
+        seasonOps:  batterStat?.ops  || null,
+        seasonHr:   parseInt(batterStat?.homeRuns) || null,
+        seasonRbi:  parseInt(batterStat?.rbi)      || null,
+      },
+      pitcher: {
+        id:              parseInt(pitcherId),
+        fullName:        pitcherPerson?.fullName,
+        team:            pitcherPerson?.currentTeam?.name,
+        teamAbbrev:      pitcherPerson?.currentTeam?.abbreviation,
+        pitchHand:       pitcherPerson?.pitchHand?.code,
+        era:             parseFloat(pitcherStat?.era)               || null,
+        whip:            parseFloat(pitcherStat?.whip)              || null,
+        k9:              parseFloat(pitcherStat?.strikeoutsPer9Inn) || null,
+        wins:            parseInt(pitcherStat?.wins)                || null,
+        losses:          parseInt(pitcherStat?.losses)              || null,
+        inningsPitched:  pitcherStat?.inningsPitched                || null,
+        strikeOuts:      parseInt(pitcherStat?.strikeOuts)          || null,
+        avgAgainst:      pitcherStat?.avg                           || null,
+      },
+      careerMatchup: h2hStat ? {
+        atBats:           parseInt(h2hStat.atBats)           || 0,
+        plateAppearances: parseInt(h2hStat.plateAppearances) || 0,
+        hits:             parseInt(h2hStat.hits)             || 0,
+        singles:          Math.max(0, (parseInt(h2hStat.hits)||0)-(parseInt(h2hStat.doubles)||0)-(parseInt(h2hStat.triples)||0)-(parseInt(h2hStat.homeRuns)||0)),
+        doubles:          parseInt(h2hStat.doubles)          || 0,
+        triples:          parseInt(h2hStat.triples)          || 0,
+        homeRuns:         parseInt(h2hStat.homeRuns)         || 0,
+        rbi:              parseInt(h2hStat.rbi)              || 0,
+        baseOnBalls:      parseInt(h2hStat.baseOnBalls)      || 0,
+        strikeOuts:       parseInt(h2hStat.strikeOuts)       || 0,
+        avg:              parseFloat(h2hStat.avg)            || null,
+        obp:              parseFloat(h2hStat.obp)            || null,
+        slg:              parseFloat(h2hStat.slg)            || null,
+        ops:              parseFloat(h2hStat.ops)            || null,
+        woba,
+      } : null,
+      hasData: !!h2hStat && (parseInt(h2hStat.atBats) || 0) > 0,
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch career matchup', details: error.message });
+  }
+});
+
 // Statcast Leaderboard Route (merges Baseball Savant expected stats + exit velocity)
 // Source 1: expected_statistics → est_woba (xwOBA)
 // Source 2: statcast leaderboard → brl_percent (barrel%), ev95percent (hard hit 95+ mph%)
