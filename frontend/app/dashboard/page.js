@@ -662,6 +662,7 @@ export default function DashboardPage() {
             const st = p.stats?.find(s=>s.group?.displayName==='pitching')?.splits?.[0]?.stat;
             if (st) {
               pitcherMap[p.id] = {
+                id:   p.id,
                 name: p.fullName,
                 era:  parseFloat(st.era)  || 4.50,
                 whip: parseFloat(st.whip) || 1.30,
@@ -996,9 +997,24 @@ export default function DashboardPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-10">
-            {currentBoard.map((player, idx) => (
-              <AutoPlayerCard key={player.playerId} player={player} category={category} rank={idx+1}/>
-            ))}
+            {currentBoard.map((player, idx) => {
+              const pitcher = player.matchup?.pitcher;
+              const params = new URLSearchParams({
+                teamId:      player.teamId          || '',
+                pitcherId:   pitcher?.id            || '',
+                pitcherName: pitcher?.name          || '',
+                pitcherHand: pitcher?.hand          || '',
+                oppAbbrev:   player.matchup?.oppAbbrev || '',
+                isHome:      player.matchup?.isHome ? 'true' : 'false',
+                teamName:    player.teamName        || '',
+                teamAbbrev:  player.teamAbbrev      || '',
+              });
+              return (
+                <Link key={player.playerId} href={`/dashboard/player/${player.playerId}?${params}`} className="block">
+                  <AutoPlayerCard player={player} category={category} rank={idx+1}/>
+                </Link>
+              );
+            })}
           </div>
         )}
 

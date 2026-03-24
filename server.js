@@ -147,6 +147,7 @@ app.get('/player/:id/gamelog', async (req, res) => {
       rbi: Number(game.stat?.rbi || 0),
       runs: Number(game.stat?.runs || 0),
       baseOnBalls: Number(game.stat?.baseOnBalls || 0),
+      stolenBases: Number(game.stat?.stolenBases || 0),
     }));
 
     res.json({ games });
