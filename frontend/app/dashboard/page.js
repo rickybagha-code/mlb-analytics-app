@@ -20,39 +20,97 @@ function setCached(key, data) {
   try { localStorage.setItem(key, JSON.stringify({ data, ts: Date.now() })); } catch {}
 }
 
-// ─── Projection Model ─────────────────────────────────────────────────────────
-function scoreForCategory(stats, pitcher, category) {
-  const avg    = stats.avg        || 0;
-  const slg    = stats.slg        || 0;
-  const obp    = stats.obp        || 0;
-  const hr     = stats.homeRuns   || 0;
-  const ab     = Math.max(stats.atBats       || 0, 1);
-  const gp     = Math.max(stats.gamesPlayed  || 1, 1);
-  const rbi    = stats.rbi        || 0;
-  const r      = stats.runs       || 0;
-  const hrRate = hr / ab;
-  const iso    = Math.max(0, slg - avg);
-  const era    = pitcher?.era  ?? 4.50;
-  const mod    = Math.max(-12, Math.min(12, (4.50 - era) * 3));
+// ─── Projection Model v2 ──────────────────────────────────────────────────────
+// Uses wOBA proxy, K% penalty, sample-size confidence, recency boost.
+// Scores are absolute (not relative): ~53 = league avg, ~80+ = elite before recency.
+function computeProjectionScore(player, category) {
+  const ab   = player.atBats        || 0;
+  const pa   = player.plateAppearances || (ab + (player.baseOnBalls || 0));
+  const avg  = player.avg           || 0;
+  const obp  = player.obp           || 0;
+  const slg  = player.slg           || 0;
+  const hr   = player.homeRuns      || 0;
+  const rbi  = player.rbi           || 0;
+  const r    = player.runs          || 0;
+  const gp   = Math.max(player.gamesPlayed || 1, 1);
+  const bb   = player.baseOnBalls   || 0;
+  const k    = player.strikeOuts    || 0;
+  const hits = player.hits          || 0;
+  const dbl  = player.doubles       || 0;
+  const tri  = player.triples       || 0;
 
-  let score = 50;
-  if (category === 'hitting') {
-    score = 50 + (avg - 0.250) * 200 + (obp - 0.320) * 120 + (slg - 0.420) * 60 + mod;
-  } else if (category === 'hr') {
-    score = 50 + (hrRate - 0.030) * 1000 + (iso - 0.170) * 80 + mod * 1.2;
-  } else if (category === 'runs') {
-    score = 50 + ((rbi / gp) - 0.50) * 40 + ((r / gp) - 0.50) * 40 + (obp - 0.320) * 100 + mod;
+  const hrRate  = ab > 0 ? hr / ab : 0;
+  const iso     = Math.max(0, slg - avg);
+  const kPct    = pa > 0 ? k  / pa : 0.22;
+  const bbPct   = pa > 0 ? bb / pa : 0.08;
+  const singles = Math.max(0, hits - dbl - tri - hr);
+
+  // wOBA proxy — best single predictor for contact/power props
+  // Linear weights: BB=0.69, 1B=0.888, 2B=1.271, 3B=1.616, HR=2.101
+  const wOBA = pa > 0
+    ? (bb*0.690 + singles*0.888 + dbl*1.271 + tri*1.616 + hr*2.101) / pa
+    : (avg * 0.88 + obp * 0.12); // fallback if no PA
+
+  // Sample confidence: 0.5 at 150 AB → 1.0 at 450+ AB
+  // Prevents small-sample outliers from inflating scores
+  const confidence = Math.min(1.0, Math.max(0.5, (ab - 150) / 300 + 0.5));
+
+  // Pitcher difficulty — positive = batter-friendly (high ERA), negative = tough ace
+  const era = player.matchup?.pitcher?.era;
+  const pitcherMod = era != null ? Math.max(-10, Math.min(10, (era - 4.50) * 2.5)) : 0;
+
+  // Recency boost — applied when game log loads (defaults 0 until then)
+  let recencyBoost = 0;
+  const { streak, l10Avg } = player;
+  if (streak != null) {
+    if      (streak >= 8) recencyBoost += 12;
+    else if (streak >= 5) recencyBoost += 8;
+    else if (streak >= 3) recencyBoost += 4;
+    else if (streak === 0) recencyBoost -= 5;
   }
-  return Math.round(Math.max(5, Math.min(99, score)));
+  if (l10Avg != null && avg > 0) {
+    // % above/below season avg — hot player bumped, cold player penalised
+    recencyBoost += Math.max(-8, Math.min(8, ((l10Avg - avg) / avg) * 25));
+  }
+
+  let base = 50;
+
+  if (category === 'hitting') {
+    // wOBA centred at league avg ~0.315; K% penalises strikeout-prone batters
+    const wComp    = (wOBA - 0.315) * 250;
+    const kPenalty = Math.max(0, (kPct - 0.20) * 50);
+    const bbBonus  = Math.max(0, (bbPct - 0.08) * 25);
+    base = 53 + wComp - kPenalty + bbBonus + pitcherMod;
+
+  } else if (category === 'hr') {
+    // HR rate centred at ~3% (league avg); ISO rewards pure power
+    const hrComp  = Math.min(55, (hrRate / 0.08) * 55);
+    const isoComp = Math.max(0, Math.min(15, (iso - 0.100) / 0.200 * 15));
+    const kHit    = Math.max(0, (kPct - 0.25) * 25); // high K hurts HR props less
+    base = 18 + hrComp + isoComp - kHit + pitcherMod * 0.7;
+
+  } else if (category === 'runs') {
+    // R + RBI rate centred at 0.45 each (league avg ~0.5 but regressed)
+    const rComp   = Math.max(-15, Math.min(25, (r   / gp - 0.45) * 55));
+    const rbiComp = Math.max(-15, Math.min(25, (rbi / gp - 0.45) * 55));
+    const obpComp = Math.max(0,   Math.min(15, (obp - 0.300) / 0.120 * 15));
+    base = 40 + rComp + rbiComp + obpComp + pitcherMod;
+  }
+
+  // Shrink score toward 50 for thin sample sizes
+  const adjusted = 50 + (base - 50) * confidence;
+  return Math.round(Math.max(5, Math.min(99, adjusted + recencyBoost)));
 }
 
 function scorePitcher(stats) {
   const era  = stats.era  ?? 4.50;
   const whip = stats.whip ?? 1.30;
   const k9   = stats.k9   ?? 8.0;
-  return Math.round(Math.max(5, Math.min(99,
-    30 + Math.max(0, (6.0 - era) * 14) + Math.max(0, (k9 - 5.0) * 7) + Math.max(0, (2.0 - whip) * 18)
-  )));
+  // Centred at league avg: ERA 4.50, WHIP 1.30, K/9 8.5
+  const eraScore  = Math.max(-20, Math.min(30, (4.50 - era)  * 12));
+  const k9Score   = Math.max(-10, Math.min(20, (k9   - 7.50) * 5));
+  const whipScore = Math.max(-10, Math.min(15, (1.30 - whip) * 25));
+  return Math.round(Math.max(5, Math.min(99, 50 + eraScore + k9Score + whipScore)));
 }
 
 // ─── Streak ───────────────────────────────────────────────────────────────────
@@ -629,16 +687,24 @@ export default function DashboardPage() {
           const sd = await sr.json();
           for (const p of (sd.people||[])) {
             const st = p.stats?.find(s=>s.group?.displayName==='hitting')?.splits?.[0]?.stat;
-            if (st && (parseInt(st.atBats)||0) >= 30) {
+            if (st && (parseInt(st.atBats)||0) >= 150) {
               statsMap[p.id] = {
-                avg:         parseFloat(st.avg)          || 0,
-                slg:         parseFloat(st.slg)          || 0,
-                obp:         parseFloat(st.obp)          || 0,
-                homeRuns:    parseInt(st.homeRuns)        || 0,
-                atBats:      parseInt(st.atBats)          || 0,
-                gamesPlayed: parseInt(st.gamesPlayed)     || 1,
-                runs:        parseInt(st.runs)            || 0,
-                rbi:         parseInt(st.rbi)             || 0,
+                avg:               parseFloat(st.avg)              || 0,
+                slg:               parseFloat(st.slg)              || 0,
+                obp:               parseFloat(st.obp)              || 0,
+                homeRuns:          parseInt(st.homeRuns)            || 0,
+                atBats:            parseInt(st.atBats)              || 0,
+                gamesPlayed:       parseInt(st.gamesPlayed)         || 1,
+                runs:              parseInt(st.runs)                || 0,
+                rbi:               parseInt(st.rbi)                 || 0,
+                // Extra fields for wOBA proxy + K%/BB% model
+                hits:              parseInt(st.hits)                || 0,
+                doubles:           parseInt(st.doubles)             || 0,
+                triples:           parseInt(st.triples)             || 0,
+                baseOnBalls:       parseInt(st.baseOnBalls)         || 0,
+                strikeOuts:        parseInt(st.strikeOuts)          || 0,
+                plateAppearances:  parseInt(st.plateAppearances)    || 0,
+                babip:             parseFloat(st.babip)             || 0,
               };
             }
           }
@@ -667,12 +733,13 @@ export default function DashboardPage() {
             ...stats,
             matchup:     { isHome, oppAbbrev, pitcher },
             scores: {
-              hitting:  scoreForCategory(stats, pitcher, 'hitting'),
-              hr:       scoreForCategory(stats, pitcher, 'hr'),
-              runs:     scoreForCategory(stats, pitcher, 'runs'),
+              hitting:  computeProjectionScore({ ...stats, matchup:{ isHome, oppAbbrev, pitcher } }, 'hitting'),
+              hr:       computeProjectionScore({ ...stats, matchup:{ isHome, oppAbbrev, pitcher } }, 'hr'),
+              runs:     computeProjectionScore({ ...stats, matchup:{ isHome, oppAbbrev, pitcher } }, 'runs'),
               pitching: 0,
             },
             streak:        null,
+            l10Avg:        null,
             streakLoading: true,
           });
         }
@@ -721,16 +788,35 @@ export default function DashboardPage() {
   }
 
   async function fetchStreaks(playerIds) {
-    // Fetch 5 at a time
+    // Fetch 5 at a time to avoid hammering the backend
     for (let i = 0; i < playerIds.length; i += 5) {
       const batch = playerIds.slice(i, i + 5);
       await Promise.all(batch.map(async (pid) => {
         try {
           const r = await fetch(`${API_URL}/player/${pid}/gamelog?season=2025`);
           if (!r.ok) throw new Error();
-          const d = await r.json();
-          const streak = computeStreak(d.games || []);
-          setBoardPlayers(prev => prev.map(p => p.playerId===pid ? {...p, streak, streakLoading:false} : p));
+          const d    = await r.json();
+          const games = d.games || [];
+          const streak = computeStreak(games);
+
+          // L10 batting average from last 10 games
+          const last10 = games.slice(-10);
+          const l10H  = last10.reduce((a, g) => a + (Number(g.hits)   || 0), 0);
+          const l10AB = last10.reduce((a, g) => a + (Number(g.atBats) || 0), 0);
+          const l10Avg = l10AB >= 15 ? l10H / l10AB : null;
+
+          setBoardPlayers(prev => prev.map(p => {
+            if (p.playerId !== pid) return p;
+            const updated = { ...p, streak, l10Avg, streakLoading: false };
+            // Re-score all batting categories now that recency data is available
+            const newScores = { ...p.scores };
+            for (const cat of ['hitting', 'hr', 'runs']) {
+              if (newScores[cat] > 0) {
+                newScores[cat] = computeProjectionScore(updated, cat);
+              }
+            }
+            return { ...updated, scores: newScores };
+          }));
         } catch {
           setBoardPlayers(prev => prev.map(p => p.playerId===pid ? {...p, streakLoading:false} : p));
         }
