@@ -52,65 +52,188 @@ function Navbar() {
   );
 }
 
-// ─── Sample Matchup Card ──────────────────────────────────────────────────────
-function SampleMatchupCard() {
-  return (
-    <div className="relative rounded-2xl border border-blue-500/20 bg-gray-900 p-6 shadow-2xl shadow-blue-500/10">
-      <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-blue-500/5 to-cyan-500/5 pointer-events-none" />
-      <div className="absolute -inset-px rounded-2xl ring-1 ring-blue-500/10 pointer-events-none" />
+// ─── Sample Player Dashboard Card ────────────────────────────────────────────
+function SamplePlayerCard() {
+  // Sample data — Aaron Judge, L10 hits vs 1.5 line
+  const hits  = [2, 1, 3, 2, 0, 2, 1, 2, 3, 2];
+  const dates = ['3/13','3/14','3/15','3/16','3/17','3/18','3/19','3/20','3/21','3/22'];
+  const line  = 1.5;
+  const overCount = hits.filter(h => h > line).length; // 7
 
-      <div className="mb-4 flex items-center justify-between">
-        <span className="text-xs font-medium uppercase tracking-widest text-gray-500">Matchup Analysis</span>
-        <span className="rounded-full bg-blue-500/10 px-2.5 py-1 text-xs font-semibold text-blue-400 ring-1 ring-blue-500/20">
+  // Score ring (87)
+  const score = 87;
+  const r = 18, circ = 2 * Math.PI * r, dash = (score / 100) * circ;
+
+  // Bar chart
+  const BAR_W = 28, GAP = 5;
+  const VW = hits.length * (BAR_W + GAP) + GAP;
+  const H = 116, PT = 16, PB = 28, CH = H - PT - PB;
+  const maxVal = 4;
+  const lineY = PT + CH * (1 - line / maxVal);
+
+  return (
+    <div className="relative rounded-2xl border border-blue-500/20 bg-gray-900 p-5 shadow-2xl shadow-blue-500/10">
+      <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-blue-500/5 to-cyan-500/5 pointer-events-none"/>
+      <div className="absolute -inset-px rounded-2xl ring-1 ring-blue-500/10 pointer-events-none"/>
+
+      {/* Top label */}
+      <div className="flex items-center justify-between mb-4">
+        <span className="text-xs font-medium uppercase tracking-widest text-gray-500">Player Analysis</span>
+        <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-400 ring-1 ring-emerald-500/20">
           Live
         </span>
       </div>
 
-      <div className="mb-5 flex items-center justify-between gap-4">
-        <div>
-          <div className="text-base font-bold text-white">Mike Trout</div>
-          <div className="text-xs text-gray-500">Batter · OF · LAA</div>
+      {/* Player header */}
+      <div className="flex items-center gap-3 mb-4">
+        <img
+          src="https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_213,q_auto:best/v1/people/592450/headshot/67/current"
+          alt="Aaron Judge"
+          width={56} height={56}
+          className="rounded-full border-2 border-gray-700 bg-gray-800 object-cover flex-shrink-0"
+          style={{width:56,height:56}}
+        />
+        <div className="flex-1 min-w-0">
+          <p className="text-base font-bold text-white leading-tight">Aaron Judge</p>
+          <p className="text-xs text-gray-500">OF · NYY · Bats R</p>
+          <p className="text-xs text-blue-400 mt-0.5">vs T. Skubal · LHP · 2.94 ERA</p>
         </div>
-        <div className="text-gray-600 text-lg font-light">vs</div>
-        <div className="text-right">
-          <div className="text-base font-bold text-white">Gerrit Cole</div>
-          <div className="text-xs text-gray-500">Pitcher · SP · NYY</div>
-        </div>
-      </div>
-
-      <div className="mb-5 text-center rounded-xl bg-gray-950/80 py-5 border border-white/5">
-        <div className="text-6xl font-black text-yellow-400 tabular-nums">72</div>
-        <div className="mt-1 flex items-center justify-center gap-1.5">
-          <span className="text-sm">✅</span>
-          <span className="text-sm font-semibold text-gray-300">Good Value</span>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-lg bg-gray-800/50 p-3 border border-white/5">
-          <div className="text-xs text-gray-500 mb-1">Batting AVG</div>
-          <div className="text-sm font-bold text-white">.312</div>
-        </div>
-        <div className="rounded-lg bg-gray-800/50 p-3 border border-white/5">
-          <div className="text-xs text-gray-500 mb-1">OPS</div>
-          <div className="text-sm font-bold text-white">.931</div>
-        </div>
-        <div className="rounded-lg bg-gray-800/50 p-3 border border-white/5">
-          <div className="text-xs text-gray-500 mb-1">HR Rate</div>
-          <div className="text-sm font-bold text-white">6.2%</div>
-        </div>
-        <div className="rounded-lg bg-gray-800/50 p-3 border border-white/5">
-          <div className="text-xs text-gray-500 mb-1">Park Factor</div>
-          <div className="text-sm font-bold text-blue-400">+1.4%</div>
+        {/* Score ring */}
+        <div className="relative flex items-center justify-center flex-shrink-0" style={{width:52,height:52}}>
+          <svg width="52" height="52" viewBox="0 0 52 52">
+            <circle cx="26" cy="26" r={r} fill="none" stroke="#1f2937" strokeWidth="3.5"/>
+            <circle cx="26" cy="26" r={r} fill="none" stroke="#34d399" strokeWidth="3.5"
+              strokeDasharray={`${dash} ${circ - dash}`} strokeLinecap="round"
+              transform="rotate(-90 26 26)"/>
+          </svg>
+          <div className="absolute text-center">
+            <div className="text-xs font-black text-emerald-400 leading-none">{score}</div>
+            <div className="text-gray-600 leading-none" style={{fontSize:7}}>Model</div>
+          </div>
         </div>
       </div>
 
-      <div className="mt-4 flex items-center justify-between rounded-lg bg-blue-500/5 border border-blue-500/10 px-3 py-2.5">
-        <div className="flex items-center gap-2 text-xs text-gray-400">
-          <span>🌤️</span>
-          <span>72°F · Wind 8 mph out to RF</span>
+      {/* Chart header */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold text-white">Hits — Last 10 Games</span>
+          <span className="text-xs text-gray-600 bg-gray-800 px-1.5 py-0.5 rounded">Line: 1.5</span>
         </div>
-        <span className="text-xs font-medium text-blue-400">Favorable</span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-black text-emerald-400">{overCount}/10 OVER</span>
+          <div className="flex items-center gap-1 text-xs text-gray-500">
+            <span className="w-2.5 h-2 rounded-sm bg-emerald-500/80 inline-block"/>Over
+            <span className="w-2.5 h-2 rounded-sm bg-red-500/80 inline-block ml-1.5"/>Under
+          </div>
+        </div>
+      </div>
+
+      {/* Bar chart */}
+      <div className="mb-4 rounded-xl bg-gray-950/60 border border-gray-800/50 px-1 pt-1 pb-0.5">
+        <svg viewBox={`0 0 ${VW} ${H}`} width="100%" preserveAspectRatio="xMidYMid meet">
+          {[1,2,3,4].map(v => (
+            <line key={v} x1={0} y1={PT + CH*(1-v/maxVal)} x2={VW} y2={PT + CH*(1-v/maxVal)}
+              stroke="#1f2937" strokeWidth="1"/>
+          ))}
+          <line x1={0} y1={lineY} x2={VW} y2={lineY} stroke="#f59e0b" strokeWidth="1.5"
+            strokeDasharray="4 3" opacity="0.9"/>
+          {hits.map((val, i) => {
+            const isOver = val > line;
+            const barX  = i * (BAR_W + GAP) + GAP;
+            const barH  = Math.max(3, (val / maxVal) * CH);
+            const barY  = PT + CH * (1 - val / maxVal);
+            const lblY  = barY > PT + 12 ? barY - 4 : barY + 12;
+            return (
+              <g key={i}>
+                <rect x={barX+1} y={barY+1} width={BAR_W} height={barH} rx={3}
+                  fill={isOver ? '#16a34a' : val===0 ? '#111827' : '#b91c1c'} opacity="0.3"/>
+                <rect x={barX} y={barY} width={BAR_W} height={barH} rx={3}
+                  fill={val===0 ? '#1f2937' : isOver ? '#22c55e' : '#ef4444'} opacity="0.88"/>
+                {barH > 6 && <rect x={barX+3} y={barY+2} width={BAR_W-6} height={2} rx={1} fill="white" opacity="0.1"/>}
+                <text x={barX+BAR_W/2} y={lblY} textAnchor="middle"
+                  fill="white" fontSize="9" fontWeight="700">{val}</text>
+                <text x={barX+BAR_W/2} y={H-PB+13} textAnchor="middle"
+                  fill="#6b7280" fontSize="7.5">{dates[i]}</text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+
+      {/* Stats strip */}
+      <div className="grid grid-cols-4 gap-1.5 mb-4">
+        {[
+          { l:'AVG',      v:'.327', c:'text-emerald-400' },
+          { l:'OPS',      v:'.987', c:'text-emerald-400' },
+          { l:'Barrel%',  v:'20.1%',c:'text-yellow-400'  },
+          { l:'Hard Hit%',v:'63.1%',c:'text-emerald-400' },
+        ].map(s => (
+          <div key={s.l} className="rounded-lg bg-gray-800/60 border border-gray-700/40 py-2 text-center">
+            <div className={`text-xs font-black tabular-nums ${s.c}`}>{s.v}</div>
+            <div className="text-gray-600 mt-0.5" style={{fontSize:9}}>{s.l}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Recommendation banner */}
+      <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5 flex items-center justify-between">
+        <span className="text-sm font-bold text-emerald-400">Strong Value — Over 1.5</span>
+        <span className="text-xs text-gray-600">Cook The Books</span>
+      </div>
+    </div>
+  );
+}
+
+// ─── Teaser Side Cards ────────────────────────────────────────────────────────
+function SampleSideCards() {
+  return (
+    <div className="flex flex-col gap-3 mt-4 lg:mt-0">
+      {/* Splits teaser */}
+      <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-xs font-bold text-white">Handedness Splits</span>
+          <span className="ml-auto text-xs text-blue-500 bg-blue-500/10 px-2 py-0.5 rounded-full">Today</span>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          {[
+            { label:'vs Left', stats:[{l:'AVG',v:'.341',c:'text-emerald-400'},{l:'OPS',v:'1.042',c:'text-emerald-400'}] },
+            { label:'vs Right',stats:[{l:'AVG',v:'.301',c:'text-yellow-400'}, {l:'OPS',v:'.921',c:'text-emerald-400'}] },
+          ].map(row => (
+            <div key={row.label} className={`rounded-lg p-2.5 border ${row.label==='vs Left' ? 'border-blue-500/30 bg-blue-500/5' : 'border-gray-800 bg-gray-800/30'}`}>
+              <p className={`text-xs font-bold mb-1.5 ${row.label==='vs Left' ? 'text-blue-400' : 'text-gray-500'}`}>{row.label}</p>
+              <div className="flex gap-2">
+                {row.stats.map(s => (
+                  <div key={s.l}>
+                    <div className={`text-xs font-black tabular-nums ${s.c}`}>{s.v}</div>
+                    <div className="text-gray-600" style={{fontSize:9}}>{s.l}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Career H2H teaser */}
+      <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-xs font-bold text-white">Career vs Pitcher</span>
+          <span className="ml-auto text-xs text-gray-500 tabular-nums">42 AB</span>
+        </div>
+        <div className="grid grid-cols-5 gap-1.5">
+          {[
+            {l:'AVG', v:'.333',c:'text-emerald-400'},
+            {l:'OBP', v:'.381',c:'text-emerald-400'},
+            {l:'SLG', v:'.619',c:'text-emerald-400'},
+            {l:'OPS', v:'1.000',c:'text-emerald-400'},
+            {l:'HR',  v:'5',   c:'text-yellow-400'},
+          ].map(s => (
+            <div key={s.l} className="rounded bg-gray-800/60 border border-gray-700/30 py-1.5 text-center">
+              <div className={`text-xs font-black tabular-nums ${s.c}`}>{s.v}</div>
+              <div className="text-gray-600" style={{fontSize:9}}>{s.l}</div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -453,10 +576,11 @@ function Hero() {
             </div>
           </div>
 
-          {/* Right — sample card */}
+          {/* Right — player dashboard preview */}
           <div className="flex justify-center lg:justify-end">
             <div className="w-full max-w-sm">
-              <SampleMatchupCard />
+              <SamplePlayerCard />
+              <SampleSideCards />
             </div>
           </div>
         </div>
