@@ -613,6 +613,20 @@ export default function DashboardPage() {
   }, []);
 
   async function loadDailyBoard() {
+    // Bust localStorage cache on new deploy.
+    // NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA is injected automatically by Vercel
+    // and changes on every push, so any new deploy wipes stale roster/team cache.
+    try {
+      const deployId = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || 'dev';
+      if (localStorage.getItem('ctb_deploy') !== deployId) {
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+          const k = localStorage.key(i);
+          if (k?.startsWith('mlb_')) localStorage.removeItem(k);
+        }
+        localStorage.setItem('ctb_deploy', deployId);
+      }
+    } catch {}
+
     setBoardLoading(true);
     setBoardError(null);
     setBoardPlayers([]); // clear stale data before rebuild
