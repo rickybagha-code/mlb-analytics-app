@@ -39,6 +39,11 @@ function computeProjectionScore(player, category) {
   const dbl  = player.doubles       || 0;
   const tri  = player.triples       || 0;
 
+  // Statcast fields (null when not yet loaded)
+  const xwoba      = player.xwoba      ?? null;
+  const barrelPct  = player.barrelPct  ?? null;
+  const hardHitPct = player.hardHitPct ?? null;
+
   const hrRate  = ab > 0 ? hr / ab : 0;
   const iso     = Math.max(0, slg - avg);
   const kPct    = pa > 0 ? k  / pa : 0.22;
@@ -51,8 +56,11 @@ function computeProjectionScore(player, category) {
     ? (bb*0.690 + singles*0.888 + dbl*1.271 + tri*1.616 + hr*2.101) / pa
     : (avg * 0.88 + obp * 0.12); // fallback if no PA
 
+  // Blend with xwOBA (Statcast expected, luck-adjusted) when available
+  // xwOBA is 65% weight as it removes luck on balls in play
+  const effectiveWOBA = xwoba != null ? wOBA * 0.35 + xwoba * 0.65 : wOBA;
+
   // Sample confidence: 0.5 at 150 AB → 1.0 at 450+ AB
-  // Prevents small-sample outliers from inflating scores
   const confidence = Math.min(1.0, Math.max(0.5, (ab - 150) / 300 + 0.5));
 
   // Pitcher difficulty — positive = batter-friendly (high ERA), negative = tough ace
@@ -69,32 +77,34 @@ function computeProjectionScore(player, category) {
     else if (streak === 0) recencyBoost -= 5;
   }
   if (l10Avg != null && avg > 0) {
-    // % above/below season avg — hot player bumped, cold player penalised
     recencyBoost += Math.max(-8, Math.min(8, ((l10Avg - avg) / avg) * 25));
   }
 
   let base = 50;
 
   if (category === 'hitting') {
-    // wOBA centred at league avg ~0.315; K% penalises strikeout-prone batters
-    const wComp    = (wOBA - 0.315) * 250;
-    const kPenalty = Math.max(0, (kPct - 0.20) * 50);
-    const bbBonus  = Math.max(0, (bbPct - 0.08) * 25);
-    base = 53 + wComp - kPenalty + bbBonus + pitcherMod;
+    // effectiveWOBA (blended with xwOBA) centred at league avg ~0.315
+    const wComp     = (effectiveWOBA - 0.315) * 250;
+    const kPenalty  = Math.max(0, (kPct - 0.20) * 50);
+    const bbBonus   = Math.max(0, (bbPct - 0.08) * 25);
+    // Hard hit bonus: league median ~40%, elite ~58%+ (ev95percent from Baseball Savant)
+    const hardBonus = hardHitPct != null ? Math.max(0, Math.min(8, (hardHitPct - 40) / 18 * 8)) : 0;
+    base = 53 + wComp - kPenalty + bbBonus + hardBonus + pitcherMod;
 
   } else if (category === 'hr') {
-    // HR rate centred at ~3% (league avg); ISO rewards pure power
     const hrComp  = Math.min(55, (hrRate / 0.08) * 55);
     const isoComp = Math.max(0, Math.min(15, (iso - 0.100) / 0.200 * 15));
-    const kHit    = Math.max(0, (kPct - 0.25) * 25); // high K hurts HR props less
-    base = 18 + hrComp + isoComp - kHit + pitcherMod * 0.7;
+    const kHit    = Math.max(0, (kPct - 0.25) * 25);
+    // Barrel bonus: league avg ~7%, elite ~20%+ (brl_percent from Baseball Savant)
+    const barrelBonus = barrelPct != null ? Math.max(0, Math.min(15, (barrelPct - 5) / 15 * 15)) : 0;
+    base = 18 + hrComp + isoComp - kHit + barrelBonus + pitcherMod * 0.7;
 
   } else if (category === 'runs') {
-    // R + RBI rate centred at 0.45 each (league avg ~0.5 but regressed)
     const rComp   = Math.max(-15, Math.min(25, (r   / gp - 0.45) * 55));
     const rbiComp = Math.max(-15, Math.min(25, (rbi / gp - 0.45) * 55));
     const obpComp = Math.max(0,   Math.min(15, (obp - 0.300) / 0.120 * 15));
-    base = 40 + rComp + rbiComp + obpComp + pitcherMod;
+    const hardBonus = hardHitPct != null ? Math.max(0, Math.min(5, (hardHitPct - 40) / 18 * 5)) : 0;
+    base = 40 + rComp + rbiComp + obpComp + hardBonus + pitcherMod;
   }
 
   // Shrink score toward 50 for thin sample sizes
@@ -770,7 +780,7 @@ export default function DashboardPage() {
       setBoardPlayers(allPlayers);
       setBoardLoading(false);
 
-      // 6. Lazily fetch streaks for top-40 batters across categories
+      // 6. Enrichment phase — run in parallel (non-blocking)
       const topIds = new Set();
       for (const cat of ['hitting','hr','runs']) {
         [...allPlayers]
@@ -779,6 +789,8 @@ export default function DashboardPage() {
           .slice(0,20)
           .forEach(p=>topIds.add(p.playerId));
       }
+      // Statcast loads fast (1 request), streaks load progressively (batched)
+      fetchStatcastData();
       fetchStreaks([...topIds]);
 
     } catch (err) {
@@ -822,6 +834,26 @@ export default function DashboardPage() {
         }
       }));
     }
+  }
+
+  async function fetchStatcastData() {
+    try {
+      const r = await fetch(`${API_URL}/statcast/batters?season=2025`);
+      if (!r.ok) return;
+      const map = await r.json();
+      setBoardPlayers(prev => prev.map(p => {
+        const sc = map[p.playerId];
+        if (!sc) return p;
+        const updated = { ...p, ...sc };
+        const newScores = { ...p.scores };
+        for (const cat of ['hitting', 'hr', 'runs']) {
+          if (newScores[cat] > 0) {
+            newScores[cat] = computeProjectionScore(updated, cat);
+          }
+        }
+        return { ...updated, scores: newScores };
+      }));
+    } catch {}
   }
 
   // ── Load teams for manual dropdown ────────────────────────────────────────

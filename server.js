@@ -51,6 +51,41 @@ async function fetchJsonWithTimeout(url, timeoutMs = 8000) {
   return response.json();
 }
 
+async function fetchTextWithTimeout(url, timeoutMs = 15000) {
+  const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+  if (!response.ok) throw new Error(`Request failed: ${response.status}`);
+  return response.text();
+}
+
+// RFC-4180-safe CSV parser — handles quoted fields with commas inside
+function parseCSVLine(line) {
+  const result = [];
+  let cur = '';
+  let inQuotes = false;
+  for (const ch of line) {
+    if (ch === '"') inQuotes = !inQuotes;
+    else if (ch === ',' && !inQuotes) { result.push(cur); cur = ''; }
+    else cur += ch;
+  }
+  result.push(cur);
+  return result;
+}
+
+function parseCSV(text) {
+  const lines = text.trim().split('\n');
+  if (lines.length < 2) return [];
+  const headers = parseCSVLine(lines[0]);
+  return lines.slice(1).map(line => {
+    const vals = parseCSVLine(line);
+    return Object.fromEntries(headers.map((h, i) => [h, vals[i]?.trim() ?? '']));
+  });
+}
+
+// In-memory Statcast cache (6h TTL)
+let statcastCache = null;
+let statcastCacheTs = 0;
+const STATCAST_TTL = 6 * 60 * 60 * 1000;
+
 app.get('/', (req, res) => {
   res.send('home route works');
 });
@@ -698,6 +733,68 @@ app.get('/auto-matchup', async (req, res) => {
     });
   }
 });
+// Statcast Leaderboard Route (merges Baseball Savant expected stats + exit velocity)
+// Source 1: expected_statistics → est_woba (xwOBA)
+// Source 2: statcast leaderboard → brl_percent (barrel%), ev95percent (hard hit 95+ mph%)
+app.get('/statcast/batters', async (req, res) => {
+  const now = Date.now();
+  if (statcastCache && now - statcastCacheTs < STATCAST_TTL) {
+    return res.json(statcastCache);
+  }
+  try {
+    const year = req.query.season || DEFAULT_SEASON;
+    const [xwobaText, evText] = await Promise.all([
+      fetchTextWithTimeout(
+        `https://baseballsavant.mlb.com/leaderboard/expected_statistics?type=batter&year=${year}&position=&team=&min=10&csv=true`,
+        15000
+      ),
+      fetchTextWithTimeout(
+        `https://baseballsavant.mlb.com/leaderboard/statcast?type=batter&year=${year}&position=&team=&min=10&csv=true`,
+        15000
+      ),
+    ]);
+
+    const xwobaRows = parseCSV(xwobaText);
+    const evRows    = parseCSV(evText);
+
+    // Build xwOBA map
+    const result = {};
+    for (const row of xwobaRows) {
+      const pid = parseInt(row.player_id);
+      if (!pid) continue;
+      result[pid] = {
+        xwoba:      parseFloat(row.est_woba)   || null,
+        barrelPct:  null,
+        hardHitPct: null,
+        exitVelo:   null,
+      };
+    }
+
+    // Merge barrel% + hard hit% from EV leaderboard
+    for (const row of evRows) {
+      const pid = parseInt(row.player_id);
+      if (!pid) continue;
+      const brl = parseFloat(row.brl_percent)  || null;
+      const ev  = parseFloat(row.ev95percent)  || null;
+      const avg = parseFloat(row.avg_hit_speed)|| null;
+      if (result[pid]) {
+        result[pid].barrelPct  = brl;
+        result[pid].hardHitPct = ev;
+        result[pid].exitVelo   = avg;
+      } else {
+        result[pid] = { xwoba: null, barrelPct: brl, hardHitPct: ev, exitVelo: avg };
+      }
+    }
+
+    statcastCache = result;
+    statcastCacheTs = now;
+    res.json(result);
+  } catch (error) {
+    if (statcastCache) return res.json(statcastCache); // serve stale on error
+    res.status(500).json({ error: 'Failed to fetch Statcast data', details: error.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
