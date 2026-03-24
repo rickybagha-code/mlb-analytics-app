@@ -196,11 +196,14 @@ function fmt(v, d=3) { if (v==null) return '—'; const n=parseFloat(v); return 
 function LogoMark({ size=30 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 34 34" fill="none">
-      <path d="M17 2L32 17L17 32L2 17Z" fill="#0f1e3a" stroke="#3b82f6" strokeWidth="1.5"/>
-      <path d="M17 6L28 17L17 28L6 17Z" fill="#1e3a5f" opacity="0.5"/>
-      <path d="M10 21L13.5 15.5L16.5 18L23 11" stroke="#60a5fa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-      <circle cx="23" cy="11" r="2.2" fill="#3b82f6"/>
-      <circle cx="23" cy="11" r="1" fill="#93c5fd"/>
+      <path d="M17 1.5L32.5 17L17 32.5L1.5 17Z" fill="#0a1628" stroke="#2563eb" strokeWidth="1.5"/>
+      <path d="M17 5.5L28.5 17L17 28.5L5.5 17Z" fill="#0f2548" opacity="0.55"/>
+      <path d="M17 25L8.5 21.5L9 16L17 19Z" fill="#1e40af"/>
+      <path d="M17 25L25.5 21.5L25 16L17 19Z" fill="#3b82f6"/>
+      <line x1="17" y1="19" x2="17" y2="25" stroke="#93c5fd" strokeWidth="0.8" opacity="0.55"/>
+      <path d="M17 19C13.5 17.5 12.5 13.5 15 10.5C16 9.2 17 8.2 17 8.2C17 8.2 18 9.2 19 10.5C21.5 13.5 20.5 17.5 17 19Z" fill="#60a5fa"/>
+      <path d="M17 17.5C15.8 16 15.5 13.5 16.5 12C17 13 17.5 15.2 17 17.5Z" fill="white" opacity="0.28"/>
+      <circle cx="17" cy="8.2" r="1.5" fill="#bae6fd" opacity="0.9"/>
     </svg>
   );
 }
