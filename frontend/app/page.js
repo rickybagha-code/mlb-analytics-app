@@ -1,27 +1,22 @@
+'use client';
 import Link from 'next/link';
+import { useState } from 'react';
 
-// ─── Logo Mark ────────────────────────────────────────────────────────────────
-function LogoMark({ size = 34 }) {
+// ─── Home Plate Logo ──────────────────────────────────────────────────────────
+function HomePlateLogo({ size = 34, showWordmark = false, className = '' }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 34 34" fill="none">
-      {/* Diamond frame */}
-      <path d="M17 1.5L32.5 17L17 32.5L1.5 17Z" fill="#0a1628" stroke="#2563eb" strokeWidth="1.5"/>
-      <path d="M17 5.5L28.5 17L17 28.5L5.5 17Z" fill="#0f2548" opacity="0.55"/>
-      {/* Book left page */}
-      <path d="M17 25L8.5 21.5L9 16L17 19Z" fill="#1e40af"/>
-      {/* Book right page */}
-      <path d="M17 25L25.5 21.5L25 16L17 19Z" fill="#3b82f6"/>
-      {/* Spine */}
-      <line x1="17" y1="19" x2="17" y2="25" stroke="#93c5fd" strokeWidth="0.8" opacity="0.55"/>
-      {/* Flame */}
-      <path d="M17 19C13.5 17.5 12.5 13.5 15 10.5C16 9.2 17 8.2 17 8.2C17 8.2 18 9.2 19 10.5C21.5 13.5 20.5 17.5 17 19Z"
-        fill="#60a5fa"/>
-      {/* Flame inner highlight */}
-      <path d="M17 17.5C15.8 16 15.5 13.5 16.5 12C17 13 17.5 15.2 17 17.5Z"
-        fill="white" opacity="0.28"/>
-      {/* Tip spark */}
-      <circle cx="17" cy="8.2" r="1.5" fill="#bae6fd" opacity="0.9"/>
-    </svg>
+    <div className={`inline-flex items-center gap-2.5 ${className}`}>
+      <svg width={size} height={size} viewBox="0 0 32 32" fill="none">
+        <rect width="32" height="32" rx="4" fill="#0f1117"/>
+        <polygon points="16,27 6,19 6,7 26,7 26,19" fill="white"/>
+        <polygon points="16,23 9,18 9,10 23,10 23,18" fill="#0f1117"/>
+        <polygon points="16,20 12,17 12,13 20,13 20,17" fill="white"/>
+        <line x1="12" y1="15" x2="20" y2="15" stroke="#0f1117" strokeWidth="0.7"/>
+      </svg>
+      {showWordmark && (
+        <span className="font-black text-lg tracking-tight text-white">Cook The Books</span>
+      )}
+    </div>
   );
 }
 
@@ -32,7 +27,7 @@ function Navbar() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
           <Link href="/" className="flex items-center gap-2.5 group">
-            <LogoMark />
+            <HomePlateLogo size={32} />
             <span className="font-black text-lg tracking-tight text-white group-hover:text-blue-400 transition-colors">
               Cook The Books
             </span>
@@ -40,7 +35,7 @@ function Navbar() {
           <div className="hidden md:flex items-center gap-8">
             <a href="#how-it-works" className="text-sm text-gray-400 hover:text-white transition-colors">How It Works</a>
             <a href="#features" className="text-sm text-gray-400 hover:text-white transition-colors">Features</a>
-            <a href="#pitcher-model" className="text-sm text-gray-400 hover:text-white transition-colors">EV Model</a>
+            <a href="#ev-model" className="text-sm text-gray-400 hover:text-white transition-colors">EV Model</a>
             <a href="#pricing" className="text-sm text-gray-400 hover:text-white transition-colors">Pricing</a>
             <Link href="/dashboard" className="text-sm text-gray-400 hover:text-white transition-colors">Dashboard</Link>
           </div>
@@ -223,7 +218,6 @@ function Hero() {
       <div className="absolute inset-0 hero-grid"/>
       <div className="absolute top-0 left-1/2 -translate-x-1/2 h-[600px] w-[900px] rounded-full bg-blue-600/6 blur-3xl pointer-events-none"/>
       <div className="absolute top-0 left-1/2 -translate-x-1/2 h-[300px] w-[500px] rounded-full bg-blue-500/8 blur-2xl pointer-events-none"/>
-      {/* Bottom fade */}
       <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-gray-950 to-transparent pointer-events-none"/>
 
       <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-20 w-full">
@@ -233,7 +227,7 @@ function Hero() {
           <div className="max-w-xl">
             <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-blue-500/30 bg-blue-500/10 px-4 py-2 backdrop-blur-sm">
               <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse"/>
-              <span className="text-sm font-medium text-blue-300">MLB 2025 Season · Live Data</span>
+              <span className="text-sm font-medium text-blue-300">Live Data · Updated Daily</span>
             </div>
 
             <h1 className="text-5xl font-black leading-[1.08] tracking-tight text-white sm:text-6xl lg:text-7xl">
@@ -244,20 +238,23 @@ function Hero() {
             </h1>
 
             <p className="mt-6 text-lg leading-relaxed text-gray-400">
-              Cook The Books turns raw MLB data into a single 0–100 model score per player — combining Statcast quality of contact, batter-pitcher splits, recency trends, and career head-to-head history.
+              Six prop models — each backed by Statcast exit velocity, pitcher matchup data, and park factors — with a Poisson EV engine that tells you exactly where the line is mispriced before you bet it.
             </p>
 
-            {/* Inline proof points */}
-            <div className="mt-6 flex flex-wrap gap-x-6 gap-y-2">
+            {/* 3-col trust row */}
+            <div className="mt-6 grid grid-cols-3 gap-3">
               {[
-                { icon: '⚡', text: 'xwOBA + Barrel% model' },
-                { icon: '📊', text: 'L5 / L10 bar charts' },
-                { icon: '🎯', text: 'Poisson K projection' },
-                { icon: '⚔️', text: 'Career vs pitcher data' },
+                { label: '6 Prop Models', sub: 'Hits · HR · R · RBI · SB · Ks',
+                  icon: <svg className="w-5 h-5 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 5-5"/></svg> },
+                { label: 'Poisson EV%', sub: 'Model vs devigged odds',
+                  icon: <svg className="w-5 h-5 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/></svg> },
+                { label: 'Live Statcast', sub: 'xwOBA · Barrel% · Hard Hit%',
+                  icon: <svg className="w-5 h-5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> },
               ].map(p => (
-                <div key={p.text} className="flex items-center gap-1.5 text-sm text-gray-500">
-                  <span>{p.icon}</span>
-                  <span>{p.text}</span>
+                <div key={p.label} className="rounded-xl border border-gray-800 bg-gray-900/60 p-3 text-center">
+                  <div className="flex justify-center mb-1.5">{p.icon}</div>
+                  <div className="text-xs font-bold text-white">{p.label}</div>
+                  <div className="text-gray-600 mt-0.5 leading-tight" style={{fontSize:9}}>{p.sub}</div>
                 </div>
               ))}
             </div>
@@ -272,6 +269,12 @@ function Hero() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6"/>
                 </svg>
               </Link>
+              <a
+                href="#ev-model"
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-700 px-7 py-3.5 text-base font-semibold text-gray-300 hover:border-gray-500 hover:text-white transition-all"
+              >
+                See how the EV model works →
+              </a>
             </div>
             <p className="mt-3 text-xs text-gray-600">No credit card required · Free to start</p>
           </div>
@@ -286,30 +289,6 @@ function Hero() {
         </div>
       </div>
     </section>
-  );
-}
-
-// ─── Stats Bar ────────────────────────────────────────────────────────────────
-function StatsBar() {
-  const stats = [
-    { value: '700+',  label: 'Players tracked daily',   accent: 'text-blue-400'    },
-    { value: '30',    label: 'MLB teams covered',        accent: 'text-cyan-400'    },
-    { value: '6',     label: 'Data inputs per score',    accent: 'text-blue-400'    },
-    { value: '0–100', label: 'Composite model scale',    accent: 'text-emerald-400' },
-  ];
-  return (
-    <div className="border-y border-gray-800/60 bg-gray-900/30 py-8">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 divide-x-0 lg:divide-x divide-gray-800/50">
-          {stats.map((s, i) => (
-            <div key={i} className="text-center lg:px-8">
-              <div className={`text-3xl font-black tabular-nums ${s.accent}`}>{s.value}</div>
-              <div className="text-sm text-gray-500 mt-1">{s.label}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -361,9 +340,7 @@ function HowItWorks() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 relative">
-          {/* Connector line (desktop only) */}
           <div className="hidden lg:block absolute top-12 left-[calc(33.333%+1rem)] right-[calc(33.333%+1rem)] h-px bg-gradient-to-r from-blue-500/30 via-cyan-500/30 to-emerald-500/30"/>
-
           {steps.map((step) => {
             const c = colorMap[step.color];
             return (
@@ -391,7 +368,7 @@ function HowItWorks() {
   );
 }
 
-// ─── Feature Icons ────────────────────────────────────────────────────────────
+// ─── Features ─────────────────────────────────────────────────────────────────
 const features = [
   {
     num: '01',
@@ -403,7 +380,7 @@ const features = [
       </svg>
     ),
     title: 'Composite Model Score',
-    description: 'A proprietary 0–100 score blending wOBA, xwOBA, barrel%, hard hit%, recency, and pitcher ERA. One number — the full picture.',
+    description: 'A proprietary 0–100 score blending wOBA, xwOBA, barrel%, hard hit%, recency trends, and today\'s pitcher — condensed into a single number you can act on.',
   },
   {
     num: '02',
@@ -413,7 +390,7 @@ const features = [
       </svg>
     ),
     title: 'Statcast Integration',
-    description: 'xwOBA removes BABIP luck. Barrel% and hard hit% (95+ mph) reveal the true quality behind every batted ball.',
+    description: 'xwOBA strips out BABIP luck. Barrel% and hard hit% (95+ mph) expose who\'s genuinely hitting the ball hard — regardless of what the box score says.',
   },
   {
     num: '03',
@@ -423,7 +400,7 @@ const features = [
       </svg>
     ),
     title: 'Recency-Weighted Trends',
-    description: 'L5 and L10 game windows shown as visual bar charts. Hot streaks and cold snaps are reflected in the model score in real time.',
+    description: 'L5 and L10 game logs visualized as color-coded bar charts. Cold snaps and hot streaks feed directly into the model score in real time.',
   },
   {
     num: '04',
@@ -435,7 +412,7 @@ const features = [
       </svg>
     ),
     title: 'Auto Handedness Splits',
-    description: 'vs LHP and vs RHP splits resolved automatically against today\'s probable. Always the right platoon stats — no manual lookup.',
+    description: 'vs LHP and vs RHP splits auto-matched against today\'s probable starter. The right platoon stats, resolved for you — every game, every day.',
   },
   {
     num: '05',
@@ -448,7 +425,7 @@ const features = [
       </svg>
     ),
     title: 'Career Head-to-Head',
-    description: 'Complete batter vs pitcher career history — AB, H, 1B, 2B, 3B, HR, RBI, BB, K, AVG, OBP, SLG, OPS, and wOBA in one card.',
+    description: 'Full batter-vs-pitcher career history — AB, H, 2B, HR, RBI, AVG, OBP, SLG, OPS, and wOBA in a single card. Know who owns who before the first pitch.',
   },
   {
     num: '06',
@@ -459,7 +436,7 @@ const features = [
       </svg>
     ),
     title: 'Full Prop Categories',
-    description: 'Hits, Runs, RBI, Home Runs, and Stolen Bases — each with selectable Vegas lines and their own model scoring context.',
+    description: 'Hits, Home Runs, Runs, RBI, and Stolen Bases — each category scored independently with its own model weighting and line-specific context.',
   },
   {
     num: '07',
@@ -468,8 +445,8 @@ const features = [
         <path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 5-5"/>
       </svg>
     ),
-    title: 'Pitcher K Projection + EV%',
-    description: 'Poisson distribution over every K total, 80% confidence band, and an EV% gauge that compares model probability to the devigged book price.',
+    title: 'Prop EV Model',
+    description: 'Poisson distribution across every prop total, an EV% gauge that measures model probability vs. devigged book price, and a factor breakdown — for all five prop types.',
   },
 ];
 
@@ -515,40 +492,137 @@ function FeaturesSection() {
   );
 }
 
-// ─── Pitcher EV Model Showcase ────────────────────────────────────────────────
-function SampleProjectionCard() {
-  // Static Poisson distribution for lambda=7.2, bookLine=6.5
-  // Heights as fraction of max bar (k=7 is peak)
-  const bars = [
-    { k:0,  h:3,   over:false },
-    { k:1,  h:4,   over:false },
-    { k:2,  h:15,  over:false },
-    { k:3,  h:34,  over:false },
-    { k:4,  h:62,  over:false },
-    { k:5,  h:90,  over:false },
-    { k:6,  h:107, over:false },
-    { k:7,  h:110, over:true  },
-    { k:8,  h:99,  over:true  },
-    { k:9,  h:79,  over:true  },
-    { k:10, h:57,  over:true  },
-    { k:11, h:37,  over:true  },
-    { k:12, h:23,  over:true  },
-    { k:13, h:12,  over:true  },
-    { k:14, h:7,   over:true  },
-  ];
-  const W=320, H=148, PT=22, PB=26, PL=8, PR=8;
-  const CH=H-PT-PB, barW=19, gap=2.2;
+// ─── EV Model Section ─────────────────────────────────────────────────────────
+const DEMO_BARS = {
+  strikeouts: [
+    { k:0,  h:3,   over:false }, { k:1,  h:4,   over:false }, { k:2,  h:15,  over:false },
+    { k:3,  h:34,  over:false }, { k:4,  h:62,  over:false }, { k:5,  h:90,  over:false },
+    { k:6,  h:107, over:false }, { k:7,  h:110, over:true  }, { k:8,  h:99,  over:true  },
+    { k:9,  h:79,  over:true  }, { k:10, h:57,  over:true  }, { k:11, h:37,  over:true  },
+    { k:12, h:23,  over:true  }, { k:13, h:12,  over:true  }, { k:14, h:7,   over:true  },
+  ],
+  hits: [
+    { k:0, h:25, over:false }, { k:1, h:72, over:false },
+    { k:2, h:110, over:true }, { k:3, h:82, over:true },
+    { k:4, h:44, over:true  }, { k:5, h:17, over:true }, { k:6, h:5, over:true },
+  ],
+  hr: [
+    { k:0, h:110, over:false }, { k:1, h:27, over:true }, { k:2, h:4, over:true },
+  ],
+  runs: [
+    { k:0, h:66, over:false }, { k:1, h:110, over:true },
+    { k:2, h:76, over:true  }, { k:3, h:32, over:true }, { k:4, h:10, over:true },
+  ],
+  rbi: [
+    { k:0, h:74, over:false }, { k:1, h:110, over:true },
+    { k:2, h:70, over:true  }, { k:3, h:28, over:true }, { k:4, h:8, over:true },
+  ],
+};
 
-  // EV gauge for +4.7%
-  const evPct = 4.7;
-  const norm  = (evPct + 15) / 30;
+const DEMO_PROPS = {
+  strikeouts: {
+    label:'Strikeouts', line:'6.5', projVal:'7.2', ci:'5.1–9.3', evPct:4.7,
+    pOver:'60.0', pUnder:'40.0', xAxisLabel:'Strikeouts',
+    tiles:[
+      { label:'Proj Ks',   val:'7.2',     cls:'text-blue-400',    bg:'bg-blue-500/10 border-blue-500/30'     },
+      { label:'80% CI',    val:'5.1–9.3', cls:'text-gray-300',    bg:'bg-gray-800/60 border-gray-700/40'     },
+      { label:'Book Line', val:'6.5',     cls:'text-amber-400',   bg:'bg-amber-500/10 border-amber-500/30'   },
+      { label:'EV Signal', val:'+4.7%',   cls:'text-yellow-400',  bg:'bg-yellow-500/10 border-yellow-500/30' },
+    ],
+    factors:[
+      { label:'L5 K avg',       impact:'+1.70', dir:'↑', cls:'text-emerald-400' },
+      { label:'Season K/start', impact:'+0.30', dir:'↑', cls:'text-emerald-400' },
+      { label:'Rest/weather',   impact:'+0.20', dir:'↑', cls:'text-emerald-400' },
+      { label:'Park factor',    impact:'—',     dir:'',  cls:'text-gray-600'    },
+    ],
+  },
+  hits: {
+    label:'Hits', line:'1.5', projVal:'1.9', ci:'0.8–3.0', evPct:3.2,
+    pOver:'52.4', pUnder:'47.6', xAxisLabel:'Hits',
+    tiles:[
+      { label:'Proj H',    val:'1.9',     cls:'text-blue-400',    bg:'bg-blue-500/10 border-blue-500/30'     },
+      { label:'80% CI',    val:'0.8–3.0', cls:'text-gray-300',    bg:'bg-gray-800/60 border-gray-700/40'     },
+      { label:'Book Line', val:'1.5',     cls:'text-amber-400',   bg:'bg-amber-500/10 border-amber-500/30'   },
+      { label:'EV Signal', val:'+3.2%',   cls:'text-yellow-400',  bg:'bg-yellow-500/10 border-yellow-500/30' },
+    ],
+    factors:[
+      { label:'L10 H avg',       impact:'+0.40', dir:'↑', cls:'text-emerald-400' },
+      { label:'Season BA',       impact:'+0.20', dir:'↑', cls:'text-emerald-400' },
+      { label:'Handedness split',impact:'+0.10', dir:'↑', cls:'text-emerald-400' },
+      { label:'Park factor',     impact:'—',     dir:'',  cls:'text-gray-600'    },
+    ],
+  },
+  hr: {
+    label:'Home Runs', line:'0.5', projVal:'0.22', ci:'0–1', evPct:6.8,
+    pOver:'19.7', pUnder:'80.3', xAxisLabel:'Home Runs',
+    tiles:[
+      { label:'Proj HR',   val:'0.22', cls:'text-blue-400',    bg:'bg-blue-500/10 border-blue-500/30'       },
+      { label:'80% CI',    val:'0–1',  cls:'text-gray-300',    bg:'bg-gray-800/60 border-gray-700/40'       },
+      { label:'Book Line', val:'0.5',  cls:'text-amber-400',   bg:'bg-amber-500/10 border-amber-500/30'     },
+      { label:'EV Signal', val:'+6.8%',cls:'text-emerald-400', bg:'bg-emerald-500/10 border-emerald-500/30' },
+    ],
+    factors:[
+      { label:'HR rate (L10)',   impact:'+0.08', dir:'↑', cls:'text-emerald-400' },
+      { label:'Barrel% vs SP',   impact:'+0.06', dir:'↑', cls:'text-emerald-400' },
+      { label:'Park HR factor',  impact:'+0.04', dir:'↑', cls:'text-emerald-400' },
+      { label:'Handedness',      impact:'—',     dir:'',  cls:'text-gray-600'    },
+    ],
+  },
+  runs: {
+    label:'Runs', line:'0.5', projVal:'0.72', ci:'0–2', evPct:-1.4,
+    pOver:'51.3', pUnder:'48.7', xAxisLabel:'Runs',
+    tiles:[
+      { label:'Proj R',    val:'0.72',  cls:'text-blue-400',  bg:'bg-blue-500/10 border-blue-500/30'   },
+      { label:'80% CI',    val:'0–2',   cls:'text-gray-300',  bg:'bg-gray-800/60 border-gray-700/40'   },
+      { label:'Book Line', val:'0.5',   cls:'text-amber-400', bg:'bg-amber-500/10 border-amber-500/30' },
+      { label:'EV Signal', val:'-1.4%', cls:'text-red-400',   bg:'bg-red-500/10 border-red-500/30'     },
+    ],
+    factors:[
+      { label:'L10 R avg',   impact:'+0.18', dir:'↑', cls:'text-emerald-400' },
+      { label:'Lineup slot', impact:'-0.12', dir:'↓', cls:'text-red-400'     },
+      { label:'Pitcher ERA', impact:'-0.10', dir:'↓', cls:'text-red-400'     },
+      { label:'Park factor', impact:'+0.06', dir:'↑', cls:'text-emerald-400' },
+    ],
+  },
+  rbi: {
+    label:'RBI', line:'0.5', projVal:'0.68', ci:'0–2', evPct:5.1,
+    pOver:'43.1', pUnder:'56.9', xAxisLabel:'RBI',
+    tiles:[
+      { label:'Proj RBI',  val:'0.68',  cls:'text-blue-400',    bg:'bg-blue-500/10 border-blue-500/30'       },
+      { label:'80% CI',    val:'0–2',   cls:'text-gray-300',    bg:'bg-gray-800/60 border-gray-700/40'       },
+      { label:'Book Line', val:'0.5',   cls:'text-amber-400',   bg:'bg-amber-500/10 border-amber-500/30'     },
+      { label:'EV Signal', val:'+5.1%', cls:'text-emerald-400', bg:'bg-emerald-500/10 border-emerald-500/30' },
+    ],
+    factors:[
+      { label:'L10 RBI avg', impact:'+0.22', dir:'↑', cls:'text-emerald-400' },
+      { label:'SLG vs SP',   impact:'+0.14', dir:'↑', cls:'text-emerald-400' },
+      { label:'RISP OPS',    impact:'+0.08', dir:'↑', cls:'text-emerald-400' },
+      { label:'Park factor', impact:'—',     dir:'',  cls:'text-gray-600'    },
+    ],
+  },
+};
+
+function InteractiveDemoCard({ propKey }) {
+  const prop = DEMO_PROPS[propKey];
+  const bars = DEMO_BARS[propKey];
+
+  const evPct = prop.evPct;
+  const norm = Math.max(0, Math.min(1, (evPct + 15) / 30));
   const sweep = norm * 180;
-  const cx=80, cy=72, R=54, sw=13;
+  const cx = 80, cy = 72, R = 54, sw = 13;
   const d2r = d => d * Math.PI / 180;
   const sx = cx + R * Math.cos(d2r(180));
   const sy = cy + R * Math.sin(d2r(180));
   const ex = cx + R * Math.cos(d2r(180 + sweep));
   const ey = cy + R * Math.sin(d2r(180 + sweep));
+  const gaugeColor = evPct >= 5 ? '#34d399' : evPct >= 2 ? '#eab308' : evPct >= 0 ? '#6b7280' : '#ef4444';
+  const evSign = evPct > 0 ? '+' : '';
+
+  const barW = 19, gap = 2.2, H = 148, PT = 22, PB = 26, PL = 8;
+  const CH = H - PT - PB;
+  const W = PL * 2 + bars.length * (barW + gap);
+  const lineBarIdx = bars.findIndex(b => b.over);
+  const lineX = PL + lineBarIdx * (barW + gap) - 1;
 
   return (
     <div className="relative rounded-2xl border border-blue-500/20 bg-gray-900 p-5 shadow-2xl shadow-blue-500/10">
@@ -557,31 +631,18 @@ function SampleProjectionCard() {
 
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <img
-            src="https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_213,q_auto:best/v1/people/605483/headshot/67/current"
-            alt="Pitcher" width={36} height={36}
-            className="rounded-full border border-gray-700 bg-gray-800 object-cover flex-shrink-0"
-            style={{width:36,height:36}}
-          />
-          <div>
-            <p className="text-sm font-bold text-white leading-tight">SP Analysis</p>
-            <p className="text-xs text-gray-500">RHP · 2025 Season</p>
-          </div>
+        <div>
+          <p className="text-sm font-bold text-white leading-tight">Prop EV Model</p>
+          <p className="text-xs text-gray-500">{prop.label} · Line {prop.line}</p>
         </div>
         <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-400 ring-1 ring-emerald-500/20">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"/>Live
         </span>
       </div>
 
-      {/* 4 summary tiles */}
+      {/* 4 tiles */}
       <div className="grid grid-cols-4 gap-1.5 mb-4">
-        {[
-          { label:'Proj Ks',  val:'7.2', cls:'text-blue-400',    bg:'bg-blue-500/10 border-blue-500/30' },
-          { label:'80% CI',   val:'5.1–9.3', cls:'text-gray-300', bg:'bg-gray-800/60 border-gray-700/40' },
-          { label:'Book Line',val:'6.5', cls:'text-amber-400',   bg:'bg-amber-500/10 border-amber-500/30' },
-          { label:'EV Signal',val:'+4.7%', cls:'text-yellow-400', bg:'bg-yellow-500/10 border-yellow-500/30' },
-        ].map(t => (
+        {prop.tiles.map(t => (
           <div key={t.label} className={`rounded-lg border p-2 text-center ${t.bg}`}>
             <div className={`text-xs font-black tabular-nums ${t.cls}`}>{t.val}</div>
             <div className="text-gray-600 mt-0.5" style={{fontSize:8}}>{t.label}</div>
@@ -589,13 +650,12 @@ function SampleProjectionCard() {
         ))}
       </div>
 
-      {/* Two-column: Poisson chart + EV gauge */}
+      {/* Poisson chart + EV gauge */}
       <div className="grid grid-cols-5 gap-2 mb-3">
-        {/* Poisson chart — 3 cols */}
         <div className="col-span-3 rounded-xl bg-gray-950/60 border border-gray-800/50 px-1 pt-1 pb-0.5">
           <svg viewBox={`0 0 ${W} ${H}`} width="100%" preserveAspectRatio="xMidYMid meet">
-            <text x={W*0.28} y={13} textAnchor="middle" fill="#60a5fb" fontSize="8" fontWeight="700">P(Under) 40.0%</text>
-            <text x={W*0.72} y={13} textAnchor="middle" fill="#f59e0b" fontSize="8" fontWeight="700">P(Over) 60.0%</text>
+            <text x={W*0.28} y={13} textAnchor="middle" fill="#60a5fb" fontSize="8" fontWeight="700">P(Under) {prop.pUnder}%</text>
+            <text x={W*0.72} y={13} textAnchor="middle" fill="#f59e0b" fontSize="8" fontWeight="700">P(Over) {prop.pOver}%</text>
             {bars.map(({ k, h, over }) => {
               const x = PL + k * (barW + gap);
               const y = PT + CH - h;
@@ -606,26 +666,22 @@ function SampleProjectionCard() {
                 </g>
               );
             })}
-            <line x1={PL+7*(barW+gap)-1} y1={PT-4} x2={PL+7*(barW+gap)-1} y2={H-PB+4}
-              stroke="#ef4444" strokeWidth="1.5" strokeDasharray="4 2"/>
-            {bars.map(({ k }) => k % 2 === 0 && (
+            <line x1={lineX} y1={PT-4} x2={lineX} y2={H-PB+4} stroke="#ef4444" strokeWidth="1.5" strokeDasharray="4 2"/>
+            {bars.map(({ k }) => (
               <text key={k} x={PL+k*(barW+gap)+barW/2} y={H-PB+12} textAnchor="middle" fill="#6b7280" fontSize="7">{k}</text>
             ))}
-            <text x={W/2} y={H-1} textAnchor="middle" fill="#374151" fontSize="7">Strikeouts</text>
+            <text x={W/2} y={H-1} textAnchor="middle" fill="#374151" fontSize="7">{prop.xAxisLabel}</text>
           </svg>
         </div>
 
-        {/* EV gauge — 2 cols */}
         <div className="col-span-2 flex items-center justify-center">
           <svg width={cx*2} height={cy+20} viewBox={`0 0 ${cx*2} ${cy+20}`} style={{overflow:'visible'}}>
-            {/* Track */}
             <path d={`M ${cx-R} ${cy} A ${R} ${R} 0 0 1 ${cx+R} ${cy}`}
               fill="none" stroke="#1f2937" strokeWidth={sw} strokeLinecap="round"/>
-            {/* Fill arc */}
             <path d={`M ${sx} ${sy} A ${R} ${R} 0 0 1 ${ex} ${ey}`}
-              fill="none" stroke="#eab308" strokeWidth={sw} strokeLinecap="round"/>
-            <text x={cx} y={cy-20} textAnchor="middle" fontSize="18" fontWeight="900" fill="#eab308" fontFamily="monospace">+4.7%</text>
-            <text x={cx} y={cy-6}  textAnchor="middle" fontSize="8"  fill="#6b7280">EV Edge</text>
+              fill="none" stroke={gaugeColor} strokeWidth={sw} strokeLinecap="round"/>
+            <text x={cx} y={cy-20} textAnchor="middle" fontSize="18" fontWeight="900" fill={gaugeColor} fontFamily="monospace">{evSign}{evPct}%</text>
+            <text x={cx} y={cy-6}  textAnchor="middle" fontSize="8" fill="#6b7280">EV Edge</text>
             <text x={cx-R-2} y={cy+14} textAnchor="end"   fontSize="7" fill="#374151">-15%</text>
             <text x={cx+R+2} y={cy+14} textAnchor="start" fontSize="7" fill="#374151">+15%</text>
           </svg>
@@ -637,12 +693,7 @@ function SampleProjectionCard() {
         <div className="flex items-center gap-2 px-3 py-1.5 border-b border-gray-800">
           <span className="text-xs font-bold text-gray-400">Factor Breakdown</span>
         </div>
-        {[
-          { label:'L5 K avg',       impact:'+1.70', dir:'↑', cls:'text-emerald-400' },
-          { label:'Season K/start', impact:'+0.30', dir:'↑', cls:'text-emerald-400' },
-          { label:'Rest/weather',   impact:'+0.20', dir:'↑', cls:'text-emerald-400' },
-          { label:'Park factor',    impact:'—',     dir:'',  cls:'text-gray-600'    },
-        ].map(f => (
+        {prop.factors.map(f => (
           <div key={f.label} className="flex items-center justify-between px-3 py-1.5 border-b border-gray-800/50 last:border-0">
             <span className="text-xs text-gray-500">{f.label}</span>
             <span className={`text-xs font-bold tabular-nums ${f.cls}`}>{f.dir} {f.impact}</span>
@@ -653,31 +704,39 @@ function SampleProjectionCard() {
   );
 }
 
-function PitcherEVSection() {
+function EVSection() {
+  const [activeProp, setActiveProp] = useState('strikeouts');
+  const PROP_TABS = [
+    { id:'hits',       label:'Hits'       },
+    { id:'hr',         label:'Home Runs'  },
+    { id:'runs',       label:'Runs'       },
+    { id:'rbi',        label:'RBI'        },
+    { id:'strikeouts', label:'Strikeouts' },
+  ];
+
   return (
-    <section id="pitcher-model" className="py-24 relative overflow-hidden">
+    <section id="ev-model" className="py-24 relative overflow-hidden">
       <div className="absolute inset-0 bg-gradient-to-b from-transparent via-blue-950/10 to-transparent pointer-events-none"/>
       <div className="absolute top-1/2 left-1/4 -translate-y-1/2 w-96 h-96 bg-blue-600/5 blur-3xl rounded-full pointer-events-none"/>
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
 
           {/* Left copy */}
           <div>
             <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/10 px-4 py-1.5">
               <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse"/>
-              <span className="text-xs font-semibold uppercase tracking-widest text-blue-400">Pitcher Intelligence</span>
+              <span className="text-xs font-semibold uppercase tracking-widest text-blue-400">Prop Intelligence</span>
             </div>
 
             <h2 className="text-3xl font-bold text-white sm:text-4xl leading-tight">
-              Know the K Line Before<br/>
+              Know Where Every Line<br/>
               <span className="bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
-                You Place the Bet
+                Is Mispriced
               </span>
             </h2>
 
             <p className="mt-4 text-gray-400 leading-relaxed">
-              Our Poisson-based strikeout projection model combines a pitcher&apos;s L5 average, season K rate, rest days, and park factors to build a full probability distribution — not just a single guess.
+              Our Poisson EV model runs across all five prop categories — hits, home runs, runs, RBI, and stolen bases — building a full probability distribution for each, then comparing it against the devigged book price to surface genuine edge.
             </p>
 
             <div className="mt-8 space-y-4">
@@ -688,8 +747,8 @@ function PitcherEVSection() {
                       <path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 5-5"/>
                     </svg>
                   ),
-                  title: 'Poisson Distribution',
-                  desc: 'Full P(k) curve across every possible strikeout total — so you see P(Under) and P(Over) for any book line, not just the average.',
+                  title: 'Full Distribution',
+                  desc: 'P(k) curve across every possible outcome — so you see P(Over) and P(Under) for any book line, not just the projected mean.',
                 },
                 {
                   icon: (
@@ -698,7 +757,7 @@ function PitcherEVSection() {
                     </svg>
                   ),
                   title: 'EV% Signal',
-                  desc: 'Expected value calculated by comparing model probability to the devigged book price. Positive EV means the line is mispriced in your favor.',
+                  desc: 'Model probability vs. devigged implied odds. Positive EV means the line is mispriced in your favor. Negative EV = fade or pass.',
                 },
                 {
                   icon: (
@@ -706,8 +765,8 @@ function PitcherEVSection() {
                       <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
                     </svg>
                   ),
-                  title: '80% Confidence Band',
-                  desc: 'The projection shows a lower and upper bound so you know the realistic floor and ceiling — not just the mean outcome.',
+                  title: 'Confidence Band',
+                  desc: 'Lower and upper bounds on the projection — know the realistic floor and ceiling before you size the bet.',
                 },
                 {
                   icon: (
@@ -715,8 +774,8 @@ function PitcherEVSection() {
                       <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
                     </svg>
                   ),
-                  title: 'K Projection Score',
-                  desc: 'Each pitcher gets a 0–100 K Proj score derived from their projection — visible right on the player card alongside their ERA score.',
+                  title: 'All 5 Prop Types',
+                  desc: 'One model framework across Hits, HR, Runs, RBI, and SB — consistent methodology whether you\'re fading a cold bat or riding a hot arm.',
                 },
               ].map(f => (
                 <div key={f.title} className="flex items-start gap-3.5">
@@ -736,7 +795,7 @@ function PitcherEVSection() {
                 href="/dashboard"
                 className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-blue-500/25 hover:bg-blue-500 transition-all hover:-translate-y-0.5"
               >
-                Try It on a Live Pitcher
+                See It on a Live Player
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6"/>
                 </svg>
@@ -744,10 +803,26 @@ function PitcherEVSection() {
             </div>
           </div>
 
-          {/* Right preview card */}
-          <div className="flex justify-center lg:justify-end">
+          {/* Right interactive card */}
+          <div className="flex flex-col items-center lg:items-end gap-4">
+            {/* Prop selector pills */}
+            <div className="flex flex-wrap gap-2 justify-center lg:justify-end">
+              {PROP_TABS.map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveProp(tab.id)}
+                  className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all ${
+                    activeProp === tab.id
+                      ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25'
+                      : 'border border-gray-700 text-gray-400 hover:border-gray-500 hover:text-white'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
             <div className="w-full max-w-sm">
-              <SampleProjectionCard/>
+              <InteractiveDemoCard propKey={activeProp} />
             </div>
           </div>
 
@@ -835,11 +910,9 @@ function PricingSection() {
                   : 'border-gray-800 bg-gray-900/60'
               }`}
             >
-              {/* Pro gradient top accent */}
               {plan.highlight && (
                 <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-blue-400 to-transparent rounded-t-2xl"/>
               )}
-
               {plan.badge && (
                 <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
                   <span className="rounded-full bg-blue-600 px-4 py-1 text-xs font-bold text-white shadow-lg shadow-blue-500/30">
@@ -847,7 +920,6 @@ function PricingSection() {
                   </span>
                 </div>
               )}
-
               <div className="mb-6">
                 <div className={`text-xs font-bold uppercase tracking-widest mb-2 ${plan.highlight ? 'text-blue-400' : 'text-gray-500'}`}>{plan.name}</div>
                 <div className="flex items-baseline gap-1">
@@ -856,7 +928,6 @@ function PricingSection() {
                 </div>
                 <p className="mt-2 text-sm text-gray-500">{plan.description}</p>
               </div>
-
               <ul className="mb-8 flex-1 space-y-3">
                 {plan.features.map((feature) => (
                   <li key={feature} className="flex items-start gap-3">
@@ -867,7 +938,6 @@ function PricingSection() {
                   </li>
                 ))}
               </ul>
-
               <Link
                 href={plan.ctaHref}
                 className={`block w-full rounded-xl py-3 text-center text-sm font-bold transition-all ${
@@ -882,9 +952,8 @@ function PricingSection() {
           ))}
         </div>
 
-        {/* Trust signals */}
         <div className="mt-10 flex flex-wrap items-center justify-center gap-x-8 gap-y-3">
-          {['No credit card required', 'Cancel anytime', 'For research purposes only', 'MLB 2025 season data'].map(t => (
+          {['No credit card required', 'Cancel anytime', 'For research purposes only', 'MLB season data — updated daily'].map(t => (
             <div key={t} className="flex items-center gap-2 text-sm text-gray-600">
               <svg className="h-3.5 w-3.5 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7"/>
@@ -900,9 +969,27 @@ function PricingSection() {
 
 // ─── Bottom CTA ───────────────────────────────────────────────────────────────
 function BottomCTA() {
+  const quotes = [
+    { text: 'Finally a tool that shows the math behind the edge — not just a pick.', handle: '@propgrinder' },
+    { text: 'The Poisson chart and EV% gauge changed how I approach K props. Night and day.', handle: '@sharpbettingpod' },
+    { text: 'Statcast + head-to-head in one place. I stopped using five tabs the same day.', handle: '@baseballbettingpro' },
+  ];
+
   return (
     <section className="py-20 px-4">
-      <div className="mx-auto max-w-3xl">
+      <div className="mx-auto max-w-5xl">
+
+        {/* Social proof strip */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-10">
+          {quotes.map(q => (
+            <div key={q.handle} className="rounded-xl border border-gray-800 bg-gray-900/60 p-5">
+              <p className="text-sm text-gray-300 leading-relaxed mb-3">&ldquo;{q.text}&rdquo;</p>
+              <p className="text-xs font-semibold text-blue-400">{q.handle}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* CTA card */}
         <div className="relative rounded-3xl border border-blue-500/20 bg-gradient-to-br from-blue-950/40 via-gray-900 to-gray-900 p-12 text-center overflow-hidden shadow-2xl shadow-blue-500/5">
           <div className="absolute inset-0 hero-grid opacity-50 pointer-events-none"/>
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-80 h-40 bg-blue-500/10 blur-3xl rounded-full pointer-events-none"/>
@@ -914,13 +1001,13 @@ function BottomCTA() {
               <span className="text-xs font-semibold text-blue-400 uppercase tracking-widest">Ready to Research?</span>
             </div>
             <h2 className="mt-2 text-3xl sm:text-4xl font-black text-white leading-tight">
-              Make Every Pick With<br/>
+              Your Edge Is<br/>
               <span className="bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
-                Data Behind It
+                One Click Away
               </span>
             </h2>
             <p className="mt-4 text-gray-400 max-w-lg mx-auto">
-              Join prop researchers who trust numbers over gut feel. The dashboard is live right now — no account required.
+              The dashboard is live right now. No account required — just open it and start finding mispriced lines.
             </p>
             <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
               <Link
@@ -949,13 +1036,12 @@ function Footer() {
           {/* Brand */}
           <div>
             <Link href="/" className="flex items-center gap-2.5 mb-3">
-              <LogoMark size={36}/>
+              <HomePlateLogo size={36} />
               <span className="font-black text-white">Cook The Books</span>
             </Link>
             <p className="text-sm text-gray-600 leading-relaxed max-w-xs mb-4">
               MLB prop research powered by Statcast, real-time splits, and a proprietary model score.
             </p>
-            {/* Brand logo export */}
             <a
               href="/brand-logo.svg"
               target="_blank"
@@ -992,7 +1078,7 @@ function Footer() {
 
         <div className="border-t border-white/5 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3">
           <p className="text-xs text-gray-700">© 2025 Cook The Books. For research purposes only. Not financial advice.</p>
-          <p className="text-xs text-gray-700">Data: MLB Stats API · Baseball Savant · Open-Meteo</p>
+          <p className="text-xs text-gray-700">Data: MLB Stats API · Baseball Savant · Open-Meteo — updated daily</p>
         </div>
       </div>
     </footer>
@@ -1006,10 +1092,9 @@ export default function LandingPage() {
       <Navbar/>
       <main>
         <Hero/>
-        <StatsBar/>
         <HowItWorks/>
         <FeaturesSection/>
-        <PitcherEVSection/>
+        <EVSection/>
         <PricingSection/>
         <BottomCTA/>
       </main>

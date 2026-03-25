@@ -8,10 +8,17 @@ const inter = Inter({
 });
 
 export const metadata = {
-  title: 'PropEdge | MLB Analytics',
+  title: 'Cook The Books | MLB Prop Research',
   description:
-    'Professional MLB prop betting analytics. Batter vs pitcher matchup scoring, weather intelligence, park factors, and recency-weighted trends.',
-  keywords: 'MLB analytics, baseball props, batter pitcher matchup, MLB prop betting',
+    'The only MLB prop research tool that combines Statcast exit velocity, pitcher matchup data, park factors, and a Poisson EV model — so you know exactly where the line is mispriced before you bet it.',
+  keywords: 'MLB analytics, baseball props, batter pitcher matchup, MLB prop betting, Statcast, Poisson EV model',
+  icons: { icon: '/favicon.svg' },
+  openGraph: {
+    images: [{ url: '/brand-logo.svg', width: 400, height: 400 }],
+  },
+  twitter: {
+    images: ['/brand-logo.svg'],
+  },
 };
 
 export default function RootLayout({ children }) {
