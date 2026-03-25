@@ -29,8 +29,8 @@ function Navbar() {
     <nav className="sticky top-0 z-50 border-b border-white/5 bg-gray-950/90 backdrop-blur-xl">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
-          <Link href="/" className="flex items-center gap-2.5 group">
-            <ProprStatsLogo variant="light" size={30} />
+          <Link href="/" className="flex items-center group">
+            <ProprStatsLogo variant="light" size={30} wordmarkClass="group-hover:text-blue-400 transition-colors" />
           </Link>
 
           <div className="flex items-center gap-6">
