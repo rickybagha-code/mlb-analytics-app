@@ -1082,6 +1082,281 @@ function ProjectionEVCard({ pitcherStarts, seasonStats }) {
   );
 }
 
+// ─── Game Log Detail Table ────────────────────────────────────────────────────
+function GameLogTable({ games, cat, loading }) {
+  if (loading) return (
+    <div className="space-y-2">{[1,2,3,4,5].map(i=><Skeleton key={i} className="h-8 w-full"/>)}</div>
+  );
+  const last10 = games.slice(-10).reverse();
+  if (!last10.length) return <p className="text-sm text-gray-600 italic">No game log data available.</p>;
+
+  const colDefs = {
+    hits: ['Date','Opp','PA','AB','H','2B','HR','BB','K','AVG'],
+    runs: ['Date','Opp','PA','R','RBI','BB','K'],
+    rbi:  ['Date','Opp','PA','AB','H','RBI','BB','K'],
+    hr:   ['Date','Opp','PA','AB','H','HR','BB','K'],
+    sb:   ['Date','Opp','PA','AB','H','SB','BB','K'],
+  };
+  const cols     = colDefs[cat] || colDefs.hits;
+  const keyCol   = { hits:'H', runs:'R', rbi:'RBI', hr:'HR', sb:'SB' }[cat] || 'H';
+  const keyField = { hits:'hits', runs:'runs', rbi:'rbi', hr:'homeRuns', sb:'stolenBases' }[cat] || 'hits';
+
+  const getVal = (g, col) => {
+    if (col==='Date') return fmtDate(g.date);
+    if (col==='Opp')  return (g.opponent||'').split(' ').at(-1) || '—';
+    if (col==='PA')   return g.plateAppearances ?? '—';
+    if (col==='AB')   return g.atBats ?? '—';
+    if (col==='H')    return g.hits    ?? 0;
+    if (col==='2B')   return g.doubles ?? 0;
+    if (col==='HR')   return g.homeRuns ?? 0;
+    if (col==='BB')   return g.baseOnBalls ?? 0;
+    if (col==='K')    return g.strikeOuts  ?? 0;
+    if (col==='RBI')  return g.rbi ?? 0;
+    if (col==='R')    return g.runs ?? 0;
+    if (col==='SB')   return g.stolenBases ?? 0;
+    if (col==='AVG') {
+      const ab = g.atBats || 0, h = g.hits || 0;
+      return ab > 0 ? `.${Math.round(h/ab*1000).toString().padStart(3,'0')}` : '—';
+    }
+    return '—';
+  };
+
+  const keyCls = (col, rawVal) => {
+    if (col !== keyCol) return null;
+    const n = Number(rawVal) || 0;
+    if (cat === 'hr' || cat === 'sb') return n >= 1 ? 'text-emerald-400 font-black' : 'text-red-400';
+    return n >= 2 ? 'text-emerald-400 font-black' : n >= 1 ? 'text-yellow-400 font-bold' : 'text-red-400';
+  };
+
+  const keyVals = last10.map(g => Number(g[keyField]) || 0);
+  const keyAvg  = keyVals.reduce((a,b)=>a+b,0) / keyVals.length;
+  const hitRate = cat === 'hits' ? keyVals.filter(v=>v>=1).length : null;
+  const hrRate  = cat === 'hr'   ? keyVals.filter(v=>v>=1).length : null;
+
+  return (
+    <div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs min-w-max">
+          <thead>
+            <tr className="border-b border-gray-800">
+              {cols.map(c => (
+                <th key={c} className={`py-2 font-semibold whitespace-nowrap ${
+                  c==='Date'||c==='Opp' ? 'text-left pr-3 text-gray-600' : `text-center px-2 ${c===keyCol ? 'text-blue-400' : 'text-gray-600'}`
+                }`}>{c}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {last10.map((g, i) => (
+              <tr key={i} className="border-b border-gray-800/50 hover:bg-gray-800/20 transition-colors">
+                {cols.map(c => {
+                  const val   = getVal(g, c);
+                  const extra = keyCls(c, val);
+                  return (
+                    <td key={c} className={`py-2 tabular-nums whitespace-nowrap ${
+                      c==='Date'||c==='Opp' ? 'pr-3 text-gray-500' : `px-2 text-center ${extra || 'text-white'}`
+                    }`}>{String(val)}</td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-3 pt-3 border-t border-gray-800/60 flex flex-wrap gap-4">
+        <span className="text-xs text-gray-600">{keyCol} avg (L10): <span className="text-white font-bold tabular-nums">{keyAvg.toFixed(2)}</span></span>
+        {hitRate !== null && (
+          <span className="text-xs text-gray-600">Hit rate: <span className={`font-bold tabular-nums ${hitRate>=7?'text-emerald-400':hitRate>=5?'text-yellow-400':'text-red-400'}`}>{hitRate}/10 games</span></span>
+        )}
+        {hrRate !== null && (
+          <span className="text-xs text-gray-600">HR rate: <span className={`font-bold tabular-nums ${hrRate>=3?'text-emerald-400':hrRate>=1?'text-yellow-400':'text-gray-600'}`}>{hrRate}/10 games</span></span>
+        )}
+        {cat === 'rbi' && <span className="text-xs text-gray-700 italic">RBI is lineup-dependent — see Lineup Position card</span>}
+      </div>
+    </div>
+  );
+}
+
+// ─── Park Factors lookup (Baseball Reference 2024/2025 avg) ──────────────────
+const PARK_FACTORS = {
+  NYY:{ name:'Yankee Stadium',     hits:1.01, hr:1.18, runs:1.04, k:0.99 },
+  BOS:{ name:'Fenway Park',        hits:1.05, hr:0.97, runs:1.06, k:0.97 },
+  BAL:{ name:'Camden Yards',       hits:1.02, hr:1.10, runs:1.05, k:0.98 },
+  TBR:{ name:'Tropicana Field',    hits:0.97, hr:0.93, runs:0.96, k:1.02 },
+  TOR:{ name:'Rogers Centre',      hits:1.00, hr:1.08, runs:1.02, k:1.00 },
+  CLE:{ name:'Progressive Field',  hits:0.99, hr:1.00, runs:0.98, k:1.01 },
+  CWS:{ name:'Guaranteed Rate Fld',hits:1.00, hr:1.05, runs:1.01, k:1.00 },
+  DET:{ name:'Comerica Park',      hits:0.97, hr:0.88, runs:0.96, k:1.03 },
+  KCR:{ name:'Kauffman Stadium',   hits:1.03, hr:0.95, runs:1.01, k:0.99 },
+  MIN:{ name:'Target Field',       hits:0.99, hr:0.96, runs:0.98, k:1.01 },
+  HOU:{ name:'Minute Maid Park',   hits:1.00, hr:1.06, runs:1.03, k:1.00 },
+  LAA:{ name:'Angel Stadium',      hits:0.99, hr:0.97, runs:0.98, k:1.01 },
+  OAK:{ name:'Oakland Coliseum',   hits:0.96, hr:0.88, runs:0.94, k:1.04 },
+  SEA:{ name:'T-Mobile Park',      hits:0.96, hr:0.91, runs:0.95, k:1.04 },
+  TEX:{ name:'Globe Life Field',   hits:1.02, hr:1.12, runs:1.06, k:0.97 },
+  ATL:{ name:'Truist Park',        hits:1.01, hr:1.05, runs:1.03, k:0.99 },
+  MIA:{ name:'loanDepot Park',     hits:0.94, hr:0.84, runs:0.91, k:1.06 },
+  NYM:{ name:'Citi Field',         hits:0.97, hr:0.93, runs:0.96, k:1.03 },
+  PHI:{ name:'Citizens Bank Park', hits:1.02, hr:1.10, runs:1.05, k:0.98 },
+  WSN:{ name:'Nationals Park',     hits:1.01, hr:1.04, runs:1.02, k:0.99 },
+  CHC:{ name:'Wrigley Field',      hits:1.02, hr:1.06, runs:1.04, k:0.98 },
+  CIN:{ name:'Great American BP',  hits:1.06, hr:1.15, runs:1.08, k:0.96 },
+  MIL:{ name:'American Family Fld',hits:0.99, hr:0.97, runs:0.98, k:1.01 },
+  PIT:{ name:'PNC Park',           hits:0.98, hr:0.93, runs:0.96, k:1.02 },
+  STL:{ name:'Busch Stadium',      hits:1.00, hr:0.96, runs:0.99, k:1.00 },
+  ARI:{ name:'Chase Field',        hits:1.03, hr:1.07, runs:1.05, k:0.97 },
+  COL:{ name:'Coors Field',        hits:1.14, hr:1.19, runs:1.18, k:0.94 },
+  LAD:{ name:'Dodger Stadium',     hits:0.97, hr:0.94, runs:0.96, k:1.03 },
+  SDP:{ name:'Petco Park',         hits:0.95, hr:0.88, runs:0.93, k:1.05 },
+  SFG:{ name:'Oracle Park',        hits:0.97, hr:0.88, runs:0.95, k:1.04 },
+};
+
+function ParkFactorCard({ spTeamAbbrev, spOppAbbrev, spIsHome, activeCat }) {
+  const homeAbbrev = spIsHome ? spTeamAbbrev : spOppAbbrev;
+  const park = homeAbbrev ? PARK_FACTORS[homeAbbrev] : null;
+
+  if (!park) return (
+    <div className="rounded-xl border border-dashed border-gray-800 bg-gray-900/30 p-5">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-base">🏟️</span>
+        <h3 className="text-sm font-bold text-gray-500">Park Factor</h3>
+      </div>
+      <p className="text-xs text-gray-700">Park factor data unavailable — team info not found for this game.</p>
+    </div>
+  );
+
+  const rows = [
+    { prop:'Hits',       val: park.hits, cat:'hits' },
+    { prop:'Home Runs',  val: park.hr,   cat:'hr'   },
+    { prop:'Runs',       val: park.runs, cat:'runs'  },
+    { prop:'Strikeouts', val: park.k,    cat:'k'    },
+  ];
+  const favors   = v => v >= 1.03 ? 'Hitter' : v <= 0.97 ? 'Pitcher' : 'Neutral';
+  const favorCls = v => v >= 1.03
+    ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30'
+    : v <= 0.97
+    ? 'text-red-400 bg-red-500/10 border-red-500/30'
+    : 'text-gray-400 bg-gray-800/50 border-gray-700';
+  const valCls   = v => v >= 1.03 ? 'text-emerald-400' : v <= 0.97 ? 'text-red-400' : 'text-gray-400';
+  const pctStr   = v => `${v >= 1 ? '+' : ''}${Math.round((v-1)*100)}%`;
+
+  const catParkVal   = activeCat === 'hits' ? park.hits : activeCat === 'hr' ? park.hr : activeCat === 'runs' ? park.runs : null;
+  const catPropLabel = activeCat === 'hits' ? 'hits' : activeCat === 'hr' ? 'home runs' : activeCat === 'runs' ? 'runs' : null;
+  const overallChar  = (park.hits >= 1.04 || park.hr >= 1.08) ? "hitter's" : (park.hits <= 0.96 || park.hr <= 0.92) ? "pitcher's" : 'neutral';
+
+  return (
+    <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-base">🏟️</span>
+        <h3 className="text-sm font-bold text-white">Park Factor</h3>
+        <span className="ml-auto text-xs text-gray-600 truncate max-w-[140px]">{park.name}</span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-gray-800">
+              {['Prop','Factor','vs Lg','Favors'].map(h => (
+                <th key={h} className={`py-2 font-semibold text-gray-600 ${h==='Prop'?'text-left':'text-center px-2'}`}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(r => (
+              <tr key={r.prop} className={`border-b border-gray-800/50 ${r.cat === activeCat ? 'bg-blue-500/5' : ''}`}>
+                <td className={`py-2 font-medium ${r.cat === activeCat ? 'text-blue-400' : 'text-gray-400'}`}>{r.prop}</td>
+                <td className={`py-2 px-2 text-center font-black tabular-nums ${valCls(r.val)}`}>{r.val.toFixed(2)}</td>
+                <td className={`py-2 px-2 text-center font-bold tabular-nums ${valCls(r.val)}`}>{pctStr(r.val)}</td>
+                <td className="py-2 px-2 text-center">
+                  <span className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-xs font-bold ${favorCls(r.val)}`}>{favors(r.val)}</span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {catParkVal != null && catPropLabel && (
+        <p className="mt-3 text-xs text-gray-500 leading-relaxed pt-2 border-t border-gray-800/60">
+          <span className="text-gray-400">{park.name}</span> is a{' '}
+          <span className={`font-bold ${catParkVal >= 1.03 ? 'text-emerald-400' : catParkVal <= 0.97 ? 'text-red-400' : 'text-gray-400'}`}>{overallChar} park</span>{' '}
+          for {catPropLabel}, historically{' '}
+          {catParkVal >= 1.03 ? 'boosting' : catParkVal <= 0.97 ? 'suppressing' : 'not significantly affecting'}{' '}
+          {catPropLabel} by <span className="font-bold tabular-nums">{pctStr(catParkVal)}</span> vs league avg.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function LineupPositionCard({ games, loading }) {
+  if (loading) return (
+    <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
+      <div className="flex items-center gap-2 mb-4">
+        <span className="text-base">📍</span>
+        <h3 className="text-sm font-bold text-white">Lineup Position</h3>
+      </div>
+      <div className="space-y-2">{[1,2,3].map(i=><Skeleton key={i} className="h-8 w-full"/>)}</div>
+    </div>
+  );
+
+  const bOrders = games.slice(-10)
+    .map(g => g.battingOrder ? Math.ceil(parseInt(g.battingOrder) / 100) : null)
+    .filter(v => v != null && v >= 1 && v <= 9);
+  const avgSlot = bOrders.length ? Math.round(bOrders.reduce((a,b)=>a+b,0)/bOrders.length) : null;
+  const slotLabel = s => !s ? '' : s <= 2 ? 'Table setter' : s <= 5 ? 'Run producer' : 'Bottom order';
+  const slotCls   = s => !s ? 'text-gray-500' : s <= 2 ? 'text-blue-400' : s <= 5 ? 'text-emerald-400' : 'text-gray-400';
+
+  return (
+    <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
+      <div className="flex items-center gap-2 mb-4">
+        <span className="text-base">📍</span>
+        <h3 className="text-sm font-bold text-white">Lineup Position</h3>
+      </div>
+      {avgSlot ? (
+        <>
+          <div className="flex items-center gap-3 mb-4">
+            <div className={`flex items-center justify-center w-12 h-12 rounded-xl border-2 bg-gray-800/50 font-black text-xl tabular-nums flex-shrink-0 ${avgSlot<=2?'border-blue-500/40 text-blue-400':avgSlot<=5?'border-emerald-500/40 text-emerald-400':'border-gray-700 text-gray-400'}`}>
+              #{avgSlot}
+            </div>
+            <div>
+              <p className={`text-sm font-bold ${slotCls(avgSlot)}`}>{slotLabel(avgSlot)}</p>
+              <p className="text-xs text-gray-600">L10 avg batting slot</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1 mb-2">
+            {[1,2,3,4,5,6,7,8,9].map(s => (
+              <div key={s} className={`flex-1 h-8 rounded-md flex items-center justify-center text-xs font-black tabular-nums ${
+                s===avgSlot ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'bg-gray-800/60 text-gray-700 border border-gray-800'
+              }`}>{s}</div>
+            ))}
+          </div>
+          <div className="flex justify-between text-xs text-gray-700 mb-3 px-0.5">
+            <span>Setters</span><span>Producers</span><span>Bottom</span>
+          </div>
+          <p className="text-xs text-gray-500 leading-relaxed pt-2 border-t border-gray-800/60">
+            Batting <span className="font-bold text-white">#{avgSlot}</span>{' '}
+            {avgSlot<=2 ? 'offers high plate appearances but fewer RBI spots.'
+              : avgSlot<=5 ? 'maximizes RBI opportunity with runners expected on base ahead.'
+              : 'means fewer PA but lineup context can still create RBI chances.'}
+          </p>
+        </>
+      ) : (
+        <div className="text-center py-2">
+          <div className="flex items-center gap-1 mb-4">
+            {[1,2,3,4,5,6,7,8,9].map(s => (
+              <div key={s} className="flex-1 h-7 rounded-md flex items-center justify-center text-xs font-bold text-gray-800 bg-gray-800/30 border border-gray-800/30">{s}</div>
+            ))}
+          </div>
+          <span className="inline-flex items-center gap-1.5 text-xs text-gray-600 border border-gray-800 rounded-full px-3 py-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-gray-700 animate-pulse"/>
+            Posts ~3h Before Game
+          </span>
+          <p className="text-xs text-gray-700 mt-2 leading-relaxed">Batting order affects R and RBI potential. Check back closer to first pitch.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function PlayerDetailPage() {
   const { id }      = useParams();
@@ -1643,6 +1918,16 @@ export default function PlayerDetailPage() {
               }
             </div>
 
+            {/* ── Game Log Detail Table ───────────────────────────────────── */}
+            <div className="rounded-xl border border-gray-800 bg-gray-900 p-5 mb-6">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="text-base">📋</span>
+                <h3 className="text-sm font-bold text-white">{catCfg?.label} — Last 10 Games</h3>
+                <span className="ml-auto text-xs text-gray-600 border border-gray-800 rounded-full px-2 py-0.5">tab-aware</span>
+              </div>
+              <GameLogTable games={gameLog} cat={cat} loading={chartLoading}/>
+            </div>
+
             {/* ── Detail Grid ────────────────────────────────────────────── */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
               <div className="col-span-1 sm:col-span-2">
@@ -1697,19 +1982,58 @@ export default function PlayerDetailPage() {
               <Card title="Statcast Quality" icon="⚡">
                 {!statcast ? (
                   loading
-                    ? <div className="space-y-2">{[1,2,3,4].map(i=><Skeleton key={i} className="h-5 w-full"/>)}</div>
+                    ? <div className="space-y-2">{[1,2,3,4,5,6].map(i=><Skeleton key={i} className="h-10 w-full rounded-lg"/>)}</div>
                     : <p className="text-sm text-gray-600 italic">Statcast data not available.</p>
-                ) : (
-                  <div className="space-y-1">
-                    <StatRow label="xwOBA (Expected)" value={fmt(statcast.xwoba,3)} highlight={statCls(statcast.xwoba||0,0.37,0.32).text} sub="luck-adjusted"/>
-                    <StatRow label="Barrel %" value={statcast.barrelPct!=null?`${statcast.barrelPct.toFixed(1)}%`:'—'} highlight={statCls(statcast.barrelPct||0,12,6).text}/>
-                    <StatRow label="Hard Hit % (95+ mph)" value={statcast.hardHitPct!=null?`${statcast.hardHitPct.toFixed(1)}%`:'—'} highlight={statCls(statcast.hardHitPct||0,50,40).text}/>
-                    <StatRow label="Avg Exit Velocity" value={statcast.exitVelo!=null?`${statcast.exitVelo.toFixed(1)} mph`:'—'} highlight={statCls(statcast.exitVelo||0,92,88).text}/>
-                    <div className="mt-3 pt-3 border-t border-gray-800/60 text-xs text-gray-600 italic">
-                      Source: Baseball Savant 2025 · Updated every 6h
+                ) : (() => {
+                  const lgAvg = { exitVelo:88.5, hardHitPct:38.0, barrelPct:8.2, sweetSpotPct:31.5, xwoba:0.315, xslg:0.402 };
+                  const metrics = [
+                    { label:'Exit Velocity',  val:statcast.exitVelo,     unit:' mph', lg:lgAvg.exitVelo,    fmt2:v=>v.toFixed(1), cls:statCls(statcast.exitVelo||0,92,88) },
+                    { label:'Hard Hit %',     val:statcast.hardHitPct,   unit:'%',    lg:lgAvg.hardHitPct,  fmt2:v=>v.toFixed(1), cls:statCls(statcast.hardHitPct||0,50,38) },
+                    { label:'Barrel %',       val:statcast.barrelPct,    unit:'%',    lg:lgAvg.barrelPct,   fmt2:v=>v.toFixed(1), cls:statCls(statcast.barrelPct||0,12,8.2) },
+                    { label:'Sweet Spot %',   val:statcast.sweetSpotPct, unit:'%',    lg:lgAvg.sweetSpotPct,fmt2:v=>v.toFixed(1), cls:statCls(statcast.sweetSpotPct||0,35,31.5) },
+                    { label:'xwOBA',          val:statcast.xwoba,        unit:'',     lg:lgAvg.xwoba,       fmt2:v=>v.toFixed(3), cls:statCls(statcast.xwoba||0,0.37,0.32) },
+                    { label:'xSLG',           val:statcast.xslg,         unit:'',     lg:lgAvg.xslg,        fmt2:v=>v.toFixed(3), cls:statCls(statcast.xslg||0,0.45,0.38) },
+                  ];
+                  return (
+                    <div>
+                      <div className="grid grid-cols-3 gap-2 mb-3">
+                        {metrics.map(m => {
+                          const ok = m.val != null;
+                          const above = ok && m.val > m.lg;
+                          return (
+                            <div key={m.label} className={`rounded-lg border p-2.5 text-center ${ok ? m.cls.bg : 'bg-gray-800/30 border-gray-800'}`}>
+                              <div className={`text-sm font-black tabular-nums ${ok ? m.cls.text : 'text-gray-700'}`}>
+                                {ok ? `${m.fmt2(m.val)}${m.unit}` : '—'}
+                              </div>
+                              <div className="text-xs text-gray-600 mt-0.5">{m.label}</div>
+                              {ok && (
+                                <div className={`text-xs mt-0.5 tabular-nums ${above ? 'text-emerald-600' : 'text-red-500'}`}>
+                                  {above ? '↑' : '↓'} lg {m.fmt2(m.lg)}{m.unit}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {statcast.exitVelo != null && statcast.xwoba != null && (
+                        <p className="text-xs text-gray-500 leading-relaxed mb-2">
+                          <span className="text-gray-300">{playerInfo.fullName?.split(' ').slice(-1)[0]||'This player'}</span>{' '}
+                          is hitting the ball{' '}
+                          <span className={`font-bold ${(statcast.exitVelo||0)>=90?'text-emerald-400':'text-red-400'}`}>
+                            {(statcast.exitVelo||0)>=90?'harder':'softer'} than league average
+                          </span>{' '}—{' '}
+                          <span className={`font-bold ${(statcast.xwoba||0)>=0.315?'text-emerald-400':'text-red-400'}`}>
+                            {(statcast.xwoba||0)>=0.350?'significantly outperforming':(statcast.xwoba||0)>=0.315?'outperforming':'underperforming'}
+                          </span>{' '}
+                          their expected contact level (xwOBA: {fmt(statcast.xwoba,3)}).
+                        </p>
+                      )}
+                      <div className="text-xs text-gray-700 italic border-t border-gray-800/60 pt-2">
+                        Source: Baseball Savant 2025 · Updated every 6h
+                      </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
               </Card>
             </div>
 
@@ -1753,23 +2077,49 @@ export default function PlayerDetailPage() {
                   ))}
                 </div>
               )}
+
+              {/* Sparkline trends */}
+              {!chartLoading && gameLog.length >= 5 && (
+                <div className="mt-5 pt-4 border-t border-gray-800/60 space-y-4">
+                  <p className="text-xs font-bold text-gray-600 uppercase tracking-widest">L10 Trends</p>
+                  {[
+                    { label:'Hits/G',  field:'hits',      color:'#34d399' },
+                    { label:'Runs/G',  field:'runs',      color:'#60a5fa' },
+                    { label:'HR/G',    field:'homeRuns',  color:'#f59e0b' },
+                  ].map(({ label, field, color }) => {
+                    const l10 = gameLog.slice(-10).map(g => Number(g[field]) || 0);
+                    const l5  = l10.slice(-5);
+                    const l5avg  = l5.reduce((a,b)=>a+b,0) / Math.max(l5.length,1);
+                    const l10avg = l10.reduce((a,b)=>a+b,0) / Math.max(l10.length,1);
+                    const heating = l10.length >= 6 && l5avg - l10avg > 0.20;
+                    const cooling = l10.length >= 6 && l10avg - l5avg > 0.20;
+                    return (
+                      <div key={label}>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-xs text-gray-500">{label}</span>
+                          <div className="flex items-center gap-2 flex-wrap justify-end">
+                            {heating && <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-2 py-0.5">heating up ↑</span>}
+                            {cooling && <span className="text-xs font-bold text-red-400 bg-red-500/10 border border-red-500/20 rounded-full px-2 py-0.5">cooling off ↓</span>}
+                            <span className="text-xs text-gray-600 tabular-nums">L5: {l5avg.toFixed(2)} · L10: {l10avg.toFixed(2)}</span>
+                          </div>
+                        </div>
+                        <Sparkline values={l10} width={340} height={32} color={color}/>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
-            {/* ── Reserved Real Estate ───────────────────────────────────── */}
+            {/* ── Park Factor + Lineup Position ──────────────────────────── */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-              {[
-                { icon:'🏟️', title:'Park Factor', desc:'How this stadium affects HR, hits, and run scoring relative to league average.', tag:'Coming Soon' },
-                { icon:'📍', title:'Lineup Position', desc:'Expected batting order position — drives R/RBI opportunity context.', tag:'Posts ~3h Before Game' },
-              ].map(item => (
-                <div key={item.title} className="rounded-xl border border-dashed border-gray-800 bg-gray-900/30 p-5">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-base">{item.icon}</span>
-                    <h3 className="text-sm font-bold text-gray-500">{item.title}</h3>
-                  </div>
-                  <p className="text-xs text-gray-700 mb-3">{item.desc}</p>
-                  <span className="text-xs text-gray-700 border border-gray-800 rounded-full px-2 py-0.5">{item.tag}</span>
-                </div>
-              ))}
+              <ParkFactorCard
+                spTeamAbbrev={spTeamAbbrev}
+                spOppAbbrev={spOppAbbrev}
+                spIsHome={spIsHome}
+                activeCat={cat}
+              />
+              <LineupPositionCard games={gameLog} loading={chartLoading}/>
             </div>
           </>
         )}
