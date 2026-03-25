@@ -1552,28 +1552,58 @@ function useRBIProjection(gameLog, seasonStats, splits, statcast, pitcher, spPit
   }, [gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev]);
 }
 
+function useSBProjection(gameLog, seasonStats, spTeamAbbrev, spOppAbbrev, spIsHome) {
+  return useMemo(() => {
+    const st = seasonStats;
+    const gp = Math.max(st?.gamesPlayed || 1, 1);
+    const seasonSB = (st?.stolenBases || 0) / gp;
+    const L10 = gameLog.slice(-10);
+    const L10SB = L10.map(g => Number(g.stolenBases) || 0);
+    const l10SBpg = L10SB.reduce((a,b)=>a+b,0) / Math.max(L10.length,1);
+    const parkKey = spIsHome ? spTeamAbbrev : spOppAbbrev;
+    // Park factor for SB is mostly neutral; use a slight home field adjustment
+    const parkFactor = 1.0;
+    const lambda = Math.max(0, (seasonSB * 0.5 + l10SBpg * 0.5) * parkFactor);
+    const dist = Array.from({length:5},(_,k)=>({ k, p: Math.round(Math.exp(-lambda)*Math.pow(lambda,k)/[1,1,2,6,24][k]*1000)/10 }));
+    const pAtLeast1 = Math.round((1 - Math.exp(-lambda)) * 100);
+    const std = l10StdDev(L10SB, 0.2);
+    return {
+      projected: Math.round(lambda * 10) / 10,
+      pAtLeast1,
+      dist,
+      std,
+      factors: [
+        { label:'Season SB/game',  impact:Math.round((seasonSB-0.10)*100)/100,  dir:seasonSB>0.10?'↑':'↓' },
+        { label:'L10 SB/game avg', impact:Math.round((l10SBpg-seasonSB)*100)/100, dir:l10SBpg>=seasonSB?'↑':'↓' },
+        { label:'Park factor',     impact:0, dir:'→' },
+      ],
+    };
+  }, [gameLog, seasonStats, spTeamAbbrev, spOppAbbrev, spIsHome]);
+}
+
 function HittingProjectionEVCard({ gameLog, seasonStats, splits, statcast, pitcher, playerName,
   spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev, activeTab, loading }) {
 
   const [activeProp, setActiveProp] = useState(activeTab || 'hits');
-  const [lines,     setLines]     = useState({ hits:'', hr:'', runs:'', rbi:'' });
-  const [overOdds,  setOverOdds]  = useState({ hits:'-115', hr:'-130', runs:'-115', rbi:'-115' });
-  const [underOdds, setUnderOdds] = useState({ hits:'-115', hr:'+110', runs:'-115', rbi:'-115' });
-  const [debLines,  setDebLines]  = useState({ hits:'', hr:'', runs:'', rbi:'' });
+  const [lines,     setLines]     = useState({ hits:'', hr:'', runs:'', rbi:'', sb:'' });
+  const [overOdds,  setOverOdds]  = useState({ hits:'-115', hr:'-130', runs:'-115', rbi:'-115', sb:'-130' });
+  const [underOdds, setUnderOdds] = useState({ hits:'-115', hr:'+110', runs:'-115', rbi:'-115', sb:'+110' });
+  const [debLines,  setDebLines]  = useState({ hits:'', hr:'', runs:'', rbi:'', sb:'' });
 
   useEffect(() => { setActiveProp(activeTab || 'hits'); }, [activeTab]);
   useEffect(() => {
     const cur = lines[activeProp];
     const t = setTimeout(() => setDebLines(prev => ({ ...prev, [activeProp]: cur })), 300);
     return () => clearTimeout(t);
-  }, [lines.hits, lines.hr, lines.runs, lines.rbi, activeProp]);
+  }, [lines.hits, lines.hr, lines.runs, lines.rbi, lines.sb, activeProp]);
 
   const hitsProj = useHitsProjection(gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev);
   const hrProj   = useHRProjection(  gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev);
   const runsProj = useRunsProjection( gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev);
   const rbiProj  = useRBIProjection(  gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev);
+  const sbProj   = useSBProjection(   gameLog, seasonStats, spTeamAbbrev, spOppAbbrev, spIsHome);
 
-  const projMap  = { hits:hitsProj, hr:hrProj, runs:runsProj, rbi:rbiProj };
+  const projMap  = { hits:hitsProj, hr:hrProj, runs:runsProj, rbi:rbiProj, sb:sbProj };
   const proj     = projMap[activeProp];
   const line     = parseFloat(debLines[activeProp]) || null;
   const oOdds    = parseInt(overOdds[activeProp])   || -115;
@@ -1599,16 +1629,20 @@ function HittingProjectionEVCard({ gameLog, seasonStats, splits, statcast, pitch
   })() : null;
 
   const PROP_TABS = [
-    { id:'hits', label:'Hits',     unit:'H',   icon:'🎯' },
-    { id:'hr',   label:'Home Runs',unit:'HR',  icon:'💣' },
-    { id:'runs', label:'Runs',     unit:'R',   icon:'🏃' },
-    { id:'rbi',  label:'RBI',      unit:'RBI', icon:'💰' },
+    { id:'hits', label:'Hits',         unit:'H',   icon:'🎯' },
+    { id:'hr',   label:'Home Runs',    unit:'HR',  icon:'💣' },
+    { id:'runs', label:'Runs',         unit:'R',   icon:'🏃' },
+    { id:'rbi',  label:'RBI',          unit:'RBI', icon:'💰' },
+    { id:'sb',   label:'Stolen Bases', unit:'SB',  icon:'⚡' },
   ];
   const activeTab_ = PROP_TABS.find(t=>t.id===activeProp);
   const propUnit   = activeTab_?.unit || 'H';
-  const projLabel  = activeProp === 'hr' ? 'P(HR ≥ 1)' : `Proj ${propUnit}`;
+  const projLabel  = activeProp === 'hr' ? 'P(HR ≥ 1)' : activeProp === 'sb' ? 'P(SB ≥ 1)' : `Proj ${propUnit}`;
   const projVal    = activeProp === 'hr' && proj?.pHR != null
-    ? `${proj.pHR}%` : (proj?.projected?.toFixed(1) ?? '—');
+    ? `${proj.pHR}%`
+    : activeProp === 'sb' && proj?.pAtLeast1 != null
+      ? `${proj.pAtLeast1}%`
+      : (proj?.projected?.toFixed(1) ?? '—');
 
   if (loading) return (
     <div className="rounded-xl border border-gray-700/50 bg-[#0f1117] p-6">
@@ -1766,7 +1800,9 @@ export default function PlayerDetailPage() {
   const spPosition    = sp.get('position')   || '';
 
   // ── State ─────────────────────────────────────────────────────────────────
-  const [cat,         setCat]         = useState('hits');
+  const validCats = ['hits','runs','rbi','hr','sb'];
+  const initCat   = validCats.includes(sp.get('cat')) ? sp.get('cat') : 'hits';
+  const [cat,         setCat]         = useState(initCat);
   const [win,         setWin]         = useState(10);
   const [line,        setLine]        = useState(0.5);
   const [gameLog,     setGameLog]     = useState([]);

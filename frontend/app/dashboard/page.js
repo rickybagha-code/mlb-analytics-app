@@ -100,11 +100,21 @@ function computeProjectionScore(player, category) {
     base = 18 + hrComp + isoComp - kHit + barrelBonus + pitcherMod * 0.7;
 
   } else if (category === 'runs') {
-    const rComp   = Math.max(-15, Math.min(25, (r   / gp - 0.45) * 55));
-    const rbiComp = Math.max(-15, Math.min(25, (rbi / gp - 0.45) * 55));
+    const rComp   = Math.max(-15, Math.min(30, (r   / gp - 0.45) * 65));
     const obpComp = Math.max(0,   Math.min(15, (obp - 0.300) / 0.120 * 15));
     const hardBonus = hardHitPct != null ? Math.max(0, Math.min(5, (hardHitPct - 40) / 18 * 5)) : 0;
-    base = 40 + rComp + rbiComp + obpComp + hardBonus + pitcherMod;
+    base = 40 + rComp + obpComp + hardBonus + pitcherMod;
+
+  } else if (category === 'rbi') {
+    const rbiComp = Math.max(-15, Math.min(35, (rbi / gp - 0.45) * 70));
+    const slgComp = Math.max(0,   Math.min(15, (slg - 0.400) / 0.200 * 15));
+    const hrComp  = Math.max(0,   Math.min(10, (hrRate / 0.06) * 10));
+    base = 38 + rbiComp + slgComp + hrComp + pitcherMod;
+
+  } else if (category === 'sb') {
+    const sbRate  = player.stolenBases != null && gp > 0 ? player.stolenBases / gp : 0;
+    const sbComp  = Math.min(55, sbRate * 220);
+    base = 15 + sbComp + pitcherMod * 0.3;
   }
 
   // Shrink score toward 50 for thin sample sizes
@@ -163,18 +173,17 @@ function calcManualScore(stats, category) {
   if (!stats?.games) return 50;
   if (category === 'hitting') return Math.round(Math.max(10, Math.min(99, Math.min(55, stats.avg * 190) + Math.min(25, stats.hPerGame * 18) + Math.min(15, stats.obpProxy * 30))));
   if (category === 'hr')      return Math.round(Math.max(5,  Math.min(99, Math.min(80, stats.hrPerGame * 420) + Math.min(20, stats.totalHR * 3))));
-  if (category === 'runs') {
-    const c = stats.rPerGame + stats.rbiPerGame;
-    return Math.round(Math.max(10, Math.min(99, Math.min(60, c * 35) + Math.min(30, stats.obpProxy * 55))));
-  }
+  if (category === 'runs')    return Math.round(Math.max(10, Math.min(99, Math.min(60, stats.rPerGame * 60) + Math.min(30, stats.obpProxy * 55))));
+  if (category === 'rbi')     return Math.round(Math.max(10, Math.min(99, Math.min(60, stats.rbiPerGame * 65) + Math.min(30, stats.obpProxy * 40))));
   return 50;
 }
 
 function getPropLabel(stats, category) {
   if (!stats) return null;
   if (category === 'hitting') { if (stats.hPerGame >= 1.2) return 'Over 1.5 H'; if (stats.hPerGame >= 0.65) return 'Over 0.5 H'; }
-  if (category === 'hr'     &&  stats.hrPerGame >= 0.25)   return 'Over 0.5 HR';
-  if (category === 'runs')   { const c = stats.rPerGame + stats.rbiPerGame; if (c >= 1.5) return 'Over 1.5 R+RBI'; if (c >= 0.7) return 'Over 0.5 R+RBI'; }
+  if (category === 'hr'  && stats.hrPerGame >= 0.25)  return 'Over 0.5 HR';
+  if (category === 'runs') { if (stats.rPerGame >= 1.0) return 'Over 0.5 R'; if (stats.rPerGame >= 0.5) return 'Over 0.5 R'; }
+  if (category === 'rbi')  { if (stats.rbiPerGame >= 1.0) return 'Over 0.5 RBI'; }
   return null;
 }
 
@@ -328,13 +337,22 @@ function AutoPlayerCard({ player, category, rank }) {
           <StatBadge label="WHIP" value={fmt(player.whip, 2)} cls={whipCls(player.whip)} />
           <StatBadge label="K/9"  value={fmt(player.k9,   1)} cls={k9C}                  />
         </div>
+      ) : category === 'sb' ? (
+        <div className="grid grid-cols-4 gap-1">
+          <StatBadge label="SB"   value={player.stolenBases ?? '—'} cls={statCls(player.stolenBases??0,20,10)} />
+          <StatBadge label="SB/G" value={player.gamesPlayed>0?fmt((player.stolenBases||0)/player.gamesPlayed,2):'—'} cls={statCls((player.stolenBases||0)/Math.max(player.gamesPlayed||1,1),0.25,0.10)} />
+          <StatBadge label="AVG"  value={fmt(player.avg,3)} cls={avgC} />
+          <StatBadge label="Streak" value={player.streakLoading?'…':(player.streak??'—')} cls={streakC} />
+        </div>
       ) : (
         <div className="grid grid-cols-4 gap-1">
           <StatBadge label="AVG" value={fmt(player.avg, 3)} cls={avgC} />
           <StatBadge label="SLG" value={fmt(player.slg, 3)} cls={slgC} />
           {category === 'hr'
             ? <StatBadge label="HR"  value={player.homeRuns ?? '—'} cls={hrNumC} />
-            : <StatBadge label="OBP" value={fmt(player.obp, 3)}     cls={obpC}   />
+            : category === 'rbi'
+              ? <StatBadge label="RBI" value={player.rbi ?? '—'} cls={statCls(player.rbi??0,60,40)} />
+              : <StatBadge label="OBP" value={fmt(player.obp, 3)} cls={obpC} />
           }
           <StatBadge
             label="Streak"
@@ -414,13 +432,20 @@ function ManualPlayerCard({ player, category, win, todayGames, onRemove }) {
         </div>
       ) : category === 'runs' ? (
         <div className="grid grid-cols-4 gap-1">
-          <StatBadge label="R/G"   value={fmt(stats.rPerGame,2)}   cls={statCls(stats.rPerGame,  0.7,0.4)} />
-          <StatBadge label="RBI/G" value={fmt(stats.rbiPerGame,2)} cls={statCls(stats.rbiPerGame,0.7,0.4)} />
-          <StatBadge label="R"     value={stats.totalR}   cls={statCls(stats.totalR,  win==='5'?3:5, win==='5'?1:3)} />
-          <StatBadge label="RBI"   value={stats.totalRBI} cls={statCls(stats.totalRBI,win==='5'?3:5, win==='5'?1:3)} />
+          <StatBadge label="R/G"   value={fmt(stats.rPerGame,2)}  cls={statCls(stats.rPerGame, 0.7,0.4)} />
+          <StatBadge label="R(L10)" value={stats.totalR}          cls={statCls(stats.totalR,   5,3)} />
+          <StatBadge label="OBP"   value={fmt(stats.obpProxy,3)}  cls={statCls(stats.obpProxy, 0.360,0.320)} />
+          <StatBadge label="Games" value={stats.games}            cls={{text:'text-gray-400',bg:'bg-gray-800 border-gray-700'}} />
+        </div>
+      ) : category === 'rbi' ? (
+        <div className="grid grid-cols-4 gap-1">
+          <StatBadge label="RBI/G"  value={fmt(stats.rbiPerGame,2)} cls={statCls(stats.rbiPerGame,0.7,0.4)} />
+          <StatBadge label="RBI(L10)" value={stats.totalRBI}        cls={statCls(stats.totalRBI, 5,3)} />
+          <StatBadge label="AVG"    value={fmt(stats.avg,3)}        cls={statCls(stats.avg,0.280,0.250)} />
+          <StatBadge label="Games"  value={stats.games}             cls={{text:'text-gray-400',bg:'bg-gray-800 border-gray-700'}} />
         </div>
       ) : (
-        <p className="text-xs text-gray-500 italic">Use Matchup Analysis below for pitching metrics.</p>
+        <p className="text-xs text-gray-500 italic">No pinned stats for this category.</p>
       )}
     </div>
   );
@@ -429,11 +454,16 @@ function ManualPlayerCard({ player, category, win, todayGames, onRemove }) {
 
 // ─── Categories ───────────────────────────────────────────────────────────────
 const CATEGORIES = [
-  { id:'hitting',  label:'Hitting'    },
-  { id:'hr',       label:'Home Runs'  },
-  { id:'runs',     label:'Runs / RBI' },
-  { id:'pitching', label:'Pitching'   },
+  { id:'hitting',  label:'Hitting'       },
+  { id:'hr',       label:'Home Runs'     },
+  { id:'runs',     label:'Runs'          },
+  { id:'rbi',      label:'RBI'           },
+  { id:'sb',       label:'Stolen Bases'  },
+  { id:'pitching', label:'Pitching'      },
 ];
+
+// Maps dashboard category → player page cat param
+const CAT_TO_PLAYER_TAB = { hitting:'hits', hr:'hr', runs:'runs', rbi:'rbi', sb:'sb', pitching:null };
 
 // ─── Main Dashboard Page ──────────────────────────────────────────────────────
 export default function DashboardPage() {
@@ -611,6 +641,7 @@ export default function DashboardPage() {
                 strikeOuts:        parseInt(st.strikeOuts)          || 0,
                 plateAppearances:  parseInt(st.plateAppearances)    || 0,
                 babip:             parseFloat(st.babip)             || 0,
+                stolenBases:       parseInt(st.stolenBases)         || 0,
               };
             }
           }
@@ -642,6 +673,8 @@ export default function DashboardPage() {
               hitting:  computeProjectionScore({ ...stats, matchup:{ isHome, oppAbbrev, pitcher } }, 'hitting'),
               hr:       computeProjectionScore({ ...stats, matchup:{ isHome, oppAbbrev, pitcher } }, 'hr'),
               runs:     computeProjectionScore({ ...stats, matchup:{ isHome, oppAbbrev, pitcher } }, 'runs'),
+              rbi:      computeProjectionScore({ ...stats, matchup:{ isHome, oppAbbrev, pitcher } }, 'rbi'),
+              sb:       computeProjectionScore({ ...stats, matchup:{ isHome, oppAbbrev, pitcher } }, 'sb'),
               pitching: 0,
             },
             streak:        null,
@@ -666,7 +699,7 @@ export default function DashboardPage() {
             whip:        myPitcher.whip,
             k9:          myPitcher.k9,
             matchup:     { isHome, oppAbbrev: oppAbbrevP, pitcher: null },
-            scores:      { hitting:0, hr:0, runs:0, pitching: scorePitcher(myPitcher) },
+            scores:      { hitting:0, hr:0, runs:0, rbi:0, sb:0, pitching: scorePitcher(myPitcher) },
             streak:      null,
             streakLoading: false,
           });
@@ -684,7 +717,7 @@ export default function DashboardPage() {
 
       // 6. Enrichment phase — run in parallel (non-blocking)
       const topIds = new Set();
-      for (const cat of ['hitting','hr','runs']) {
+      for (const cat of ['hitting','hr','runs','rbi','sb']) {
         [...dedupedPlayers]
           .filter(p=>p.scores[cat]>0)
           .sort((a,b)=>b.scores[cat]-a.scores[cat])
@@ -724,7 +757,7 @@ export default function DashboardPage() {
             const updated = { ...p, streak, l10Avg, streakLoading: false };
             // Re-score all batting categories now that recency data is available
             const newScores = { ...p.scores };
-            for (const cat of ['hitting', 'hr', 'runs']) {
+            for (const cat of ['hitting', 'hr', 'runs', 'rbi', 'sb']) {
               if (newScores[cat] > 0) {
                 newScores[cat] = computeProjectionScore(updated, cat);
               }
@@ -930,6 +963,7 @@ export default function DashboardPage() {
             <div className={`grid gap-3 mb-10 ${selectedPlayerId ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'}`}>
               {filteredBoard.map((player, idx) => {
                 const pitcher = player.matchup?.pitcher;
+                const playerTab = CAT_TO_PLAYER_TAB[category];
                 const params = new URLSearchParams({
                   teamId:      player.teamId          || '',
                   pitcherId:   pitcher?.id            || '',
@@ -940,6 +974,7 @@ export default function DashboardPage() {
                   teamName:    player.teamName        || '',
                   teamAbbrev:  player.teamAbbrev      || '',
                   position:    player.position        || '',
+                  ...(playerTab ? { cat: playerTab } : {}),
                 });
                 return (
                   <Link key={player.playerId} href={`/dashboard/player/${player.playerId}?${params}`} className="block">
