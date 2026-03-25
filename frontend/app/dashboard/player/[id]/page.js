@@ -33,6 +33,14 @@ const VENUE_COORDS = {
   LAD:{ lat:34.074, lon:-118.240 }, SDP:{ lat:32.707, lon:-117.157 }, SFG:{ lat:37.779, lon:-122.389 },
 };
 
+// ─── MLB API abbreviation → PARK_FACTORS/VENUE_COORDS key normalizer ─────────
+// MLB Stats API uses shorter codes; our tables use Baseball Reference codes.
+const ABBREV_ALIASES = {
+  TB:'TBR', KC:'KCR', WSH:'WSN', SD:'SDP', SF:'SFG',
+  CHW:'CWS', AZ:'ARI', MIA:'MIA', // CHW vs CWS both exist; prefer CWS
+};
+function normAbbrev(a) { return a ? (ABBREV_ALIASES[a] || a) : a; }
+
 // ─── Frontend weather adjustment (mirrors services/weatherLogic.js) ────────────
 function calcWeatherAdj(weather) {
   if (!weather) return { adjustment: 0, notes: [], temp: null, windSpeed: null, windDir: null };
@@ -158,8 +166,11 @@ function pitcherScoreFromERA(era) {
 }
 function pitcherScoreFromKProj(projected) {
   if (projected == null) return null;
-  // League avg K/start ≈ 5.5; scale ±10 points per K above/below
-  return Math.round(Math.max(10, Math.min(99, 50 + (projected - 5.5) * 10)));
+  // Use Poisson P(over 5.5 line) — same math as ProjectionEVCard.
+  // league avg line ≈ 5.5 → floor = 5.
+  // This keeps the score ring directly consistent with the EV model.
+  const pOver = 1 - poissonCDF(5, projected);
+  return Math.round(Math.max(10, Math.min(99, pOver * 100)));
 }
 function getStartResult(s) {
   if (s.isWin)  return { label:'W', cls:'text-emerald-400' };
@@ -516,8 +527,8 @@ function PitcherPlatoonCard({ splits, loading }) {
 // ─── Pitcher Contextual Factors Row ──────────────────────────────────────────
 function PitcherContextRow({ starts, oppAbbrev, isHome, weather }) {
   const daysRest = computeDaysRest(starts);
-  const homeAbbrev = isHome ? null : oppAbbrev; // pitcher's home park = away team's park if away
-  const park = oppAbbrev ? PARK_FACTORS[oppAbbrev] || PARK_FACTORS[homeAbbrev] : null;
+  const normOpp = normAbbrev(oppAbbrev);
+  const park = normOpp ? PARK_FACTORS[normOpp] : null;
   const parkK = park?.k ?? null;
   const wx = calcWeatherAdj(weather);
   const oppKRate = TEAM_K_RATES[oppAbbrev] || null;
@@ -1252,7 +1263,8 @@ const PARK_FACTORS = {
 
 // ─── Baseball Diamond Card (park factors + weather) ──────────────────────────
 function BaseballDiamondCard({ spTeamAbbrev, spOppAbbrev, spIsHome, activeCat, weather }) {
-  const homeAbbrev = spIsHome ? spTeamAbbrev : spOppAbbrev;
+  const rawHome = spIsHome ? spTeamAbbrev : (spOppAbbrev || spTeamAbbrev);
+  const homeAbbrev = normAbbrev(rawHome);
   const park = homeAbbrev ? PARK_FACTORS[homeAbbrev] : null;
   const wx = calcWeatherAdj(weather);
 
@@ -2067,27 +2079,37 @@ export default function PlayerDetailPage() {
 
   // ── Fetch PrizePicks lines for this player ────────────────────────────────
   useEffect(() => {
+    const name = playerInfo.fullName || spName;
+    if (!name) return;
     async function fetchPP() {
       try {
-        const res = await fetch(`${API_URL}/prizepicks/mlb`, { signal: AbortSignal.timeout(8000) });
+        const res = await fetch(`${API_URL}/prizepicks/mlb`, { signal: AbortSignal.timeout(10000) });
         if (!res.ok) return;
         const data = await res.json();
-        const name = playerInfo.fullName || spName;
-        if (name && data.lines) {
-          // Try exact match, then partial match
-          let playerLines = data.lines[name];
-          if (!playerLines) {
-            const key = Object.keys(data.lines).find(k =>
-              k.toLowerCase().includes(name.split(' ').pop().toLowerCase())
-            );
-            if (key) playerLines = data.lines[key];
+        if (!data.lines) return;
+        // 1. Exact match
+        let playerLines = data.lines[name];
+        if (!playerLines) {
+          const nameLower = name.toLowerCase();
+          const lastName  = name.split(' ').pop().toLowerCase();
+          const firstName = name.split(' ')[0].toLowerCase();
+          // 2. Case-insensitive exact
+          const exactKey = Object.keys(data.lines).find(k => k.toLowerCase() === nameLower);
+          if (exactKey) { playerLines = data.lines[exactKey]; }
+          else {
+            // 3. Last name + first initial match (e.g., "M. Fried" vs "Max Fried")
+            const partialKey = Object.keys(data.lines).find(k => {
+              const kl = k.toLowerCase();
+              return kl.includes(lastName) && (kl.includes(firstName) || kl.includes(firstName[0] + '.'));
+            });
+            if (partialKey) playerLines = data.lines[partialKey];
           }
-          if (playerLines) setPpLines(playerLines);
         }
+        if (playerLines) setPpLines(playerLines);
       } catch {}
     }
     fetchPP();
-  }, [playerInfo.fullName]);
+  }, [playerInfo.fullName, spName]);
 
   // ── On line change, reset to first valid line for new cat ─────────────────
   useEffect(() => {
@@ -2218,7 +2240,8 @@ export default function PlayerDetailPage() {
     setLoading(false);
 
     // ── Weather fetch (non-blocking) ────────────────────────────────────
-    const homeAbbrev = spIsHome ? spTeamAbbrev : spOppAbbrev;
+    const rawHomeAbbrev = spIsHome ? spTeamAbbrev : (spOppAbbrev || spTeamAbbrev);
+    const homeAbbrev = normAbbrev(rawHomeAbbrev);
     const coords = VENUE_COORDS[homeAbbrev];
     if (coords) {
       try {

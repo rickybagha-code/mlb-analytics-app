@@ -949,6 +949,7 @@ export default function DashboardPage() {
                 const pitcher = player.matchup?.pitcher;
                 const playerTab = CAT_TO_PLAYER_TAB[category];
                 const params = new URLSearchParams({
+                  name:        player.fullName        || '',
                   teamId:      player.teamId          || '',
                   pitcherId:   pitcher?.id            || '',
                   pitcherName: pitcher?.name          || '',
