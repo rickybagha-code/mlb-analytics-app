@@ -2309,6 +2309,24 @@ export default function PlayerDetailPage() {
               }
             </div>
 
+            {/* ── Projection & EV% ──────────────────────────────────────── */}
+            <ProjectionErrorBoundary>
+              <HittingProjectionEVCard
+                gameLog={gameLog}
+                seasonStats={seasonStats}
+                splits={splits}
+                statcast={statcast}
+                pitcher={pitcher}
+                playerName={playerInfo.fullName}
+                spPitcherHand={spPitcherHand}
+                spIsHome={spIsHome}
+                spTeamAbbrev={spTeamAbbrev}
+                spOppAbbrev={spOppAbbrev}
+                activeTab={cat}
+                loading={loading || chartLoading}
+              />
+            </ProjectionErrorBoundary>
+
             {/* ── Game Log Detail Table ───────────────────────────────────── */}
             <div className="rounded-xl border border-gray-800 bg-gray-900 p-5 mb-6">
               <div className="flex items-center gap-2 mb-4">
@@ -2513,23 +2531,6 @@ export default function PlayerDetailPage() {
               <LineupPositionCard games={gameLog} loading={chartLoading}/>
             </div>
 
-            {/* ── Projection & EV% ──────────────────────────────────────── */}
-            <ProjectionErrorBoundary>
-              <HittingProjectionEVCard
-                gameLog={gameLog}
-                seasonStats={seasonStats}
-                splits={splits}
-                statcast={statcast}
-                pitcher={pitcher}
-                playerName={playerInfo.fullName}
-                spPitcherHand={spPitcherHand}
-                spIsHome={spIsHome}
-                spTeamAbbrev={spTeamAbbrev}
-                spOppAbbrev={spOppAbbrev}
-                activeTab={cat}
-                loading={loading || chartLoading}
-              />
-            </ProjectionErrorBoundary>
           </>
         )}
 

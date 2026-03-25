@@ -220,7 +220,6 @@ function Navbar() {
           </Link>
           <div className="flex items-center gap-6">
             <span className="text-sm font-semibold text-blue-400 border-b-2 border-blue-500 pb-0.5">Dashboard</span>
-            <Link href="/probables" className="text-sm text-gray-400 hover:text-white transition-colors">Probable Pitchers</Link>
             <Link href="/" className="hidden sm:inline-flex text-sm text-gray-500 hover:text-gray-300 transition-colors">← Home</Link>
           </div>
         </div>
@@ -427,140 +426,6 @@ function ManualPlayerCard({ player, category, win, todayGames, onRemove }) {
   );
 }
 
-// ─── Input Field ──────────────────────────────────────────────────────────────
-function InputField({ label, id, value, onChange, placeholder, required=false }) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label htmlFor={id} className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-        {label}{required && <span className="ml-1 text-blue-400">*</span>}
-      </label>
-      <input id={id} type="text" value={value} onChange={onChange} placeholder={placeholder}
-        className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white placeholder-gray-600 outline-none transition-all focus:border-blue-500 focus:ring-1 focus:ring-blue-500/40"/>
-    </div>
-  );
-}
-
-// ─── Matchup Result Cards (unchanged) ────────────────────────────────────────
-function ScoreCard({ score }) {
-  const rec = getRecIcon(score);
-  return (
-    <div className={`col-span-full rounded-xl border p-8 text-center ${getScoreBg(score)}`}>
-      <div className="text-xs font-semibold uppercase tracking-widest text-gray-500 mb-2">Matchup Score</div>
-      <div className={`text-7xl font-black tabular-nums ${getScoreColor(score)}`}>{score}</div>
-      <div className="mt-3 flex items-center justify-center gap-2"><span className="text-lg">{rec.icon}</span><span className={`text-base font-bold ${rec.color}`}>{rec.label}</span></div>
-      <div className="mt-2 text-sm text-gray-500">out of 100</div>
-    </div>
-  );
-}
-
-function RecencyCard({ recency }) {
-  if (!recency) return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
-      <div className="flex items-center gap-2 mb-4"><span>📊</span><h3 className="text-sm font-bold text-white">Recency Trends</h3></div>
-      <p className="text-sm text-gray-500">No recency data available.</p>
-    </div>
-  );
-  const rows = [
-    { label:'Last 10 — Avg Hits/Game', value: recency.last10AvgHitsPerGame != null ? fmt(recency.last10AvgHitsPerGame,2) : '—' },
-    { label:'Last 5 — Avg Hits/Game',  value: recency.last5AvgHitsPerGame  != null ? fmt(recency.last5AvgHitsPerGame, 2) : '—' },
-    { label:'HR (Last 10)',            value: recency.last10HR ?? '—' },
-    { label:'HR (Last 5)',             value: recency.last5HR  ?? '—' },
-    { label:'Recency Adjustment',      value: recency.recencyAdjustment != null ? `${recency.recencyAdjustment>0?'+':''}${fmt(recency.recencyAdjustment,2)}` : '—', hi:true },
-  ];
-  return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
-      <div className="flex items-center gap-2 mb-4"><span>📊</span><h3 className="text-sm font-bold text-white">Recency Trends</h3></div>
-      <div className="space-y-2.5">{rows.map(r=>(
-        <div key={r.label} className="flex items-center justify-between gap-2">
-          <span className="text-xs text-gray-500">{r.label}</span>
-          <span className={`text-xs font-bold tabular-nums ${r.hi?'text-blue-400':'text-white'}`}>{r.value}</span>
-        </div>
-      ))}</div>
-    </div>
-  );
-}
-
-function ParkFactorsCard({ parkFactors }) {
-  if (!parkFactors) return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
-      <div className="flex items-center gap-2 mb-4"><span>🏟️</span><h3 className="text-sm font-bold text-white">Park Factors</h3></div>
-      <p className="text-sm text-gray-500">No park factor data available.</p>
-    </div>
-  );
-  const rows = [
-    { label:'Run Factor', value: fmt(parkFactors.runFactor, 3) },
-    { label:'HR Factor',  value: fmt(parkFactors.hrFactor,  3) },
-    { label:'Park Adjustment', value: parkFactors.parkAdjustment != null ? `${parkFactors.parkAdjustment>0?'+':''}${fmt(parkFactors.parkAdjustment,2)}` : '—', hi:true },
-  ];
-  return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
-      <div className="flex items-center gap-2 mb-1"><span>🏟️</span><h3 className="text-sm font-bold text-white">Park Factors</h3></div>
-      {parkFactors.stadium && <p className="text-xs text-gray-500 mb-4">{parkFactors.stadium}</p>}
-      <div className="space-y-2.5">{rows.map(r=>(
-        <div key={r.label} className="flex items-center justify-between gap-2">
-          <span className="text-xs text-gray-500">{r.label}</span>
-          <span className={`text-xs font-bold tabular-nums ${r.hi?'text-blue-400':'text-white'}`}>{r.value}</span>
-        </div>
-      ))}</div>
-    </div>
-  );
-}
-
-function WeatherCard({ weather }) {
-  if (!weather || (!weather.temperature && !weather.windSpeed && !weather.weatherImpact)) return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
-      <div className="flex items-center gap-2 mb-4"><span>🌤️</span><h3 className="text-sm font-bold text-white">Weather</h3></div>
-      <p className="text-sm text-gray-500">No weather data provided.</p>
-      <p className="text-xs text-gray-600 mt-1">Add lat &amp; lon for weather analysis.</p>
-    </div>
-  );
-  return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
-      <div className="flex items-center gap-2 mb-4"><span>🌤️</span><h3 className="text-sm font-bold text-white">Weather</h3></div>
-      <div className="space-y-2.5">
-        {weather.temperature != null && <div className="flex justify-between"><span className="text-xs text-gray-500">Temperature</span><span className="text-xs font-bold text-white">{weather.temperature}°C</span></div>}
-        {weather.windSpeed    != null && <div className="flex justify-between"><span className="text-xs text-gray-500">Wind Speed</span><span className="text-xs font-bold text-white">{weather.windSpeed} km/h</span></div>}
-        {weather.weatherImpact != null && <div className="mt-1 pt-2 border-t border-gray-800 flex justify-between"><span className="text-xs text-gray-500">Impact</span><span className={`text-xs font-bold tabular-nums ${weather.weatherImpact>0?'text-blue-400':weather.weatherImpact<0?'text-red-400':'text-gray-400'}`}>{weather.weatherImpact>0?'+':''}{fmt(weather.weatherImpact,2)}</span></div>}
-        {weather.notes && <p className="text-xs text-gray-500 italic mt-2">{weather.notes}</p>}
-      </div>
-    </div>
-  );
-}
-
-function SplitStatsCard({ data }) {
-  const split = data.splitUsed || data.split || null;
-  const m     = data.matchupStats || data.stats || null;
-  const batterRows  = [
-    { label:'Batting AVG', value: m?.avg      != null ? fmt(m.avg,3)    : '—' },
-    { label:'OPS',         value: m?.ops      != null ? fmt(m.ops,3)    : '—' },
-    { label:'SLG',         value: m?.slg      != null ? fmt(m.slg,3)    : '—' },
-    { label:'OBP',         value: m?.obp      != null ? fmt(m.obp,3)    : '—' },
-    { label:'HR Rate',     value: m?.hrRate   != null ? `${fmt(m.hrRate*100,1)}%` : '—' },
-    { label:'At Bats',     value: m?.atBats   ?? '—' },
-    { label:'Home Runs',   value: m?.homeRuns ?? '—' },
-  ];
-  const pitcherRows = [
-    { label:'ERA',  value: m?.era  != null ? fmt(m.era, 2)  : '—' },
-    { label:'WHIP', value: m?.whip != null ? fmt(m.whip,3)  : '—' },
-    { label:'K/9',  value: m?.k9   != null ? fmt(m.k9,  2)  : '—' },
-    { label:'BB/9', value: m?.bb9  != null ? fmt(m.bb9, 2)  : '—' },
-    { label:'FIP',  value: m?.fip  != null ? fmt(m.fip, 2)  : '—' },
-  ];
-  const hb = batterRows.some(r=>r.value!=='—'), hp = pitcherRows.some(r=>r.value!=='—');
-  return (
-    <div className="col-span-full rounded-xl border border-gray-800 bg-gray-900 p-5">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-5">
-        <div className="flex items-center gap-2"><span>✂️</span><h3 className="text-sm font-bold text-white">Split Stats</h3></div>
-        {split && <span className="inline-flex items-center rounded-full bg-blue-500/10 px-3 py-1 text-xs font-semibold text-blue-400 ring-1 ring-blue-500/20">{split}</span>}
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-        {hb && <div><div className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-3">Batter Stats</div><div className="space-y-2">{batterRows.filter(r=>r.value!=='—').map(r=><div key={r.label} className="flex justify-between"><span className="text-xs text-gray-500">{r.label}</span><span className="text-xs font-bold text-white tabular-nums">{r.value}</span></div>)}</div></div>}
-        {hp && <div><div className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-3">Pitcher Stats</div><div className="space-y-2">{pitcherRows.filter(r=>r.value!=='—').map(r=><div key={r.label} className="flex justify-between"><span className="text-xs text-gray-500">{r.label}</span><span className="text-xs font-bold text-white tabular-nums">{r.value}</span></div>)}</div></div>}
-        {!hb && !hp && <div className="col-span-2"><p className="text-sm text-gray-500">No split stats available.</p></div>}
-      </div>
-    </div>
-  );
-}
 
 // ─── Categories ───────────────────────────────────────────────────────────────
 const CATEGORIES = [
@@ -572,9 +437,8 @@ const CATEGORIES = [
 
 // ─── Main Dashboard Page ──────────────────────────────────────────────────────
 export default function DashboardPage() {
-  // ── Category / window ─────────────────────────────────────────────────────
+  // ── Category ──────────────────────────────────────────────────────────────
   const [category, setCategory] = useState('hitting');
-  const [win,      setWin]      = useState('10');
 
   // ── Auto board ────────────────────────────────────────────────────────────
   const [boardPlayers,  setBoardPlayers]  = useState([]);
@@ -591,17 +455,6 @@ export default function DashboardPage() {
   const [teamsLoading,     setTeamsLoading]    = useState(false);
   const [rosterLoading,    setRosterLoading]   = useState(false);
 
-  // ── Matchup analysis ──────────────────────────────────────────────────────
-  const [batterId,  setBatterId]  = useState('');
-  const [pitcherId, setPitcherId] = useState('');
-  const [season,    setSeason]    = useState('2025');
-  const [stadium,   setStadium]   = useState('');
-  const [lat,       setLat]       = useState('');
-  const [lon,       setLon]       = useState('');
-  const [loading,   setLoading]   = useState(false);
-  const [error,     setError]     = useState(null);
-  const [result,    setResult]    = useState(null);
-
   // ── Derived top-20 for active category ────────────────────────────────────
   const currentBoard = useMemo(() => {
     return [...boardPlayers]
@@ -609,6 +462,20 @@ export default function DashboardPage() {
       .sort((a, b) => (b.scores?.[category] ?? 0) - (a.scores?.[category] ?? 0))
       .slice(0, 20);
   }, [boardPlayers, category]);
+
+  // ── Filtered board (team/player selection) ────────────────────────────────
+  const filteredBoard = useMemo(() => {
+    if (selectedPlayerId) {
+      const p = boardPlayers.find(p => p.playerId === Number(selectedPlayerId));
+      return p ? [p] : [];
+    }
+    if (selectedTeamId) {
+      return [...boardPlayers]
+        .filter(p => p.teamId === Number(selectedTeamId) && (p.scores?.[category] ?? 0) > 0)
+        .sort((a, b) => (b.scores?.[category] ?? 0) - (a.scores?.[category] ?? 0));
+    }
+    return currentBoard;
+  }, [boardPlayers, selectedTeamId, selectedPlayerId, category, currentBoard]);
 
   // ── Load daily board ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -953,22 +820,12 @@ export default function DashboardPage() {
 
   function removePlayer(pid) { setResearchList(prev => prev.filter(r => r.playerId !== pid)); }
 
-  // ── Matchup analysis ──────────────────────────────────────────────────────
-  async function runMatchup() {
-    if (!batterId.trim() || !pitcherId.trim()) { setError('Batter ID and Pitcher ID are required.'); return; }
-    setLoading(true); setError(null); setResult(null);
-    try {
-      let url = `${API_URL}/matchup/batter/${batterId.trim()}/pitcher/${pitcherId.trim()}?season=${season}`;
-      if (stadium.trim()) url += `&stadium=${encodeURIComponent(stadium.trim())}`;
-      if (lat.trim() && lon.trim()) url += `&lat=${lat.trim()}&lon=${lon.trim()}`;
-      const r = await fetch(url);
-      if (!r.ok) { const b = await r.json().catch(()=>({})); throw new Error(b?.error||`Server error: ${r.status}`); }
-      setResult(await r.json());
-    } catch (err) { setError(err.message||'Failed to fetch matchup data.'); }
-    finally { setLoading(false); }
+  // ── Clear filters + pinned players ───────────────────────────────────────
+  function clearAll() {
+    setSelectedTeamId('');
+    setSelectedPlayerId('');
+    setResearchList([]);
   }
-
-  const score = result?.score ?? result?.matchupScore ?? null;
 
   return (
     <div className="min-h-screen bg-gray-950">
@@ -996,34 +853,46 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* ── Category + Window Controls ──────────────────────────────────── */}
-        <div className="flex flex-wrap items-center gap-3 mb-6">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {CATEGORIES.map(cat => (
-              <button key={cat.id} onClick={() => setCategory(cat.id)}
-                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-                  category === cat.id
-                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
-                    : 'bg-gray-900 border border-gray-800 text-gray-400 hover:text-white hover:border-gray-600'
-                }`}>
-                {cat.label}
+        {/* ── Category + Filter Controls ───────────────────────────────────── */}
+        <div className="flex flex-wrap items-center gap-2 mb-6">
+          {CATEGORIES.map(cat => (
+            <button key={cat.id} onClick={() => setCategory(cat.id)}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                category === cat.id
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
+                  : 'bg-gray-900 border border-gray-800 text-gray-400 hover:text-white hover:border-gray-600'
+              }`}>
+              {cat.label}
+            </button>
+          ))}
+          <div className="flex items-center gap-2 ml-auto flex-wrap">
+            <select value={selectedTeamId} onChange={e=>{setSelectedTeamId(e.target.value);setSelectedPlayerId('');}} disabled={teamsLoading}
+              className="rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-xs font-bold text-gray-300 outline-none focus:border-blue-500 cursor-pointer disabled:opacity-50">
+              <option value="">{teamsLoading?'Loading…':'All Teams'}</option>
+              {teams.sort((a,b)=>a.name.localeCompare(b.name)).map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+            {selectedTeamId && (
+              <select value={selectedPlayerId} onChange={e=>setSelectedPlayerId(e.target.value)} disabled={rosterLoading}
+                className="rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-xs font-bold text-gray-300 outline-none focus:border-blue-500 cursor-pointer disabled:opacity-50">
+                <option value="">{rosterLoading?'Loading…':'All Players'}</option>
+                {roster.map(p=><option key={p.id} value={p.id}>{p.fullName} ({p.position})</option>)}
+              </select>
+            )}
+            {(selectedTeamId || researchList.length > 0) && (
+              <button onClick={clearAll}
+                className="px-3 py-2 rounded-lg text-xs font-bold bg-gray-900 border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 transition-all">
+                ✕ Clear
               </button>
-            ))}
+            )}
           </div>
-          <select value={win} onChange={e=>setWin(e.target.value)}
-            className="ml-auto rounded-lg border border-gray-800 bg-gray-900 px-3 py-2 text-xs font-bold text-gray-300 outline-none focus:border-blue-500 cursor-pointer">
-            <option value="5">Last 5 Games</option>
-            <option value="10">Last 10 Games</option>
-            <option value="season">Full Season</option>
-          </select>
         </div>
 
-        {/* ── Auto Board ──────────────────────────────────────────────────── */}
+        {/* ── Board ───────────────────────────────────────────────────────── */}
         {boardLoading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-10">
             {Array.from({length:20}).map((_,i) => <SkeletonCard key={i}/>)}
           </div>
-        ) : currentBoard.length === 0 ? (
+        ) : filteredBoard.length === 0 ? (
           <div className="rounded-xl border border-dashed border-gray-800 bg-gray-900/30 py-16 text-center mb-10">
             <div className="mb-3 opacity-30"><LogoMark size={40}/></div>
             {boardPlayers.length === 0 ? (
@@ -1031,10 +900,15 @@ export default function DashboardPage() {
                 <p className="text-gray-500 font-semibold">No games scheduled today</p>
                 <p className="text-sm text-gray-600 mt-1">Come back on a game day for today&apos;s top props.</p>
               </>
+            ) : selectedPlayerId ? (
+              <>
+                <p className="text-gray-500 font-semibold">Player not in today&apos;s slate</p>
+                <p className="text-sm text-gray-600 mt-1">This player may not have a game today.</p>
+              </>
             ) : category === 'pitching' ? (
               <>
                 <p className="text-gray-500 font-semibold">No probable pitchers posted yet</p>
-                <p className="text-sm text-gray-600 mt-1">Pitching tab populates once pitchers are announced, usually by game day morning.</p>
+                <p className="text-sm text-gray-600 mt-1">Pitching tab populates once pitchers are announced.</p>
               </>
             ) : (
               <>
@@ -1044,118 +918,54 @@ export default function DashboardPage() {
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-10">
-            {currentBoard.map((player, idx) => {
-              const pitcher = player.matchup?.pitcher;
-              const params = new URLSearchParams({
-                teamId:      player.teamId          || '',
-                pitcherId:   pitcher?.id            || '',
-                pitcherName: pitcher?.name          || '',
-                pitcherHand: pitcher?.hand          || '',
-                oppAbbrev:   player.matchup?.oppAbbrev || '',
-                isHome:      player.matchup?.isHome ? 'true' : 'false',
-                teamName:    player.teamName        || '',
-                teamAbbrev:  player.teamAbbrev      || '',
-                position:    player.position        || '',
-              });
-              return (
-                <Link key={player.playerId} href={`/dashboard/player/${player.playerId}?${params}`} className="block">
-                  <AutoPlayerCard player={player} category={category} rank={idx+1}/>
-                </Link>
-              );
-            })}
+          <>
+            {selectedPlayerId && filteredBoard.length > 0 && (
+              <div className="flex justify-end mb-3">
+                <button onClick={addPlayer}
+                  className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all shadow-lg shadow-blue-500/20">
+                  📌 Pin Player
+                </button>
+              </div>
+            )}
+            <div className={`grid gap-3 mb-10 ${selectedPlayerId ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'}`}>
+              {filteredBoard.map((player, idx) => {
+                const pitcher = player.matchup?.pitcher;
+                const params = new URLSearchParams({
+                  teamId:      player.teamId          || '',
+                  pitcherId:   pitcher?.id            || '',
+                  pitcherName: pitcher?.name          || '',
+                  pitcherHand: pitcher?.hand          || '',
+                  oppAbbrev:   player.matchup?.oppAbbrev || '',
+                  isHome:      player.matchup?.isHome ? 'true' : 'false',
+                  teamName:    player.teamName        || '',
+                  teamAbbrev:  player.teamAbbrev      || '',
+                  position:    player.position        || '',
+                });
+                return (
+                  <Link key={player.playerId} href={`/dashboard/player/${player.playerId}?${params}`} className="block">
+                    <AutoPlayerCard player={player} category={category} rank={idx+1}/>
+                  </Link>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {/* ── Pinned Players ──────────────────────────────────────────────── */}
+        {researchList.length > 0 && (
+          <div className="mb-10">
+            <div className="flex items-center gap-3 mb-4">
+              <h2 className="text-lg font-black text-white">Pinned Players</h2>
+              <span className="text-xs text-gray-600">{researchList.length} pinned</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {researchList.map(player => (
+                <ManualPlayerCard key={player.playerId} player={player} category={category} win="10" todayGames={todayGames} onRemove={removePlayer}/>
+              ))}
+            </div>
           </div>
         )}
 
-        {/* ── Manual Research ─────────────────────────────────────────────── */}
-        <div className="mb-10">
-          <div className="flex items-center gap-3 mb-4">
-            <h2 className="text-lg font-black text-white">Pin a Player</h2>
-            <span className="text-xs text-gray-600">Add to the top of your board for any player</span>
-          </div>
-
-          <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 mb-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <select value={selectedTeamId} onChange={e=>setSelectedTeamId(e.target.value)} disabled={teamsLoading}
-                className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs font-bold text-gray-300 outline-none focus:border-blue-500 min-w-[160px] cursor-pointer disabled:opacity-50">
-                <option value="">{teamsLoading?'Loading…':'Select Team'}</option>
-                {teams.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
-              </select>
-              {selectedTeamId && (
-                <select value={selectedPlayerId} onChange={e=>setSelectedPlayerId(e.target.value)} disabled={rosterLoading}
-                  className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs font-bold text-gray-300 outline-none focus:border-blue-500 min-w-[190px] cursor-pointer disabled:opacity-50">
-                  <option value="">{rosterLoading?'Loading…':'Select Player'}</option>
-                  {roster.map(p=><option key={p.id} value={p.id}>{p.fullName} ({p.position})</option>)}
-                </select>
-              )}
-              {selectedPlayerId && (
-                <button onClick={addPlayer} className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all shadow-lg shadow-blue-500/20">
-                  + Pin Player
-                </button>
-              )}
-            </div>
-          </div>
-
-          {researchList.length > 0 && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              {researchList.map(player => (
-                <ManualPlayerCard key={player.playerId} player={player} category={category} win={win} todayGames={todayGames} onRemove={removePlayer}/>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* ── Advanced Matchup Analysis (collapsible) ──────────────────────── */}
-        <details className="rounded-xl border border-gray-800 bg-gray-900/50 overflow-hidden group">
-          <summary className="cursor-pointer px-6 py-4 flex items-center gap-3 select-none hover:bg-gray-900/80 transition-colors list-none">
-            <span>⚡</span>
-            <span className="text-sm font-bold text-white">Advanced Matchup Analysis</span>
-            <span className="ml-auto text-xs text-gray-600">Deep batter vs pitcher scoring</span>
-          </summary>
-          <div className="px-6 pb-6 pt-2 border-t border-gray-800">
-            <p className="text-sm text-gray-500 mb-5">Full analysis with park factors, weather, and split stats.</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-5">
-              <InputField label="Batter ID"  id="batterId"  value={batterId}  onChange={e=>setBatterId(e.target.value)}  placeholder="e.g. 660271"        required/>
-              <InputField label="Pitcher ID" id="pitcherId" value={pitcherId} onChange={e=>setPitcherId(e.target.value)} placeholder="e.g. 592789"        required/>
-              <InputField label="Season"     id="season"    value={season}    onChange={e=>setSeason(e.target.value)}    placeholder="2025"/>
-              <InputField label="Stadium"    id="stadium"   value={stadium}   onChange={e=>setStadium(e.target.value)}   placeholder="e.g. Dodger Stadium"/>
-              <InputField label="Latitude"   id="lat"       value={lat}       onChange={e=>setLat(e.target.value)}       placeholder="Optional"/>
-              <InputField label="Longitude"  id="lon"       value={lon}       onChange={e=>setLon(e.target.value)}       placeholder="Optional"/>
-            </div>
-            {error && (
-              <div className="mb-4 flex items-start gap-3 rounded-lg border border-red-500/20 bg-red-500/5 px-4 py-3">
-                <span className="text-red-400">⚠️</span>
-                <div><p className="text-sm font-semibold text-red-400">Analysis failed</p><p className="text-sm text-red-300/80 mt-0.5">{error}</p></div>
-              </div>
-            )}
-            <button onClick={runMatchup} disabled={loading}
-              className="w-full rounded-lg bg-blue-600 py-3 text-sm font-bold text-white transition-all hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20">
-              {loading
-                ? <><svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z"/></svg>Analyzing…</>
-                : <><span>⚡</span> Run Matchup Analysis</>
-              }
-            </button>
-            {result && score !== null && (
-              <div className="mt-6">
-                <div className="flex items-center gap-2 mb-4">
-                  <h2 className="text-xl font-bold text-white">Results</h2>
-                  <span className="rounded-full bg-blue-500/10 px-2.5 py-0.5 text-xs font-semibold text-blue-400 ring-1 ring-blue-500/20">Analysis Complete</span>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <ScoreCard score={score}/>
-                  <RecencyCard recency={result.recency??result.recencyData??null}/>
-                  <ParkFactorsCard parkFactors={result.parkFactors??result.parkFactor??null}/>
-                  <WeatherCard weather={result.weather??result.weatherData??null}/>
-                  <SplitStatsCard data={result}/>
-                </div>
-                <details className="mt-4 rounded-xl border border-gray-800 bg-gray-900/50 overflow-hidden">
-                  <summary className="cursor-pointer px-5 py-3.5 text-sm font-semibold text-gray-400 hover:text-white transition-colors select-none list-none">View raw API response</summary>
-                  <pre className="overflow-x-auto px-5 pb-5 pt-2 text-xs text-gray-500 leading-relaxed">{JSON.stringify(result,null,2)}</pre>
-                </details>
-              </div>
-            )}
-          </div>
-        </details>
 
       </main>
     </div>

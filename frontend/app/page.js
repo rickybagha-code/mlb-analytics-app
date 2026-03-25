@@ -272,12 +272,6 @@ function Hero() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6"/>
                 </svg>
               </Link>
-              <Link
-                href="/probables"
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-700 px-7 py-3.5 text-base font-semibold text-gray-300 hover:border-gray-500 hover:text-white transition-all hover:-translate-y-0.5"
-              >
-                Today&apos;s Probables
-              </Link>
             </div>
             <p className="mt-3 text-xs text-gray-600">No credit card required · Free to start</p>
           </div>
@@ -774,7 +768,6 @@ const plans = [
     features: [
       'Full dashboard access',
       'Basic batter & pitcher stats',
-      'Probable pitchers lookup',
       'Handedness splits',
       'L5 game log charts',
     ],
@@ -939,12 +932,6 @@ function BottomCTA() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6"/>
                 </svg>
               </Link>
-              <Link
-                href="/probables"
-                className="text-sm text-gray-400 hover:text-white transition-colors"
-              >
-                View today&apos;s probable pitchers →
-              </Link>
             </div>
           </div>
         </div>
@@ -988,7 +975,6 @@ function Footer() {
             <p className="text-xs font-bold uppercase tracking-widest text-gray-600 mb-3">Product</p>
             <div className="flex flex-col gap-2">
               <Link href="/dashboard" className="text-sm text-gray-500 hover:text-white transition-colors">Dashboard</Link>
-              <Link href="/probables" className="text-sm text-gray-500 hover:text-white transition-colors">Today&apos;s Probables</Link>
               <a href="#features" className="text-sm text-gray-500 hover:text-white transition-colors">Features</a>
               <a href="#pricing" className="text-sm text-gray-500 hover:text-white transition-colors">Pricing</a>
             </div>
