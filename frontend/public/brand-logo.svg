@@ -1,15 +1,12 @@
 <svg width="400" height="400" viewBox="0 0 400 400" fill="none" xmlns="http://www.w3.org/2000/svg">
   <rect width="400" height="400" fill="#0f1117"/>
-  <!-- Mark scaled ~260px wide, centered. translate(49,41) scale(5.306) -->
-  <g transform="translate(49,41) scale(5.306)">
-    <path d="M6 42 L12 42 Q14 42 14 44 L14 52 L4 52 L4 44 Q4 42 6 42 Z" fill="white"/>
-    <path d="M19 32 L25 32 Q27 32 27 34 L27 52 L17 52 L17 34 Q17 32 19 32 Z" fill="white"/>
-    <path d="M32 20 L38 20 Q40 20 40 22 L40 52 L30 52 L30 22 Q30 20 32 20 Z" fill="white"/>
-    <path d="M45 8 L51 8 Q53 8 53 10 L53 52 L43 52 L43 10 Q43 8 45 8 Z" fill="white"/>
-    <line x1="4" y1="44" x2="52" y2="4"  stroke="white" stroke-width="2.5" stroke-linecap="round"/>
-    <line x1="52" y1="4" x2="46" y2="8"  stroke="white" stroke-width="2.5" stroke-linecap="round"/>
-    <line x1="52" y1="4" x2="55" y2="10" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- Home plate mark: 56×56 → ~240px tall. scale=4.286, center at (200,185) -->
+  <!-- Plate: y=[8,52]=44 units tall → 4.286*44=188.6px. x=[7,49]=42 units wide → 4.286*42=180px -->
+  <!-- translate so center x=200-(42/2*4.286)=200-90=110, y offset so plate centered vertically ~top at 90 -->
+  <g transform="translate(110,65) scale(4.286)">
+    <path d="M 7,8 L 49,8 L 49,36 L 28,52 L 7,36 Z" fill="white"/>
+    <text x="28" y="34" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="22" font-weight="900" fill="#0f1117">P</text>
   </g>
   <text x="200" y="350" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="28" font-weight="700" letter-spacing="-1.1" fill="white">ProprStats</text>
-  <text x="200" y="370" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="9" font-weight="400" letter-spacing="3" fill="rgba(255,255,255,0.35)">MLB ANALYTICS</text>
+  <text x="200" y="372" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="9" font-weight="400" letter-spacing="3" fill="rgba(255,255,255,0.35)">MLB ANALYTICS</text>
 </svg>

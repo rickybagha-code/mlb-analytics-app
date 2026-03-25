@@ -978,6 +978,60 @@ app.get('/pitcher/:id/splits', async (req, res) => {
   }
 });
 
+// ─── PrizePicks MLB proxy (avoids browser CORS) ──────────────────────────────
+app.get('/prizepicks/mlb', async (req, res) => {
+  try {
+    const response = await fetch('https://api.prizepicks.com/projections?league_id=2', {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; MLBAnalytics/1.0)',
+        'Accept': 'application/json',
+        'Referer': 'https://app.prizepicks.com/',
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!response.ok) throw new Error(`PrizePicks returned ${response.status}`);
+    const data = await response.json();
+
+    // Build player name map from included resources
+    const playerMap = {};
+    (data.included || []).forEach(item => {
+      if (item.type === 'new_player') {
+        playerMap[item.id] = item.attributes?.display_name || '';
+      }
+    });
+
+    const STAT_MAP = {
+      'Strikeouts':      'strikeouts',
+      'Hits':            'hits',
+      'Home Runs':       'hr',
+      'Runs':            'runs',
+      'RBIs':            'rbi',
+      'Stolen Bases':    'sb',
+      'Walks':           'walks',
+      'Innings Pitched': 'ip',
+      'Pitching Outs':   'outs',
+      'Hits+Runs+RBIs':  'hrr',
+    };
+
+    const lines = {};
+    (data.data || []).forEach(proj => {
+      const playerId = proj.relationships?.new_player?.data?.id;
+      const name = playerMap[playerId];
+      if (!name) return;
+      const stat = STAT_MAP[proj.attributes?.stat_type];
+      if (!stat) return;
+      const line = parseFloat(proj.attributes?.line_score);
+      if (isNaN(line)) return;
+      if (!lines[name]) lines[name] = {};
+      lines[name][stat] = line;
+    });
+
+    res.json({ lines, updated: new Date().toISOString() });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch PrizePicks', details: error.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });

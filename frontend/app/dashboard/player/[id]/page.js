@@ -8,6 +8,49 @@ import ProprStatsLogo from '../../../../components/ProprStatsLogo';
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 const MLB_API  = 'https://statsapi.mlb.com/api/v1';
 
+// ─── Opponent K rate per 9-inning game (2024 MLB actuals) ────────────────────
+const TEAM_K_RATES = {
+  NYY:8.8, BOS:8.5, BAL:8.7, TBR:9.1, TOR:8.9,
+  CLE:8.6, DET:8.4, CWS:8.8, KCR:8.3, MIN:8.5,
+  HOU:8.2, LAA:9.0, OAK:9.2, SEA:8.7, TEX:8.9,
+  ATL:8.1, MIA:9.0, NYM:8.6, PHI:8.3, WSN:9.1,
+  CHC:8.9, CIN:9.2, MIL:8.6, PIT:8.8, STL:7.9,
+  ARI:8.5, COL:9.1, LAD:8.0, SDP:8.4, SFG:8.7,
+};
+const LG_K_RATE = 8.6; // league avg
+
+// ─── Venue coordinates for Open-Meteo weather ─────────────────────────────────
+const VENUE_COORDS = {
+  NYY:{ lat:40.829, lon:-73.926 }, BOS:{ lat:42.347, lon:-71.097 }, BAL:{ lat:39.284, lon:-76.622 },
+  TBR:{ lat:27.768, lon:-82.654 }, TOR:{ lat:43.641, lon:-79.389 }, CLE:{ lat:41.496, lon:-81.685 },
+  DET:{ lat:42.339, lon:-83.049 }, CWS:{ lat:41.830, lon:-87.634 }, KCR:{ lat:39.051, lon:-94.480 },
+  MIN:{ lat:44.982, lon:-93.278 }, HOU:{ lat:29.757, lon:-95.355 }, LAA:{ lat:33.800, lon:-117.883 },
+  OAK:{ lat:37.752, lon:-122.201 }, SEA:{ lat:47.591, lon:-122.333 }, TEX:{ lat:32.748, lon:-97.083 },
+  ATL:{ lat:33.891, lon:-84.468 }, MIA:{ lat:25.778, lon:-80.220 }, NYM:{ lat:40.758, lon:-73.846 },
+  PHI:{ lat:39.906, lon:-75.167 }, WSN:{ lat:38.873, lon:-77.008 }, CHC:{ lat:41.948, lon:-87.656 },
+  CIN:{ lat:39.097, lon:-84.507 }, MIL:{ lat:43.028, lon:-87.971 }, PIT:{ lat:40.447, lon:-80.006 },
+  STL:{ lat:38.623, lon:-90.193 }, ARI:{ lat:33.446, lon:-112.067 }, COL:{ lat:39.756, lon:-104.994 },
+  LAD:{ lat:34.074, lon:-118.240 }, SDP:{ lat:32.707, lon:-117.157 }, SFG:{ lat:37.779, lon:-122.389 },
+};
+
+// ─── Frontend weather adjustment (mirrors services/weatherLogic.js) ────────────
+function calcWeatherAdj(weather) {
+  if (!weather) return { adjustment: 0, notes: [], temp: null, windSpeed: null, windDir: null };
+  const temp      = Number(weather.temp ?? 21);
+  const windSpeed = Number(weather.windSpeed ?? 0);
+  const windDir   = Number(weather.windDir ?? 0);
+  let adj = 0, notes = [];
+  if (temp >= 29)      { adj += 4; notes.push('Hot'); }
+  else if (temp >= 24) { adj += 2; notes.push('Warm'); }
+  else if (temp <= 13) { adj -= 3; notes.push('Cold'); }
+  if (windSpeed >= 10) {
+    if      (windDir >= 225 && windDir <= 315) { adj += 4; notes.push('Wind blowing out'); }
+    else if (windDir >= 45  && windDir <= 135) { adj -= 4; notes.push('Wind blowing in');  }
+    else                                       { adj += 1; notes.push('Crosswind');         }
+  }
+  return { adjustment: adj, notes, temp, windSpeed, windDir };
+}
+
 // ─── Prop Categories ──────────────────────────────────────────────────────────
 const PROP_CATS = [
   { id:'hits', label:'Hits',         field:'hits',        lines:[0.5,1.5,2.5], def:0.5 },
@@ -471,8 +514,15 @@ function PitcherPlatoonCard({ splits, loading }) {
 }
 
 // ─── Pitcher Contextual Factors Row ──────────────────────────────────────────
-function PitcherContextRow({ starts, oppAbbrev, isHome }) {
+function PitcherContextRow({ starts, oppAbbrev, isHome, weather }) {
   const daysRest = computeDaysRest(starts);
+  const homeAbbrev = isHome ? null : oppAbbrev; // pitcher's home park = away team's park if away
+  const park = oppAbbrev ? PARK_FACTORS[oppAbbrev] || PARK_FACTORS[homeAbbrev] : null;
+  const parkK = park?.k ?? null;
+  const wx = calcWeatherAdj(weather);
+  const oppKRate = TEAM_K_RATES[oppAbbrev] || null;
+  const oppKDelta = oppKRate ? (oppKRate - LG_K_RATE).toFixed(1) : null;
+
   const items = [
     {
       icon: '📅',
@@ -482,29 +532,22 @@ function PitcherContextRow({ starts, oppAbbrev, isHome }) {
       cls:   daysRest != null ? (daysRest >= 5 ? 'text-emerald-400' : daysRest >= 4 ? 'text-yellow-400' : 'text-orange-400') : 'text-gray-600',
     },
     {
-      icon: '🏟️',
-      label: 'Park K Factor',
-      value: '—',
-      sub:   'Coming Soon',
-      cls:   'text-gray-600',
+      icon: '⚾',
+      label: 'Opp K Rate',
+      value: oppKRate ? `${oppKRate}` : '—',
+      sub:   oppKDelta != null ? (Number(oppKDelta) > 0 ? `+${oppKDelta} vs avg` : `${oppKDelta} vs avg`) : 'K/game avg',
+      cls:   oppKRate ? (oppKRate >= LG_K_RATE + 0.4 ? 'text-emerald-400' : oppKRate <= LG_K_RATE - 0.4 ? 'text-red-400' : 'text-yellow-400') : 'text-gray-600',
     },
     {
       icon: '🌤️',
       label: 'Weather',
-      value: '—',
-      sub:   'Coming Soon',
-      cls:   'text-gray-600',
-    },
-    {
-      icon: '⚖️',
-      label: 'Ump K/Game',
-      value: '—',
-      sub:   'Coming Soon',
-      cls:   'text-gray-600',
+      value: wx.temp != null ? `${Math.round(wx.temp)}°C` : '—',
+      sub:   wx.notes.length ? wx.notes.join(', ') : weather ? 'Normal conditions' : 'Loading...',
+      cls:   wx.temp != null ? (wx.temp >= 29 ? 'text-orange-400' : wx.temp <= 13 ? 'text-blue-400' : 'text-gray-400') : 'text-gray-600',
     },
   ];
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    <div className="grid grid-cols-3 gap-3">
       {items.map(item => (
         <div key={item.label} className="rounded-xl border border-gray-800 bg-gray-900 p-4 text-center">
           <div className="text-xl mb-1">{item.icon}</div>
@@ -772,7 +815,7 @@ class ProjectionErrorBoundary extends React.Component {
   }
 }
 
-function useKProjection(pitcherStarts, seasonStats) {
+function useKProjection(pitcherStarts, seasonStats, oppTeamAbbrev) {
   return useMemo(() => {
     if (!pitcherStarts?.length) return null;
     const last5  = pitcherStarts.slice(-5);
@@ -791,7 +834,10 @@ function useKProjection(pitcherStarts, seasonStats) {
     const kStdDev = Math.max(1.2, Math.sqrt(kVar));
     const daysRest   = computeDaysRest(pitcherStarts);
     const restFactor = daysRest != null ? (daysRest < 4 ? 0.95 : daysRest >= 6 ? 1.02 : 1.0) : 1.0;
-    const adj      = Math.round(projected * restFactor * 10) / 10;
+    // Opponent team K rate adjustment
+    const oppKRate   = TEAM_K_RATES[oppTeamAbbrev] || LG_K_RATE;
+    const oppKFactor = oppKRate / LG_K_RATE;
+    const adj      = Math.round(projected * restFactor * oppKFactor * 10) / 10;
     const lower80  = Math.max(0, Math.round((adj - 1.28 * kStdDev) * 10) / 10);
     const upper80  = Math.round((adj + 1.28 * kStdDev) * 10) / 10;
     const projectedOuts = Math.round(avgL5IP * 3 * 10) / 10;
@@ -799,21 +845,20 @@ function useKProjection(pitcherStarts, seasonStats) {
     const outUpper = Math.round((avgL5IP + 1.2) * 3);
     const confidence = pitcherStarts.length >= 10 ? 'High' : pitcherStarts.length >= 5 ? 'Medium' : 'Low';
     const factorImpacts = [
-      { label:'L5 K avg',       impact: Math.round((l5K - leagueK) * 0.60 * 10)/10,                            dir: l5K > leagueK ? '↑' : l5K < leagueK ? '↓' : '—' },
-      { label:'Season K/start', impact: seasonK != null ? Math.round((seasonK - leagueK)*0.30*10)/10 : 0,       dir: (seasonK??leagueK) > leagueK ? '↑' : '↓', note: seasonK == null ? 'using L5 only' : null },
-      { label:'SwStr% edge',    impact: 0, dir:'—', note:'Savant — coming soon' },
-      { label:'Park factor',    impact: 0, dir:'—', note:'Coming soon' },
-      { label:'Umpire K/game',  impact: 0, dir:'—', note:'Coming soon' },
-      { label:'Rest/weather',   impact: Math.round((restFactor - 1) * projected * 10)/10, dir: restFactor > 1 ? '↑' : restFactor < 1 ? '↓' : '—' },
+      { label:'L5 K avg',         impact: Math.round((l5K - leagueK) * 0.60 * 10)/10,                      dir: l5K > leagueK ? '↑' : l5K < leagueK ? '↓' : '—' },
+      { label:'Season K/start',   impact: seasonK != null ? Math.round((seasonK - leagueK)*0.30*10)/10 : 0, dir: (seasonK??leagueK) > leagueK ? '↑' : '↓', note: seasonK == null ? 'using L5 only' : null },
+      { label:'Opp team K rate',  impact: Math.round((oppKFactor-1)*projected*10)/10, dir: oppKFactor>1?'↑':'↓', note: !oppTeamAbbrev?'opp unknown':null },
+      { label:'SwStr% edge',      impact: 0, dir:'—', note:'Savant — coming soon' },
+      { label:'Rest adj',         impact: Math.round((restFactor - 1) * projected * 10)/10, dir: restFactor > 1 ? '↑' : restFactor < 1 ? '↓' : '—' },
     ];
     return {
       projected: adj, lower80, upper80, kStdDev: Math.round(kStdDev*10)/10,
       l5K: Math.round(l5K*10)/10, seasonK: seasonK != null ? Math.round(seasonK*10)/10 : null,
       avgL5IP: Math.round(avgL5IP*10)/10, projectedOuts, outLower, outUpper,
       confidence, restFactor, daysRest, l5Ks, l5IPValues: l5IP,
-      factorImpacts, hasSeasStats: seasonK != null,
+      factorImpacts, hasSeasStats: seasonK != null, oppKFactor, oppKRate,
     };
-  }, [pitcherStarts, seasonStats]);
+  }, [pitcherStarts, seasonStats, oppTeamAbbrev]);
 }
 
 function PoissonBarChart({ lambda, bookLine }) {
@@ -872,18 +917,27 @@ function EVGaugeSVG({ evPct }) {
   );
 }
 
-function ProjectionEVCard({ pitcherStarts, seasonStats }) {
+function ProjectionEVCard({ pitcherStarts, seasonStats, oppTeamAbbrev, prizePicksLine }) {
   const [bookLine,  setBookLine]  = useState('');
   const [overOdds,  setOverOdds]  = useState('-115');
   const [underOdds, setUnderOdds] = useState('-115');
   const [debLine,   setDebLine]   = useState('');
+  const [ppSource,  setPpSource]  = useState(false); // true = auto-filled from PP
+
+  // Auto-fill from PrizePicks when available (user can override)
+  useEffect(() => {
+    if (prizePicksLine != null && bookLine === '') {
+      setBookLine(String(prizePicksLine));
+      setPpSource(true);
+    }
+  }, [prizePicksLine]);
 
   useEffect(() => {
     const t = setTimeout(() => setDebLine(bookLine), 300);
     return () => clearTimeout(t);
   }, [bookLine]);
 
-  const proj   = useKProjection(pitcherStarts, seasonStats);
+  const proj   = useKProjection(pitcherStarts, seasonStats, oppTeamAbbrev);
   const line   = parseFloat(debLine) || null;
   const oOdds  = parseInt(overOdds)  || -115;
   const uOdds  = parseInt(underOdds) || -115;
@@ -940,11 +994,11 @@ function ProjectionEVCard({ pitcherStarts, seasonStats }) {
           <div className="text-sm font-black text-gray-300 tabular-nums">{proj.lower80} – {proj.upper80}</div>
           <div className="text-xs text-gray-600 mt-0.5">80% Range</div>
         </div>
-        <div className="rounded-lg border bg-gray-800/50 border-gray-700 p-3 text-center">
+        <div className={`rounded-lg border p-3 text-center ${ppSource && bookLine ? 'border-purple-500/40 bg-purple-500/5' : 'bg-gray-800/50 border-gray-700'}`}>
           <input type="number" step="0.5" placeholder="e.g. 5.5" value={bookLine}
-            onChange={e => setBookLine(e.target.value)}
+            onChange={e => { setBookLine(e.target.value); setPpSource(false); }}
             className="w-full bg-transparent text-center text-base font-black text-white tabular-nums outline-none placeholder-gray-700 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"/>
-          <div className="text-xs text-gray-600 mt-0.5">Book Line ↑ type here</div>
+          <div className="text-xs text-gray-600 mt-0.5">{ppSource ? '🟣 PrizePicks line' : 'Book Line ↑ type'}</div>
         </div>
         <div className={`rounded-lg border p-3 text-center ${evBadge ? evBadge.cls : 'bg-gray-800/50 border-gray-700'}`}>
           <div className={`text-xl font-black tabular-nums ${evBadge ? '' : 'text-gray-600'}`}>
@@ -1196,77 +1250,231 @@ const PARK_FACTORS = {
   SFG:{ name:'Oracle Park',        hits:0.97, hr:0.88, runs:0.95, k:1.04 },
 };
 
-function ParkFactorCard({ spTeamAbbrev, spOppAbbrev, spIsHome, activeCat }) {
+// ─── Baseball Diamond Card (park factors + weather) ──────────────────────────
+function BaseballDiamondCard({ spTeamAbbrev, spOppAbbrev, spIsHome, activeCat, weather }) {
   const homeAbbrev = spIsHome ? spTeamAbbrev : spOppAbbrev;
   const park = homeAbbrev ? PARK_FACTORS[homeAbbrev] : null;
+  const wx = calcWeatherAdj(weather);
 
-  if (!park) return (
-    <div className="rounded-xl border border-dashed border-gray-800 bg-gray-900/30 p-5">
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-base">🏟️</span>
-        <h3 className="text-sm font-bold text-gray-500">Park Factor</h3>
-      </div>
-      <p className="text-xs text-gray-700">Park factor data unavailable — team info not found for this game.</p>
-    </div>
-  );
+  const pctStr = v => `${v >= 1 ? '+' : ''}${Math.round((v-1)*100)}%`;
+  const valCls = v => v >= 1.03 ? 'text-emerald-400' : v <= 0.97 ? 'text-red-400' : 'text-gray-400';
+  const valBg  = v => v >= 1.03 ? 'bg-emerald-500/15 border-emerald-500/30' : v <= 0.97 ? 'bg-red-500/10 border-red-500/25' : 'bg-gray-800/50 border-gray-700/50';
 
-  const rows = [
-    { prop:'Hits',       val: park.hits, cat:'hits' },
-    { prop:'Home Runs',  val: park.hr,   cat:'hr'   },
-    { prop:'Runs',       val: park.runs, cat:'runs'  },
-    { prop:'Strikeouts', val: park.k,    cat:'k'    },
-  ];
-  const favors   = v => v >= 1.03 ? 'Hitter' : v <= 0.97 ? 'Pitcher' : 'Neutral';
-  const favorCls = v => v >= 1.03
-    ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30'
-    : v <= 0.97
-    ? 'text-red-400 bg-red-500/10 border-red-500/30'
-    : 'text-gray-400 bg-gray-800/50 border-gray-700';
-  const valCls   = v => v >= 1.03 ? 'text-emerald-400' : v <= 0.97 ? 'text-red-400' : 'text-gray-400';
-  const pctStr   = v => `${v >= 1 ? '+' : ''}${Math.round((v-1)*100)}%`;
+  // SVG dimensions
+  const W = 280, H = 250;
+  // Base positions (top-down, HP at bottom center)
+  const HP = { x:140, y:228 };
+  const B1 = { x:214, y:162 };
+  const B2 = { x:140, y:96  };
+  const B3 = { x:66,  y:162 };
+  const PM = { x:140, y:165 }; // pitcher's mound
 
-  const catParkVal   = activeCat === 'hits' ? park.hits : activeCat === 'hr' ? park.hr : activeCat === 'runs' ? park.runs : null;
-  const catPropLabel = activeCat === 'hits' ? 'hits' : activeCat === 'hr' ? 'home runs' : activeCat === 'runs' ? 'runs' : null;
-  const overallChar  = (park.hits >= 1.04 || park.hr >= 1.08) ? "hitter's" : (park.hits <= 0.96 || park.hr <= 0.92) ? "pitcher's" : 'neutral';
+  // Wind arrow — direction is meteorological (where it comes FROM)
+  // Positive adj = blowing out (good for HR) → arrow toward outfield (up)
+  // Negative adj = blowing in (bad for HR) → arrow toward HP (down)
+  const windAdj = wx.adjustment;
+  const arrowColor = windAdj > 0 ? '#34d399' : windAdj < 0 ? '#f87171' : '#6b7280';
+  const arrowEndY = windAdj >= 4 ? 105 : windAdj >= 1 ? 130 : windAdj <= -4 ? 195 : windAdj <= -1 ? 185 : null;
+
+  // Park color (overall hitter vs pitcher friendliness)
+  const isHitterPark  = park && (park.hits >= 1.04 || park.hr >= 1.08);
+  const isPitcherPark = park && (park.hits <= 0.96 || park.hr <= 0.92);
+  const outfieldFill  = isHitterPark ? '#16a34a' : isPitcherPark ? '#7f1d1d' : '#14532d';
+
+  // Active cat indicator values
+  const catVal = activeCat === 'hits' ? park?.hits : activeCat === 'hr' ? park?.hr :
+                 activeCat === 'runs' ? park?.runs : activeCat === 'sb' ? park?.runs : null;
 
   return (
     <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
-      <div className="flex items-center gap-2 mb-3">
+      {/* Header */}
+      <div className="flex items-center gap-2 mb-4">
         <span className="text-base">🏟️</span>
-        <h3 className="text-sm font-bold text-white">Park Factor</h3>
-        <span className="ml-auto text-xs text-gray-600 truncate max-w-[140px]">{park.name}</span>
+        <h3 className="text-sm font-bold text-white">Park & Conditions</h3>
+        {park && <span className="ml-auto text-xs text-gray-500 truncate max-w-[160px]">{park.name}</span>}
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="border-b border-gray-800">
-              {['Prop','Factor','vs Lg','Favors'].map(h => (
-                <th key={h} className={`py-2 font-semibold text-gray-600 ${h==='Prop'?'text-left':'text-center px-2'}`}>{h}</th>
+
+      {!park ? (
+        <p className="text-xs text-gray-600 italic">Park data unavailable — team not identified.</p>
+      ) : (
+        <>
+          {/* Baseball Diamond SVG */}
+          <div className="mb-4">
+            <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',maxHeight:220}}>
+              {/* Outfield arc */}
+              <path d={`M 22,${H-22} Q ${W/2},18 ${W-22},${H-22} Z`}
+                fill={outfieldFill} opacity="0.35"/>
+              <path d={`M 22,${H-22} Q ${W/2},18 ${W-22},${H-22}`}
+                fill="none" stroke={outfieldFill} strokeWidth="2.5" opacity="0.6"/>
+
+              {/* Foul lines */}
+              <line x1={HP.x} y1={HP.y} x2={22}    y2={H-22} stroke="#ca8a04" strokeWidth="1" opacity="0.5"/>
+              <line x1={HP.x} y1={HP.y} x2={W-22}  y2={H-22} stroke="#ca8a04" strokeWidth="1" opacity="0.5"/>
+
+              {/* Base paths (infield diamond) */}
+              <polygon
+                points={`${HP.x},${HP.y} ${B1.x},${B1.y} ${B2.x},${B2.y} ${B3.x},${B3.y}`}
+                fill="#92400e" fillOpacity="0.25" stroke="#ca8a04" strokeWidth="1.5" strokeOpacity="0.5"
+              />
+
+              {/* Pitcher's mound */}
+              <circle cx={PM.x} cy={PM.y} r="9" fill="#92400e" stroke="#ca8a04" strokeWidth="1" opacity="0.7"/>
+
+              {/* Wind arrow (when significant wind) */}
+              {arrowEndY && weather && (
+                <g>
+                  <defs>
+                    <marker id="arrowhead" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+                      <path d={windAdj > 0 ? 'M0,6 L3,0 L6,6 Z' : 'M0,0 L3,6 L6,0 Z'} fill={arrowColor}/>
+                    </marker>
+                  </defs>
+                  <line
+                    x1={W/2} y1={windAdj > 0 ? 198 : 115}
+                    x2={W/2} y2={arrowEndY}
+                    stroke={arrowColor} strokeWidth="2.5" strokeDasharray="5 3"
+                    markerEnd="url(#arrowhead)" opacity="0.85"
+                  />
+                  <rect x={W/2-30} y={windAdj > 0 ? arrowEndY-22 : arrowEndY+6}
+                    width="60" height="16" rx="3" fill="#111827" fillOpacity="0.85"/>
+                  <text x={W/2} y={windAdj > 0 ? arrowEndY-10 : arrowEndY+17}
+                    textAnchor="middle" fill={arrowColor} fontSize="9" fontWeight="700">
+                    {wx.notes[wx.notes.length-1] || ''}
+                  </text>
+                </g>
+              )}
+
+              {/* HR factor — outfield arc center */}
+              {park && (
+                <g>
+                  <rect x={W/2-22} y="26" width="44" height="22" rx="4" fill="#111827" fillOpacity="0.9"/>
+                  <text x={W/2} y="38" textAnchor="middle" fontSize="9" fontWeight="700"
+                    fill={park.hr >= 1.03 ? '#34d399' : park.hr <= 0.97 ? '#f87171' : '#9ca3af'}>
+                    HR {pctStr(park.hr)}
+                  </text>
+                  <text x={W/2} y="46" textAnchor="middle" fontSize="7.5" fill="#6b7280">HR factor</text>
+                </g>
+              )}
+
+              {/* Hits factor — near 2B */}
+              {park && (
+                <g>
+                  <rect x={B2.x-20} y={B2.y+12} width="40" height="20" rx="3" fill="#111827" fillOpacity="0.9"/>
+                  <text x={B2.x} y={B2.y+23} textAnchor="middle" fontSize="8.5" fontWeight="700"
+                    fill={park.hits >= 1.03 ? '#34d399' : park.hits <= 0.97 ? '#f87171' : '#9ca3af'}>
+                    H {pctStr(park.hits)}
+                  </text>
+                  <text x={B2.x} y={B2.y+30} textAnchor="middle" fontSize="7" fill="#6b7280">Hits</text>
+                </g>
+              )}
+
+              {/* Runs factor — near 3B */}
+              {park && (
+                <g>
+                  <rect x={B3.x-20} y={B3.y-28} width="40" height="20" rx="3" fill="#111827" fillOpacity="0.9"/>
+                  <text x={B3.x} y={B3.y-17} textAnchor="middle" fontSize="8.5" fontWeight="700"
+                    fill={park.runs >= 1.03 ? '#34d399' : park.runs <= 0.97 ? '#f87171' : '#9ca3af'}>
+                    R {pctStr(park.runs)}
+                  </text>
+                  <text x={B3.x} y={B3.y-10} textAnchor="middle" fontSize="7" fill="#6b7280">Runs</text>
+                </g>
+              )}
+
+              {/* K factor — pitcher mound */}
+              {park && (
+                <g>
+                  <rect x={PM.x-20} y={PM.y+13} width="40" height="20" rx="3" fill="#111827" fillOpacity="0.9"/>
+                  <text x={PM.x} y={PM.y+24} textAnchor="middle" fontSize="8.5" fontWeight="700"
+                    fill={park.k <= 0.97 ? '#34d399' : park.k >= 1.03 ? '#f87171' : '#9ca3af'}>
+                    K {pctStr(park.k)}
+                  </text>
+                  <text x={PM.x} y={PM.y+31} textAnchor="middle" fontSize="7" fill="#6b7280">K factor</text>
+                </g>
+              )}
+
+              {/* Temperature — top right */}
+              {weather && wx.temp != null && (
+                <g>
+                  <rect x={W-62} y="6" width="54" height="22" rx="4" fill="#111827" fillOpacity="0.9"/>
+                  <text x={W-35} y="20" textAnchor="middle" fontSize="10" fontWeight="700"
+                    fill={wx.temp >= 29 ? '#f97316' : wx.temp <= 13 ? '#60a5fa' : '#e5e7eb'}>
+                    {Math.round(wx.temp)}°C
+                  </text>
+                </g>
+              )}
+
+              {/* Wind speed — top left */}
+              {weather && wx.windSpeed != null && wx.windSpeed > 0 && (
+                <g>
+                  <rect x="8" y="6" width="52" height="22" rx="4" fill="#111827" fillOpacity="0.9"/>
+                  <text x="34" y="20" textAnchor="middle" fontSize="9" fontWeight="600" fill="#9ca3af">
+                    {Math.round(wx.windSpeed)} mph
+                  </text>
+                </g>
+              )}
+
+              {/* Bases */}
+              {[B1, B2, B3].map((b, i) => (
+                <rect key={i} x={b.x-5} y={b.y-5} width="10" height="10" rx="1"
+                  fill="white" opacity="0.9" transform={`rotate(45 ${b.x} ${b.y})`}/>
               ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(r => (
-              <tr key={r.prop} className={`border-b border-gray-800/50 ${r.cat === activeCat ? 'bg-blue-500/5' : ''}`}>
-                <td className={`py-2 font-medium ${r.cat === activeCat ? 'text-blue-400' : 'text-gray-400'}`}>{r.prop}</td>
-                <td className={`py-2 px-2 text-center font-black tabular-nums ${valCls(r.val)}`}>{r.val.toFixed(2)}</td>
-                <td className={`py-2 px-2 text-center font-bold tabular-nums ${valCls(r.val)}`}>{pctStr(r.val)}</td>
-                <td className="py-2 px-2 text-center">
-                  <span className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-xs font-bold ${favorCls(r.val)}`}>{favors(r.val)}</span>
-                </td>
-              </tr>
+              {/* Home plate pentagon */}
+              <polygon
+                points={`${HP.x},${HP.y-8} ${HP.x+6},${HP.y-4} ${HP.x+6},${HP.y+4} ${HP.x-6},${HP.y+4} ${HP.x-6},${HP.y-4}`}
+                fill="white" opacity="0.9"/>
+            </svg>
+          </div>
+
+          {/* Stats row */}
+          <div className="grid grid-cols-4 gap-2">
+            {[
+              { label:'Hits',  val:park.hits, cat:'hits' },
+              { label:'HR',    val:park.hr,   cat:'hr'   },
+              { label:'Runs',  val:park.runs, cat:'runs' },
+              { label:'K',     val:park.k,    cat:'k'    },
+            ].map(r => (
+              <div key={r.label} className={`rounded-lg border p-2.5 text-center ${r.cat===activeCat ? 'border-blue-500/40 bg-blue-500/10' : valBg(r.val)}`}>
+                <div className={`text-sm font-black tabular-nums ${r.cat===activeCat ? 'text-blue-400' : valCls(r.val)}`}>{pctStr(r.val)}</div>
+                <div className="text-xs text-gray-600 mt-0.5">{r.label}</div>
+              </div>
             ))}
-          </tbody>
-        </table>
-      </div>
-      {catParkVal != null && catPropLabel && (
-        <p className="mt-3 text-xs text-gray-500 leading-relaxed pt-2 border-t border-gray-800/60">
-          <span className="text-gray-400">{park.name}</span> is a{' '}
-          <span className={`font-bold ${catParkVal >= 1.03 ? 'text-emerald-400' : catParkVal <= 0.97 ? 'text-red-400' : 'text-gray-400'}`}>{overallChar} park</span>{' '}
-          for {catPropLabel}, historically{' '}
-          {catParkVal >= 1.03 ? 'boosting' : catParkVal <= 0.97 ? 'suppressing' : 'not significantly affecting'}{' '}
-          {catPropLabel} by <span className="font-bold tabular-nums">{pctStr(catParkVal)}</span> vs league avg.
-        </p>
+          </div>
+
+          {/* Weather row */}
+          {weather ? (
+            <div className="mt-3 pt-3 border-t border-gray-800/60">
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="text-xs font-bold text-gray-500 uppercase tracking-wide">Game Conditions</span>
+                {wx.adjustment !== 0 && (
+                  <span className={`text-xs font-bold rounded-full px-2 py-0.5 border ${wx.adjustment > 0 ? 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10' : 'text-red-400 border-red-500/30 bg-red-500/10'}`}>
+                    {wx.adjustment > 0 ? '+' : ''}{wx.adjustment} adj
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs text-gray-400">
+                {wx.temp != null && (
+                  <span className={wx.temp >= 29 ? 'text-orange-400' : wx.temp <= 13 ? 'text-blue-400' : 'text-gray-400'}>
+                    {Math.round(wx.temp)}°C
+                  </span>
+                )}
+                {wx.windSpeed > 0 && <span>{Math.round(wx.windSpeed)} mph wind</span>}
+                {wx.notes.map((n,i) => <span key={i} className="text-gray-500">· {n}</span>)}
+              </div>
+            </div>
+          ) : (
+            <div className="mt-3 pt-3 border-t border-gray-800/60">
+              <p className="text-xs text-gray-700 italic">Weather loading...</p>
+            </div>
+          )}
+
+          {/* Active cat summary */}
+          {catVal != null && (
+            <p className="mt-2 text-xs text-gray-500 leading-relaxed">
+              {park.name} {catVal >= 1.03 ? 'boosts' : catVal <= 0.97 ? 'suppresses' : 'is neutral for'}{' '}
+              <span className={`font-bold ${valCls(catVal)}`}>{activeCat === 'hits' ? 'hits' : activeCat === 'hr' ? 'home runs' : activeCat === 'runs' ? 'runs' : activeCat}</span>{' '}
+              by <span className="font-bold tabular-nums">{pctStr(catVal)}</span> vs league avg.
+            </p>
+          )}
+        </>
       )}
     </div>
   );
@@ -1409,6 +1617,17 @@ function useHitsProjection(gameLog, seasonStats, splits, statcast, pitcher, spPi
     if (!gameLog.length && !seasonStats) return null;
     const c = buildHittingCtx(gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev);
     const batterAvg = c.l5Avg * 0.50 + c.l10Avg * 0.30 + c.seasonAVG * 0.20;
+    // BABIP regression check on L10
+    const L10AB_b = c.L10.reduce((a,g)=>a+(Number(g.atBats)||0),0);
+    const L10H_b  = c.L10.reduce((a,g)=>a+(Number(g.hits)||0),0);
+    const L10HR_b = c.L10.reduce((a,g)=>a+(Number(g.homeRuns)||0),0);
+    const L10K_b  = c.L10.reduce((a,g)=>a+(Number(g.strikeOuts)||0),0);
+    const babipDenom = L10AB_b - L10K_b - L10HR_b;
+    const L10BABIP = babipDenom > 5 ? (L10H_b - L10HR_b) / babipDenom : null;
+    const babipNote = L10BABIP && L10BABIP > 0.370 ? `L10 BABIP ${L10BABIP.toFixed(3)} — regression risk` :
+                      L10BABIP && L10BABIP < 0.230 ? `L10 BABIP ${L10BABIP.toFixed(3)} — rebound potential` : null;
+    const babipDir  = L10BABIP && L10BABIP > 0.370 ? '↓' : L10BABIP && L10BABIP < 0.230 ? '↑' : '—';
+
     const proj = Math.max(0.1,
       batterAvg * (1 + c.pitcherAdj) * c.handFactor * (c.park?.hits || 1.0) * c.avgPA * c.xwobaFactor
     );
@@ -1419,12 +1638,14 @@ function useHitsProjection(gameLog, seasonStats, splits, statcast, pitcher, spPi
       lower80: Math.max(0, Math.round((adj - 1.28*std)*10)/10),
       upper80: Math.round((adj + 1.28*std)*10)/10,
       stdDev: Math.round(std*10)/10,
+      L10BABIP,
       factorImpacts: [
         { label:'L5/L10 batting avg',   impact:Math.round((batterAvg - c.seasonAVG)*c.avgPA*10)/10, dir:batterAvg>c.seasonAVG?'↑':'↓' },
         { label:'Pitcher ERA adj',      impact:Math.round(c.pitcherAdj*adj*10)/10,                  dir:c.pitcherAdj>=0?'↑':'↓' },
         { label:`${spPitcherHand||'?'}HP split`, impact:Math.round((c.handFactor-1)*adj*10)/10,    dir:c.handFactor>1?'↑':'↓', note:!c.splitAVG?'no split data':null },
         { label:'Park hit factor',      impact:Math.round(((c.park?.hits||1)-1)*adj*10)/10,         dir:(c.park?.hits||1)>1?'↑':'↓', note:!c.park?'no data':null },
         { label:'xwOBA form',           impact:Math.round((c.xwobaFactor-1)*adj*10)/10,             dir:c.xwobaFactor>=1?'↑':'↓', note:!statcast?.xwoba?'no Statcast':null },
+        { label:'BABIP regression',     impact:0, dir:babipDir, note:babipNote || 'BABIP normal (.230–.370)' },
       ],
     };
   }, [gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev]);
@@ -1567,13 +1788,42 @@ function useSBProjection(gameLog, seasonStats, spTeamAbbrev, spOppAbbrev, spIsHo
 }
 
 function HittingProjectionEVCard({ gameLog, seasonStats, splits, statcast, pitcher, playerName,
-  spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev, activeTab, loading }) {
+  spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev, activeTab, loading, prizePicksLines }) {
 
   const [activeProp, setActiveProp] = useState(activeTab || 'hits');
   const [lines,     setLines]     = useState({ hits:'', hr:'', runs:'', rbi:'', sb:'' });
   const [overOdds,  setOverOdds]  = useState({ hits:'-115', hr:'-130', runs:'-115', rbi:'-115', sb:'-130' });
   const [underOdds, setUnderOdds] = useState({ hits:'-115', hr:'+110', runs:'-115', rbi:'-115', sb:'+110' });
   const [debLines,  setDebLines]  = useState({ hits:'', hr:'', runs:'', rbi:'', sb:'' });
+  const [ppSources, setPpSources] = useState({ hits:false, hr:false, runs:false, rbi:false, sb:false });
+
+  // Auto-fill PrizePicks lines when available (only for empty fields)
+  useEffect(() => {
+    if (!prizePicksLines) return;
+    const PP_MAP = { hits:'hits', hr:'hr', runs:'runs', rbi:'rbi', sb:'sb' };
+    const newLines = {};
+    const newSources = {};
+    let changed = false;
+    Object.entries(PP_MAP).forEach(([prop, ppKey]) => {
+      const ppVal = prizePicksLines[ppKey];
+      if (ppVal != null) {
+        newLines[prop] = String(ppVal);
+        newSources[prop] = true;
+        changed = true;
+      }
+    });
+    if (changed) {
+      setLines(prev => {
+        const next = { ...prev };
+        const actualSources = {};
+        Object.entries(newLines).forEach(([prop, val]) => {
+          if (prev[prop] === '') { next[prop] = val; actualSources[prop] = true; }
+        });
+        setPpSources(p => ({ ...p, ...actualSources }));
+        return next;
+      });
+    }
+  }, [prizePicksLines]);
 
   useEffect(() => { setActiveProp(activeTab || 'hits'); }, [activeTab]);
   useEffect(() => {
@@ -1673,11 +1923,11 @@ function HittingProjectionEVCard({ gameLog, seasonStats, splits, statcast, pitch
               <div className="text-sm font-black text-gray-300 tabular-nums">{proj.lower80} – {proj.upper80}</div>
               <div className="text-xs text-gray-600 mt-0.5">80% Range</div>
             </div>
-            <div className="rounded-lg border bg-gray-800/50 border-gray-700 p-3 text-center">
+            <div className={`rounded-lg border p-3 text-center ${ppSources[activeProp] && lines[activeProp] ? 'border-purple-500/40 bg-purple-500/5' : 'bg-gray-800/50 border-gray-700'}`}>
               <input type="number" step="0.5" placeholder="e.g. 1.5" value={lines[activeProp]}
-                onChange={e => setLines(prev => ({ ...prev, [activeProp]: e.target.value }))}
+                onChange={e => { setLines(prev => ({ ...prev, [activeProp]: e.target.value })); setPpSources(prev=>({...prev,[activeProp]:false})); }}
                 className="w-full bg-transparent text-center text-base font-black text-white tabular-nums outline-none placeholder-gray-700 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"/>
-              <div className="text-xs text-gray-600 mt-0.5">Book Line ↑ type here</div>
+              <div className="text-xs text-gray-600 mt-0.5">{ppSources[activeProp] ? '🟣 PrizePicks line' : 'Book Line ↑ type'}</div>
             </div>
             <div className={`rounded-lg border p-3 text-center ${evBadge ? evBadge.cls : 'bg-gray-800/50 border-gray-700'}`}>
               <div className={`text-xl font-black tabular-nums ${evBadge ? '' : 'text-gray-600'}`}>
@@ -1811,6 +2061,34 @@ export default function PlayerDetailPage() {
   const [pitcherChartLine, setPitcherChartLine] = useState(4.5);
   const [pitcherChartWin,  setPitcherChartWin]  = useState(10);
 
+  // ── Weather + PrizePicks state ─────────────────────────────────────────
+  const [weather,       setWeather]      = useState(null);
+  const [ppLines,       setPpLines]      = useState(null); // { hits:1.5, hr:0.5, ... } for this player
+
+  // ── Fetch PrizePicks lines for this player ────────────────────────────────
+  useEffect(() => {
+    async function fetchPP() {
+      try {
+        const res = await fetch(`${API_URL}/prizepicks/mlb`, { signal: AbortSignal.timeout(8000) });
+        if (!res.ok) return;
+        const data = await res.json();
+        const name = playerInfo.fullName || spName;
+        if (name && data.lines) {
+          // Try exact match, then partial match
+          let playerLines = data.lines[name];
+          if (!playerLines) {
+            const key = Object.keys(data.lines).find(k =>
+              k.toLowerCase().includes(name.split(' ').pop().toLowerCase())
+            );
+            if (key) playerLines = data.lines[key];
+          }
+          if (playerLines) setPpLines(playerLines);
+        }
+      } catch {}
+    }
+    fetchPP();
+  }, [playerInfo.fullName]);
+
   // ── On line change, reset to first valid line for new cat ─────────────────
   useEffect(() => {
     const cfg = PROP_CATS.find(c => c.id === cat);
@@ -1938,6 +2216,23 @@ export default function PlayerDetailPage() {
       }
     } catch {}
     setLoading(false);
+
+    // ── Weather fetch (non-blocking) ────────────────────────────────────
+    const homeAbbrev = spIsHome ? spTeamAbbrev : spOppAbbrev;
+    const coords = VENUE_COORDS[homeAbbrev];
+    if (coords) {
+      try {
+        const wxRes = await fetch(
+          `https://api.open-meteo.com/v1/forecast?latitude=${coords.lat}&longitude=${coords.lon}&current=temperature_2m,wind_speed_10m,wind_direction_10m&wind_speed_unit=mph&temperature_unit=celsius`,
+          { signal: AbortSignal.timeout(5000) }
+        );
+        if (wxRes.ok) {
+          const wxData = await wxRes.json();
+          const c = wxData.current || {};
+          setWeather({ temp: c.temperature_2m, windSpeed: c.wind_speed_10m, windDir: c.wind_direction_10m });
+        }
+      } catch {}
+    }
   }
 
   // ── Derived: streak + l10avg from game log ────────────────────────────────
@@ -2013,7 +2308,7 @@ export default function PlayerDetailPage() {
   }, [isPitcherView, seasonStats]);
 
   // Page-level K projection (mirrors ProjectionEVCard)
-  const pageKProj = useKProjection(isPitcherView ? pitcherStarts : [], isPitcherView ? seasonStats : null);
+  const pageKProj = useKProjection(isPitcherView ? pitcherStarts : [], isPitcherView ? seasonStats : null, spOppAbbrev);
   const kProjScore = useMemo(() => {
     if (!isPitcherView || !pageKProj) return null;
     return pitcherScoreFromKProj(pageKProj.projected);
@@ -2207,7 +2502,12 @@ export default function PlayerDetailPage() {
 
             {/* ── Projection & EV% ─────────────────────────────────────────── */}
             <ProjectionErrorBoundary>
-              <ProjectionEVCard pitcherStarts={pitcherStarts} seasonStats={seasonStats}/>
+              <ProjectionEVCard
+                pitcherStarts={pitcherStarts}
+                seasonStats={seasonStats}
+                oppTeamAbbrev={spOppAbbrev}
+                prizePicksLine={ppLines?.strikeouts ?? null}
+              />
             </ProjectionErrorBoundary>
 
             {/* ── K Trend + Platoon Splits (2-col) ─────────────────────────── */}
@@ -2263,7 +2563,7 @@ export default function PlayerDetailPage() {
                 <span className="text-base">🔮</span>
                 <h3 className="text-sm font-bold text-white">Contextual Factors</h3>
               </div>
-              <PitcherContextRow starts={pitcherStarts} oppAbbrev={spOppAbbrev} isHome={spIsHome}/>
+              <PitcherContextRow starts={pitcherStarts} oppAbbrev={spOppAbbrev} isHome={spIsHome} weather={weather}/>
             </div>
 
           </>
@@ -2344,6 +2644,7 @@ export default function PlayerDetailPage() {
                 spOppAbbrev={spOppAbbrev}
                 activeTab={cat}
                 loading={loading || chartLoading}
+                prizePicksLines={ppLines}
               />
             </ProjectionErrorBoundary>
 
@@ -2542,11 +2843,12 @@ export default function PlayerDetailPage() {
 
             {/* ── Park Factor + Lineup Position ──────────────────────────── */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-              <ParkFactorCard
+              <BaseballDiamondCard
                 spTeamAbbrev={spTeamAbbrev}
                 spOppAbbrev={spOppAbbrev}
                 spIsHome={spIsHome}
                 activeCat={cat}
+                weather={weather}
               />
               <LineupPositionCard games={gameLog} loading={chartLoading}/>
             </div>

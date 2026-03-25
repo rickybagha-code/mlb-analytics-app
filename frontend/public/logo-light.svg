@@ -1,12 +1,8 @@
 <svg width="180" height="32" viewBox="0 0 180 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Home plate mark (dark variant) scaled to 32px height -->
   <g transform="scale(0.5714)">
-    <path d="M6 42 L12 42 Q14 42 14 44 L14 52 L4 52 L4 44 Q4 42 6 42 Z" fill="#0f1117"/>
-    <path d="M19 32 L25 32 Q27 32 27 34 L27 52 L17 52 L17 34 Q17 32 19 32 Z" fill="#0f1117"/>
-    <path d="M32 20 L38 20 Q40 20 40 22 L40 52 L30 52 L30 22 Q30 20 32 20 Z" fill="#0f1117"/>
-    <path d="M45 8 L51 8 Q53 8 53 10 L53 52 L43 52 L43 10 Q43 8 45 8 Z" fill="#0f1117"/>
-    <line x1="4" y1="44" x2="52" y2="4"  stroke="#0f1117" stroke-width="2.5" stroke-linecap="round"/>
-    <line x1="52" y1="4" x2="46" y2="8"  stroke="#0f1117" stroke-width="2.5" stroke-linecap="round"/>
-    <line x1="52" y1="4" x2="55" y2="10" stroke="#0f1117" stroke-width="2.5" stroke-linecap="round"/>
+    <path d="M 7,8 L 49,8 L 49,36 L 28,52 L 7,36 Z" fill="#0f1117"/>
+    <text x="28" y="34" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="22" font-weight="900" fill="white">P</text>
   </g>
   <text x="42" y="22" font-family="system-ui, -apple-system, sans-serif" font-size="15" font-weight="700" letter-spacing="-0.6" fill="#0f1117">ProprStats</text>
 </svg>
