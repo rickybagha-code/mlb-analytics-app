@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import ProprStatsLogo from '../../../../components/ProprStatsLogo';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 const MLB_API  = 'https://statsapi.mlb.com/api/v1';
@@ -176,22 +177,6 @@ function getRecommendation(score) {
   if (score >= 60) return { label:'Lean Over',             color:'text-yellow-400',  bg:'bg-yellow-500/10  border-yellow-500/30' };
   if (score >= 45) return { label:'Neutral',               color:'text-orange-400',  bg:'bg-orange-500/10  border-orange-500/30' };
   return                   { label:'Lean Under / Avoid',   color:'text-red-400',     bg:'bg-red-500/10     border-red-500/30'    };
-}
-
-// ─── Logo ─────────────────────────────────────────────────────────────────────
-function LogoMark({ size=30 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 34 34" fill="none">
-      <path d="M17 1.5L32.5 17L17 32.5L1.5 17Z" fill="#0a1628" stroke="#2563eb" strokeWidth="1.5"/>
-      <path d="M17 5.5L28.5 17L17 28.5L5.5 17Z" fill="#0f2548" opacity="0.55"/>
-      <path d="M17 25L8.5 21.5L9 16L17 19Z" fill="#1e40af"/>
-      <path d="M17 25L25.5 21.5L25 16L17 19Z" fill="#3b82f6"/>
-      <line x1="17" y1="19" x2="17" y2="25" stroke="#93c5fd" strokeWidth="0.8" opacity="0.55"/>
-      <path d="M17 19C13.5 17.5 12.5 13.5 15 10.5C16 9.2 17 8.2 17 8.2C17 8.2 18 9.2 19 10.5C21.5 13.5 20.5 17.5 17 19Z" fill="#60a5fa"/>
-      <path d="M17 17.5C15.8 16 15.5 13.5 16.5 12C17 13 17.5 15.2 17 17.5Z" fill="white" opacity="0.28"/>
-      <circle cx="17" cy="8.2" r="1.5" fill="#bae6fd" opacity="0.9"/>
-    </svg>
-  );
 }
 
 // ─── Player Headshot ──────────────────────────────────────────────────────────
@@ -936,7 +921,7 @@ function ProjectionEVCard({ pitcherStarts, seasonStats }) {
           <span className="text-lg">🎰</span>
           <div>
             <h3 className="text-sm font-black text-white">Projection & EV%</h3>
-            <p className="text-xs text-gray-600">Strikeout prop model · Cook The Books</p>
+            <p className="text-xs text-gray-600">Strikeout prop model · ProprStats</p>
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -1658,7 +1643,7 @@ function HittingProjectionEVCard({ gameLog, seasonStats, splits, statcast, pitch
           <span className="text-lg">🎯</span>
           <div>
             <h3 className="text-sm font-black text-white">Hitting Projection & EV%</h3>
-            <p className="text-xs text-gray-600">Multi-prop model · Cook The Books</p>
+            <p className="text-xs text-gray-600">Multi-prop model · ProprStats</p>
           </div>
         </div>
         {evBadge && <span className={`text-xs font-bold border rounded-full px-2.5 py-1 ${evBadge.cls}`}>{evBadge.label}</span>}
@@ -2058,8 +2043,7 @@ export default function PlayerDetailPage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex h-16 items-center justify-between">
             <Link href="/" className="flex items-center gap-2.5 group">
-              <LogoMark />
-              <span className="text-base font-black tracking-tight text-white group-hover:text-blue-400 transition-colors">Cook The Books</span>
+              <ProprStatsLogo variant="light" size={30} />
             </Link>
             <Link href="/dashboard" className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-white transition-colors">
               ← Dashboard
@@ -2150,7 +2134,7 @@ export default function PlayerDetailPage() {
           {!isPitcherView && rec && (
             <div className={`mt-4 rounded-lg border px-4 py-2 flex items-center justify-between ${rec.bg}`}>
               <span className={`text-sm font-bold ${rec.color}`}>{rec.label}</span>
-              <span className="text-xs text-gray-600">Cook The Books Model · {catCfg?.label}</span>
+              <span className="text-xs text-gray-600">ProprStats Model · {catCfg?.label}</span>
             </div>
           )}
         </div>

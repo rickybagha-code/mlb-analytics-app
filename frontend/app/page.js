@@ -1,24 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { useState } from 'react';
-
-// ─── Home Plate Logo ──────────────────────────────────────────────────────────
-function HomePlateLogo({ size = 34, showWordmark = false, className = '' }) {
-  return (
-    <div className={`inline-flex items-center gap-2.5 ${className}`}>
-      <svg width={size} height={size} viewBox="0 0 32 32" fill="none">
-        <rect width="32" height="32" rx="4" fill="#0f1117"/>
-        <polygon points="16,27 6,19 6,7 26,7 26,19" fill="white"/>
-        <polygon points="16,23 9,18 9,10 23,10 23,18" fill="#0f1117"/>
-        <polygon points="16,20 12,17 12,13 20,13 20,17" fill="white"/>
-        <line x1="12" y1="15" x2="20" y2="15" stroke="#0f1117" strokeWidth="0.7"/>
-      </svg>
-      {showWordmark && (
-        <span className="font-black text-lg tracking-tight text-white">Cook The Books</span>
-      )}
-    </div>
-  );
-}
+import ProprStatsLogo from '../components/ProprStatsLogo';
 
 // ─── Navbar ───────────────────────────────────────────────────────────────────
 function Navbar() {
@@ -27,10 +10,7 @@ function Navbar() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
           <Link href="/" className="flex items-center gap-2.5 group">
-            <HomePlateLogo size={32} />
-            <span className="font-black text-lg tracking-tight text-white group-hover:text-blue-400 transition-colors">
-              Cook The Books
-            </span>
+            <ProprStatsLogo variant="light" size={32} />
           </Link>
           <div className="hidden md:flex items-center gap-8">
             <a href="#how-it-works" className="text-sm text-gray-400 hover:text-white transition-colors">How It Works</a>
@@ -154,7 +134,7 @@ function SamplePlayerCard() {
       </div>
       <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5 flex items-center justify-between">
         <span className="text-sm font-bold text-emerald-400">Strong Value — Over 1.5</span>
-        <span className="text-xs text-gray-600">Cook The Books</span>
+        <span className="text-xs text-gray-600">ProprStats</span>
       </div>
     </div>
   );
@@ -238,7 +218,7 @@ function Hero() {
             </h1>
 
             <p className="mt-6 text-lg leading-relaxed text-gray-400">
-              Six prop models — each backed by Statcast exit velocity, pitcher matchup data, and park factors — with a Poisson EV engine that tells you exactly where the line is mispriced before you bet it.
+              ProprStats turns raw MLB Statcast data into a clear edge signal for every prop — hits, home runs, runs, RBI, and strikeouts. Know if the line is mispriced before you bet it.
             </p>
 
             {/* 3-col trust row */}
@@ -310,7 +290,7 @@ function HowItWorks() {
     {
       num: '03',
       title: 'Make Confident Picks',
-      desc: 'The 0–100 score and Strong Value / Lean Over / Neutral recommendation tells you exactly where to put your stack.',
+      desc: 'The 0–100 ProprStats score and EV% signal tells you exactly where the line is mispriced — and how much edge you have.',
       color: 'emerald',
     },
   ];
@@ -463,7 +443,7 @@ function FeaturesSection() {
             Every Edge, In One Place
           </h2>
           <p className="mt-3 text-gray-400 max-w-2xl mx-auto">
-            Stop juggling Baseball Savant, Fangraphs, and box scores. Cook The Books pulls it all together — automatically.
+            Stop juggling Baseball Savant, FanGraphs, and box scores. ProprStats pulls it all together — automatically.
           </p>
         </div>
 
@@ -1007,7 +987,7 @@ function BottomCTA() {
               </span>
             </h2>
             <p className="mt-4 text-gray-400 max-w-lg mx-auto">
-              The dashboard is live right now. No account required — just open it and start finding mispriced lines.
+              Join prop researchers who use ProprStats every game day to find mispriced lines before they close. The dashboard is live now — no account required to start.
             </p>
             <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
               <Link
@@ -1036,11 +1016,10 @@ function Footer() {
           {/* Brand */}
           <div>
             <Link href="/" className="flex items-center gap-2.5 mb-3">
-              <HomePlateLogo size={36} />
-              <span className="font-black text-white">Cook The Books</span>
+              <ProprStatsLogo variant="light" size={28} showSubLabel />
             </Link>
             <p className="text-sm text-gray-600 leading-relaxed max-w-xs mb-4">
-              MLB prop research powered by Statcast, real-time splits, and a proprietary model score.
+              MLB prop research powered by Statcast, Poisson EV modeling, and real-time player splits.
             </p>
             <a
               href="/brand-logo.svg"
@@ -1048,8 +1027,8 @@ function Footer() {
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 text-xs text-gray-600 hover:text-blue-400 transition-colors border border-gray-800 hover:border-blue-500/30 rounded-lg px-3 py-2"
             >
-              <img src="/brand-logo.svg" alt="Logo" className="w-6 h-6 rounded"/>
-              Download brand logo (400×400 SVG)
+              <img src="/brand-logo.svg" alt="ProprStats Logo" className="w-6 h-6 rounded"/>
+              Download ProprStats logo (400×400 SVG)
               <svg className="w-3 h-3 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
               </svg>
@@ -1077,7 +1056,7 @@ function Footer() {
         </div>
 
         <div className="border-t border-white/5 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <p className="text-xs text-gray-700">© 2025 Cook The Books. For research purposes only. Not financial advice.</p>
+          <p className="text-xs text-gray-700">© 2025 ProprStats. For research purposes only. Not financial advice.</p>
           <p className="text-xs text-gray-700">Data: MLB Stats API · Baseball Savant · Open-Meteo — updated daily</p>
         </div>
       </div>
