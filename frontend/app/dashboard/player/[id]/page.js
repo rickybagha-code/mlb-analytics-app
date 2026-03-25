@@ -1357,6 +1357,397 @@ function LineupPositionCard({ games, loading }) {
   );
 }
 
+// ─── Hitting Projection Models ────────────────────────────────────────────────
+const LG = { avg:0.243, obp:0.317, slg:0.413, era:4.50, barrel:8.2, xwoba:0.315 };
+const SLOT_FACTORS = {1:1.18,2:1.12,3:1.05,4:1.02,5:0.98,6:0.93,7:0.88,8:0.82,9:0.78};
+
+function buildHittingCtx(gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev) {
+  const seasonAVG = parseFloat(seasonStats?.avg)  || LG.avg;
+  const seasonOBP = parseFloat(seasonStats?.obp)  || LG.obp;
+  const seasonSLG = parseFloat(seasonStats?.slg)  || LG.slg;
+  const seasonPA  = Math.max(1, parseInt(seasonStats?.plateAppearances) || 1);
+  const seasonGP  = Math.max(1, parseInt(seasonStats?.gamesPlayed) || 1);
+  const avgPA     = Math.min(5.0, Math.max(3.0, seasonPA / seasonGP));
+  const L5 = gameLog.slice(-5), L10 = gameLog.slice(-10);
+
+  const safeAvg = (games, fb) => {
+    const ab = games.reduce((a,g)=>a+(Number(g.atBats)||0),0);
+    const h  = games.reduce((a,g)=>a+(Number(g.hits)||0),0);
+    return ab >= 8 ? h/ab : fb;
+  };
+  const l5Avg  = safeAvg(L5,  seasonAVG);
+  const l10Avg = safeAvg(L10, seasonAVG);
+
+  const pitcherERA = parseFloat(pitcher?.stats?.era) || LG.era;
+  const pitcherAdj = -(pitcherERA - LG.era) * 0.012;
+
+  const relSplit  = spPitcherHand === 'L' ? splits?.vsLeftHandedPitching : splits?.vsRightHandedPitching;
+  const splitAVG  = parseFloat(relSplit?.avg) || null;
+  const splitOBP  = parseFloat(relSplit?.obp) || null;
+  const splitSLG  = parseFloat(relSplit?.slg) || null;
+  const handFactor = splitAVG && seasonAVG > 0
+    ? Math.max(0.75, Math.min(1.25, splitAVG / seasonAVG)) : 1.0;
+
+  const homeAbbrev = spIsHome ? spTeamAbbrev : spOppAbbrev;
+  const park = homeAbbrev ? PARK_FACTORS[homeAbbrev] : null;
+
+  const xwobaFactor = statcast?.xwoba
+    ? Math.min(1.10, Math.max(0.90, statcast.xwoba / LG.xwoba)) : 1.0;
+  const barrelPct = statcast?.barrelPct || LG.barrel;
+  const powerEdge = 1 + ((barrelPct - LG.barrel) / LG.barrel * 0.5);
+
+  const avgSlot = (() => {
+    const orders = L10.map(g => g.battingOrder ? Math.ceil(parseInt(g.battingOrder)/100) : null).filter(v=>v&&v>=1&&v<=9);
+    return orders.length ? Math.round(orders.reduce((a,b)=>a+b,0)/orders.length) : null;
+  })();
+
+  return {
+    seasonAVG, seasonOBP, seasonSLG, seasonPA, seasonGP, avgPA,
+    L5, L10, l5Avg, l10Avg,
+    pitcherERA, pitcherAdj,
+    relSplit, splitAVG, splitOBP, splitSLG, handFactor,
+    homeAbbrev, park,
+    xwobaFactor, barrelPct, powerEdge,
+    avgSlot,
+  };
+}
+
+function l10StdDev(vals, fallback) {
+  if (vals.length < 2) return fallback;
+  const mean = vals.reduce((a,b)=>a+b,0)/vals.length;
+  const v    = vals.reduce((a,x)=>a+(x-mean)**2,0)/(vals.length-1);
+  return Math.max(fallback, Math.sqrt(v));
+}
+
+function useHitsProjection(gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev) {
+  return useMemo(() => {
+    if (!gameLog.length && !seasonStats) return null;
+    const c = buildHittingCtx(gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev);
+    const batterAvg = c.l5Avg * 0.50 + c.l10Avg * 0.30 + c.seasonAVG * 0.20;
+    const proj = Math.max(0.1,
+      batterAvg * (1 + c.pitcherAdj) * c.handFactor * (c.park?.hits || 1.0) * c.avgPA * c.xwobaFactor
+    );
+    const std = l10StdDev(c.L10.map(g=>Number(g.hits)||0), 0.6);
+    const adj = Math.round(proj*10)/10;
+    return {
+      projected: adj,
+      lower80: Math.max(0, Math.round((adj - 1.28*std)*10)/10),
+      upper80: Math.round((adj + 1.28*std)*10)/10,
+      stdDev: Math.round(std*10)/10,
+      factorImpacts: [
+        { label:'L5/L10 batting avg',   impact:Math.round((batterAvg - c.seasonAVG)*c.avgPA*10)/10, dir:batterAvg>c.seasonAVG?'↑':'↓' },
+        { label:'Pitcher ERA adj',      impact:Math.round(c.pitcherAdj*adj*10)/10,                  dir:c.pitcherAdj>=0?'↑':'↓' },
+        { label:`${spPitcherHand||'?'}HP split`, impact:Math.round((c.handFactor-1)*adj*10)/10,    dir:c.handFactor>1?'↑':'↓', note:!c.splitAVG?'no split data':null },
+        { label:'Park hit factor',      impact:Math.round(((c.park?.hits||1)-1)*adj*10)/10,         dir:(c.park?.hits||1)>1?'↑':'↓', note:!c.park?'no data':null },
+        { label:'xwOBA form',           impact:Math.round((c.xwobaFactor-1)*adj*10)/10,             dir:c.xwobaFactor>=1?'↑':'↓', note:!statcast?.xwoba?'no Statcast':null },
+      ],
+    };
+  }, [gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev]);
+}
+
+function useHRProjection(gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev) {
+  return useMemo(() => {
+    if (!gameLog.length && !seasonStats) return null;
+    const c = buildHittingCtx(gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev);
+    const seasonHR   = parseInt(seasonStats?.homeRuns) || 0;
+    const seasonHRpa = seasonHR / Math.max(1, c.seasonPA);
+    const L10HR = c.L10.map(g=>Number(g.homeRuns)||0);
+    const L10PA = c.L10.map(g=>Number(g.plateAppearances)||c.avgPA);
+    const l10HRpa = L10PA.reduce((a,b)=>a+b,0) > 0
+      ? L10HR.reduce((a,b)=>a+b,0) / L10PA.reduce((a,b)=>a+b,0) : seasonHRpa;
+    const hrRate = l10HRpa * 0.50 + seasonHRpa * 0.40 + seasonHRpa * 0.9 * 0.10;
+    const pitcherHRAdj = (c.pitcherERA - LG.era) * 0.04;
+    const hrHandFactor = c.splitSLG && c.seasonSLG > 0
+      ? Math.max(0.70, Math.min(1.30, c.splitSLG / c.seasonSLG)) : 1.0;
+    const parkHR = c.park?.hr || 1.0;
+    const adjRate = Math.max(0.001, hrRate * c.powerEdge * (1 + pitcherHRAdj) * hrHandFactor * parkHR);
+    const lambda  = adjRate * c.avgPA;
+    const pHR     = 1 - Math.exp(-lambda);
+    return {
+      projected: Math.round(lambda*100)/100,
+      pHR: Math.round(pHR*1000)/10,
+      lower80: 0, upper80: Math.round(lambda*2*10)/10,
+      stdDev: Math.round(Math.sqrt(lambda)*10)/10,
+      isBernoulli: true,
+      factorImpacts: [
+        { label:'L10 HR rate',           impact:Math.round((l10HRpa-seasonHRpa)*c.avgPA*100)/100, dir:l10HRpa>seasonHRpa?'↑':'↓' },
+        { label:'Barrel% power edge',    impact:Math.round((c.powerEdge-1)*lambda*100)/100,       dir:c.powerEdge>=1?'↑':'↓', note:!statcast?.barrelPct?'no Statcast':null },
+        { label:'Pitcher HR tendency',   impact:Math.round(pitcherHRAdj*lambda*100)/100,          dir:pitcherHRAdj>=0?'↑':'↓' },
+        { label:`${spPitcherHand||'?'}HP SLG split`, impact:Math.round((hrHandFactor-1)*lambda*100)/100, dir:hrHandFactor>=1?'↑':'↓', note:!c.splitSLG?'no split data':null },
+        { label:'Park HR factor',        impact:Math.round((parkHR-1)*lambda*100)/100,            dir:parkHR>=1?'↑':'↓', note:!c.park?'no data':null },
+      ],
+    };
+  }, [gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev]);
+}
+
+function useRunsProjection(gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev) {
+  return useMemo(() => {
+    if (!gameLog.length && !seasonStats) return null;
+    const c = buildHittingCtx(gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev);
+    const seasonR   = parseInt(seasonStats?.runs) || 0;
+    const seasonRpg = seasonR / c.seasonGP;
+    const L10R  = c.L10.map(g=>Number(g.runs)||0);
+    const l10Rpg = L10R.reduce((a,b)=>a+b,0) / Math.max(L10R.length,1);
+    const L10H  = c.L10.reduce((a,g)=>a+(Number(g.hits)||0),0);
+    const L10BB = c.L10.reduce((a,g)=>a+(Number(g.baseOnBalls)||0),0);
+    const L10PA = c.L10.reduce((a,g)=>a+(Number(g.plateAppearances)||0),0);
+    const l10OBP = L10PA > 15 ? (L10H+L10BB)/L10PA : c.seasonOBP;
+    const obpW = c.splitOBP
+      ? c.splitOBP*0.40 + l10OBP*0.35 + c.seasonOBP*0.25
+      : l10OBP*0.50 + c.seasonOBP*0.50;
+    const teamRunEnv = c.park?.runs || 1.0;
+    const slotFactor = c.avgSlot ? (SLOT_FACTORS[c.avgSlot]||1.0) : 1.0;
+    const pitcherRunAdj = Math.max(0.75, 1-(c.pitcherERA-LG.era)*0.05);
+    const rateProj = l10Rpg*0.50 + seasonRpg*0.40 + 0.45*0.10;
+    const proj = Math.max(0.05, rateProj * pitcherRunAdj * teamRunEnv * slotFactor);
+    const std = l10StdDev(L10R, 0.5);
+    const adj = Math.round(proj*10)/10;
+    return {
+      projected: adj,
+      lower80: Math.max(0, Math.round((adj-1.28*std)*10)/10),
+      upper80: Math.round((adj+1.28*std)*10)/10,
+      stdDev: Math.round(std*10)/10,
+      factorImpacts: [
+        { label:'L10 R/game avg',     impact:Math.round((l10Rpg-seasonRpg)*10)/10,          dir:l10Rpg>seasonRpg?'↑':'↓' },
+        { label:'OBP on-base opp',    impact:Math.round((obpW-c.seasonOBP)*adj*10)/10,       dir:obpW>c.seasonOBP?'↑':'↓' },
+        { label:'Pitcher quality',    impact:Math.round((pitcherRunAdj-1)*adj*10)/10,        dir:pitcherRunAdj>=1?'↑':'↓' },
+        { label:'Park run factor',    impact:Math.round((teamRunEnv-1)*adj*10)/10,           dir:teamRunEnv>=1?'↑':'↓', note:!c.park?'no data':null },
+        { label:'Batting slot',       impact:Math.round((slotFactor-1)*adj*10)/10,           dir:slotFactor>=1?'↑':'↓', note:!c.avgSlot?'slot unavail':` #${c.avgSlot}` },
+      ],
+    };
+  }, [gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev]);
+}
+
+function useRBIProjection(gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev) {
+  return useMemo(() => {
+    if (!gameLog.length && !seasonStats) return null;
+    const c = buildHittingCtx(gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev);
+    const seasonRBI  = parseInt(seasonStats?.rbi) || 0;
+    const seasonRBIpg = seasonRBI / c.seasonGP;
+    const L10RBI  = c.L10.map(g=>Number(g.rbi)||0);
+    const l10RBIpg = L10RBI.reduce((a,b)=>a+b,0) / Math.max(L10RBI.length,1);
+    const slgFactor = c.splitSLG && c.seasonSLG > 0
+      ? Math.max(0.75, Math.min(1.25, c.splitSLG/c.seasonSLG)) : 1.0;
+    const rbiSlot = c.avgSlot
+      ? (c.avgSlot<=2?0.85:c.avgSlot<=5?1.08:c.avgSlot<=7?0.95:0.82) : 1.0;
+    const pitcherRBIAdj = Math.max(0.75, 1-(c.pitcherERA-LG.era)*0.05);
+    const parkFactor = c.park?.runs || 1.0;
+    const rateProj = l10RBIpg*0.50 + seasonRBIpg*0.40 + 0.43*0.10;
+    const proj = Math.max(0.05, rateProj * pitcherRBIAdj * slgFactor * parkFactor * rbiSlot);
+    const std = l10StdDev(L10RBI, 0.5);
+    const adj = Math.round(proj*10)/10;
+    return {
+      projected: adj,
+      lower80: Math.max(0, Math.round((adj-1.28*std)*10)/10),
+      upper80: Math.round((adj+1.28*std)*10)/10,
+      stdDev: Math.round(std*10)/10,
+      factorImpacts: [
+        { label:'L10 RBI/game avg',   impact:Math.round((l10RBIpg-seasonRBIpg)*10)/10,      dir:l10RBIpg>seasonRBIpg?'↑':'↓' },
+        { label:`${spPitcherHand||'?'}HP SLG split`, impact:Math.round((slgFactor-1)*adj*10)/10, dir:slgFactor>=1?'↑':'↓', note:!c.splitSLG?'no split data':null },
+        { label:'Pitcher quality',    impact:Math.round((pitcherRBIAdj-1)*adj*10)/10,       dir:pitcherRBIAdj>=1?'↑':'↓' },
+        { label:'Batting slot (RBI)', impact:Math.round((rbiSlot-1)*adj*10)/10,             dir:rbiSlot>=1?'↑':'↓', note:!c.avgSlot?'slot unavail':` #${c.avgSlot}` },
+        { label:'Park run factor',    impact:Math.round((parkFactor-1)*adj*10)/10,          dir:parkFactor>=1?'↑':'↓', note:!c.park?'no data':null },
+      ],
+    };
+  }, [gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev]);
+}
+
+function HittingProjectionEVCard({ gameLog, seasonStats, splits, statcast, pitcher, playerName,
+  spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev, activeTab, loading }) {
+
+  const [activeProp, setActiveProp] = useState(activeTab || 'hits');
+  const [lines,     setLines]     = useState({ hits:'', hr:'', runs:'', rbi:'' });
+  const [overOdds,  setOverOdds]  = useState({ hits:'-115', hr:'-130', runs:'-115', rbi:'-115' });
+  const [underOdds, setUnderOdds] = useState({ hits:'-115', hr:'+110', runs:'-115', rbi:'-115' });
+  const [debLines,  setDebLines]  = useState({ hits:'', hr:'', runs:'', rbi:'' });
+
+  useEffect(() => { setActiveProp(activeTab || 'hits'); }, [activeTab]);
+  useEffect(() => {
+    const cur = lines[activeProp];
+    const t = setTimeout(() => setDebLines(prev => ({ ...prev, [activeProp]: cur })), 300);
+    return () => clearTimeout(t);
+  }, [lines.hits, lines.hr, lines.runs, lines.rbi, activeProp]);
+
+  const hitsProj = useHitsProjection(gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev);
+  const hrProj   = useHRProjection(  gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev);
+  const runsProj = useRunsProjection( gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev);
+  const rbiProj  = useRBIProjection(  gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev);
+
+  const projMap  = { hits:hitsProj, hr:hrProj, runs:runsProj, rbi:rbiProj };
+  const proj     = projMap[activeProp];
+  const line     = parseFloat(debLines[activeProp]) || null;
+  const oOdds    = parseInt(overOdds[activeProp])   || -115;
+  const uOdds    = parseInt(underOdds[activeProp])  || -115;
+
+  const evResult = useMemo(() => {
+    if (!proj || !line) return null;
+    const floor  = Math.floor(line);
+    const lambda = proj.projected;
+    const pOver  = 1 - poissonCDF(floor, lambda);
+    const pUnder = poissonCDF(floor, lambda);
+    const rawO = americanToDecimal(oOdds), rawU = americanToDecimal(uOdds);
+    const tot  = rawO + rawU;
+    return { pOver, pUnder, evOver:(pOver-rawO/tot)*100, evUnder:(pUnder-rawU/tot)*100 };
+  }, [proj, line, oOdds, uOdds, activeProp]);
+
+  const evBadge = evResult ? (() => {
+    const ev = evResult.evOver;
+    if (ev > 6)  return { label:'Strong Value',  cls:'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' };
+    if (ev > 3)  return { label:'Moderate Edge', cls:'bg-yellow-500/20  border-yellow-500/40  text-yellow-400'  };
+    if (ev > 1)  return { label:'Slight Edge',   cls:'bg-gray-700/50    border-gray-600        text-gray-300'   };
+    return             { label:'No Value',       cls:'bg-red-500/10     border-red-500/30      text-red-400'    };
+  })() : null;
+
+  const PROP_TABS = [
+    { id:'hits', label:'Hits',     unit:'H',   icon:'🎯' },
+    { id:'hr',   label:'Home Runs',unit:'HR',  icon:'💣' },
+    { id:'runs', label:'Runs',     unit:'R',   icon:'🏃' },
+    { id:'rbi',  label:'RBI',      unit:'RBI', icon:'💰' },
+  ];
+  const activeTab_ = PROP_TABS.find(t=>t.id===activeProp);
+  const propUnit   = activeTab_?.unit || 'H';
+  const projLabel  = activeProp === 'hr' ? 'P(HR ≥ 1)' : `Proj ${propUnit}`;
+  const projVal    = activeProp === 'hr' && proj?.pHR != null
+    ? `${proj.pHR}%` : (proj?.projected?.toFixed(1) ?? '—');
+
+  if (loading) return (
+    <div className="rounded-xl border border-gray-700/50 bg-[#0f1117] p-6">
+      <div className="space-y-3">{[1,2,3].map(i=><Skeleton key={i} className="h-16 w-full rounded-xl"/>)}</div>
+    </div>
+  );
+
+  return (
+    <div className="rounded-xl border border-gray-700/50 bg-[#0f1117] p-6">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+        <div className="flex items-center gap-3">
+          <span className="text-lg">🎯</span>
+          <div>
+            <h3 className="text-sm font-black text-white">Hitting Projection & EV%</h3>
+            <p className="text-xs text-gray-600">Multi-prop model · Cook The Books</p>
+          </div>
+        </div>
+        {evBadge && <span className={`text-xs font-bold border rounded-full px-2.5 py-1 ${evBadge.cls}`}>{evBadge.label}</span>}
+      </div>
+
+      {/* Prop tab bar */}
+      <div className="flex rounded-lg border border-gray-800 overflow-hidden mb-5">
+        {PROP_TABS.map(t => (
+          <button key={t.id} onClick={() => setActiveProp(t.id)}
+            className={`flex-1 px-3 py-2 text-xs font-bold transition-colors ${
+              activeProp === t.id ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-400 hover:text-white'
+            }`}>{t.icon} {t.label}</button>
+        ))}
+      </div>
+
+      {!proj ? (
+        <p className="text-sm text-gray-600 italic text-center py-4">Need at least 3 games of data to compute a projection.</p>
+      ) : (
+        <>
+          {/* 4 summary tiles */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+            <div className="rounded-lg border bg-blue-500/10 border-blue-500/30 p-3 text-center">
+              <div className="text-xl font-black text-blue-400 tabular-nums">{projVal}</div>
+              <div className="text-xs text-gray-600 mt-0.5">{projLabel}</div>
+            </div>
+            <div className="rounded-lg border bg-gray-800/50 border-gray-700 p-3 text-center">
+              <div className="text-sm font-black text-gray-300 tabular-nums">{proj.lower80} – {proj.upper80}</div>
+              <div className="text-xs text-gray-600 mt-0.5">80% Range</div>
+            </div>
+            <div className="rounded-lg border bg-gray-800/50 border-gray-700 p-3 text-center">
+              <input type="number" step="0.5" placeholder="e.g. 1.5" value={lines[activeProp]}
+                onChange={e => setLines(prev => ({ ...prev, [activeProp]: e.target.value }))}
+                className="w-full bg-transparent text-center text-base font-black text-white tabular-nums outline-none placeholder-gray-700 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"/>
+              <div className="text-xs text-gray-600 mt-0.5">Book Line ↑ type here</div>
+            </div>
+            <div className={`rounded-lg border p-3 text-center ${evBadge ? evBadge.cls : 'bg-gray-800/50 border-gray-700'}`}>
+              <div className={`text-xl font-black tabular-nums ${evBadge ? '' : 'text-gray-600'}`}>
+                {evResult ? `${evResult.evOver>=0?'+':''}${evResult.evOver.toFixed(1)}%` : '—'}
+              </div>
+              <div className="text-xs text-gray-600 mt-0.5">EV Signal</div>
+            </div>
+          </div>
+
+          {/* 3-col section */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mb-5">
+            {/* Poisson chart */}
+            <div>
+              <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">{propUnit} Distribution (Poisson)</p>
+              <PoissonBarChart lambda={proj.projected} bookLine={line || (proj.projected + 0.5)}/>
+              {!line && <p className="text-xs text-gray-700 italic mt-1 text-center">Enter a book line for probabilities</p>}
+            </div>
+
+            {/* EV gauge */}
+            <div className="flex flex-col items-center">
+              <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">EV% Gauge</p>
+              <EVGaugeSVG evPct={evResult?.evOver ?? 0}/>
+              {evResult ? (
+                <div className="flex gap-2 mt-2 flex-wrap justify-center">
+                  <span className={`text-xs font-bold border rounded-full px-2 py-0.5 ${evResult.evOver>0?'text-emerald-400 border-emerald-500/30 bg-emerald-500/10':'text-red-400 border-red-500/30 bg-red-500/10'}`}>
+                    Over {evResult.evOver>=0?'+':''}{evResult.evOver.toFixed(1)}%
+                  </span>
+                  <span className={`text-xs font-bold border rounded-full px-2 py-0.5 ${evResult.evUnder>0?'text-emerald-400 border-emerald-500/30 bg-emerald-500/10':'text-red-400 border-red-500/30 bg-red-500/10'}`}>
+                    Under {evResult.evUnder>=0?'+':''}{evResult.evUnder.toFixed(1)}%
+                  </span>
+                </div>
+              ) : (
+                <p className="text-xs text-gray-700 italic mt-3 text-center">Enter line & odds for EV%</p>
+              )}
+              <p className="text-xs text-gray-700 mt-3 text-center leading-relaxed px-2">
+                EV% measures edge vs book. <span className="text-emerald-700">EV &gt; 5% = strong value.</span>
+              </p>
+            </div>
+
+            {/* Factor breakdown */}
+            <div>
+              <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Factor Breakdown</p>
+              <table className="w-full text-xs">
+                <tbody>
+                  {proj.factorImpacts.map((f, i) => (
+                    <tr key={i} className="border-b border-gray-800/40">
+                      <td className="py-1.5 text-gray-500">{f.label}</td>
+                      <td className={`py-1.5 text-right tabular-nums ${f.note?'text-gray-700 italic':f.impact>0?'text-emerald-400':f.impact<0?'text-red-400':'text-gray-600'}`}>
+                        {f.note ? f.note : f.impact!==0 ? `${f.impact>0?'+':''}${f.impact.toFixed(2)}` : '—'}
+                      </td>
+                      <td className={`py-1.5 pl-2 text-right font-bold ${f.dir==='↑'?'text-emerald-400':f.dir==='↓'?'text-red-400':'text-gray-600'}`}>
+                        {f.note?'':f.dir}
+                      </td>
+                    </tr>
+                  ))}
+                  <tr className="border-t-2 border-gray-700">
+                    <td className="py-2 font-black text-white">Projected</td>
+                    <td className="py-2 text-right font-black text-blue-400 tabular-nums">{projVal}</td>
+                    <td className="py-2 pl-2 text-right text-gray-600">—</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Odds input row */}
+          <div className="rounded-lg border border-gray-800 bg-gray-900/60 px-4 py-3">
+            <p className="text-xs text-gray-600 mb-2">Enter sportsbook odds for accurate EV%:</p>
+            <div className="flex flex-wrap items-center gap-3">
+              {[
+                { label:'Book line',  val:lines[activeProp],     set:v=>setLines(p=>({...p,[activeProp]:v})),       step:'0.5', ph:'1.5'  },
+                { label:'Over odds',  val:overOdds[activeProp],  set:v=>setOverOdds(p=>({...p,[activeProp]:v})),   step:'1',   ph:'-115' },
+                { label:'Under odds', val:underOdds[activeProp], set:v=>setUnderOdds(p=>({...p,[activeProp]:v})), step:'1',   ph:'-105' },
+              ].map(inp => (
+                <label key={inp.label} className="flex items-center gap-1.5 text-xs text-gray-500">
+                  {inp.label}:
+                  <input type="number" step={inp.step} value={inp.val} placeholder={inp.ph}
+                    onChange={e => inp.set(e.target.value)}
+                    className="w-16 rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-white text-center tabular-nums outline-none focus:border-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"/>
+                </label>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function PlayerDetailPage() {
   const { id }      = useParams();
@@ -2121,6 +2512,24 @@ export default function PlayerDetailPage() {
               />
               <LineupPositionCard games={gameLog} loading={chartLoading}/>
             </div>
+
+            {/* ── Projection & EV% ──────────────────────────────────────── */}
+            <ProjectionErrorBoundary>
+              <HittingProjectionEVCard
+                gameLog={gameLog}
+                seasonStats={seasonStats}
+                splits={splits}
+                statcast={statcast}
+                pitcher={pitcher}
+                playerName={playerInfo.fullName}
+                spPitcherHand={spPitcherHand}
+                spIsHome={spIsHome}
+                spTeamAbbrev={spTeamAbbrev}
+                spOppAbbrev={spOppAbbrev}
+                activeTab={cat}
+                loading={loading || chartLoading}
+              />
+            </ProjectionErrorBoundary>
           </>
         )}
 
