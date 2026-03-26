@@ -128,11 +128,15 @@ function computeProjectionScore(player, category) {
     const hardBonus = hardHitPct != null ? Math.max(0, Math.min(8, (hardHitPct - 40) / 18 * 8)) : 0;
     base = 53 + wComp - kPenalty + bbBonus + hardBonus + pitcherMod;
   } else if (category === 'hr') {
-    const hrComp      = Math.min(55, (hrRate / 0.08) * 55);
-    const isoComp     = Math.max(0, Math.min(15, (iso - 0.100) / 0.200 * 15));
-    const kHit        = Math.max(0, (kPct - 0.25) * 25);
-    const barrelBonus = barrelPct != null ? Math.max(0, Math.min(15, (barrelPct - 5) / 15 * 15)) : 0;
-    base = 18 + hrComp + isoComp - kHit + barrelBonus + pitcherMod * 0.7;
+    // Poisson: P(HR ≥ 1 today), centered at league avg so an average power hitter scores 50.
+    // Matches dashboard formula — league avg ~3.4% HR/AB × 3.8 AB/game → pHR ≈ 12.7%
+    const avgABs      = Math.max(3.0, Math.min(4.5, gp > 0 ? ab / gp : 3.8));
+    const lambda      = Math.max(0, hrRate * avgABs);
+    const pHR         = 1 - Math.exp(-lambda);
+    const barrelAdj   = barrelPct != null ? Math.max(-0.03, Math.min(0.06, (barrelPct - 8) / 100)) : 0;
+    const isoAdj      = Math.max(-0.01, Math.min(0.02, (iso - 0.150) * 0.08));
+    const adjustedPHR = Math.min(0.45, Math.max(0.005, pHR + barrelAdj + isoAdj));
+    base = 50 + (adjustedPHR - 0.127) * 200 + pitcherMod * 0.7;
   } else if (category === 'runs') {
     const rComp   = Math.max(-15, Math.min(25, (r   / gp - 0.45) * 55));
     const rbiComp = Math.max(-15, Math.min(25, (rbi / gp - 0.45) * 55));

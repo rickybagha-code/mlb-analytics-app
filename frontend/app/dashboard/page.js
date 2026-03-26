@@ -109,17 +109,19 @@ function computeProjectionScore(player, category) {
     base = 53 + wComp - kPenalty + bbBonus + hardBonus + pitcherMod;
 
   } else if (category === 'hr') {
-    // Poisson-based P(HR ≥ 1 today) — prevents 99-inflation seen with additive cap formula.
-    // lambda = seasonal HR/AB rate × avg ABs per game
-    const avgABs    = Math.max(3.0, Math.min(4.5, gp > 0 ? ab / gp : 3.8));
-    const lambda    = Math.max(0, hrRate * avgABs);
-    const pHR       = 1 - Math.exp(-lambda); // P(HR ≥ 1) = 1 − Poisson(0, λ)
-    // ISO and barrel % as quality-of-contact modifiers (small adjustments, not dominant)
-    const isoMod    = Math.max(-0.03, Math.min(0.03, (iso - 0.150) * 0.15));
-    const barrelMod = barrelPct != null ? Math.max(0, Math.min(0.025, (barrelPct - 8) / 48)) : 0;
-    const adjustedP = Math.min(0.40, Math.max(0.005, pHR + isoMod + barrelMod));
-    // Scale: 0.40 (elite max) → base≈90, 0.20 → base≈49, 0.10 → base≈27
-    base = Math.round(adjustedP * 212 + 6) + pitcherMod * 0.5;
+    // Poisson: P(HR ≥ 1 today), centered at league avg so an average power hitter scores 50.
+    // League avg: ~3.4% HR/AB × 3.8 AB/game → pHR ≈ 12.7%
+    const avgABs      = Math.max(3.0, Math.min(4.5, gp > 0 ? ab / gp : 3.8));
+    const lambda      = Math.max(0, hrRate * avgABs);
+    const pHR         = 1 - Math.exp(-lambda);
+    // Barrel % is the strongest secondary HR predictor — weight it meaningfully
+    // avg=8%, elite 14%+; shifts adjustedPHR by up to +6 / -3 percentage points
+    const barrelAdj   = barrelPct != null ? Math.max(-0.03, Math.min(0.06, (barrelPct - 8) / 100)) : 0;
+    // ISO adds modest directional signal for pure power
+    const isoAdj      = Math.max(-0.01, Math.min(0.02, (iso - 0.150) * 0.08));
+    const adjustedPHR = Math.min(0.45, Math.max(0.005, pHR + barrelAdj + isoAdj));
+    // Center at league avg (0.127): avg=50, Henderson-tier≈76, Judge-tier≈95
+    base = 50 + (adjustedPHR - 0.127) * 200 + pitcherMod * 0.5;
 
   } else if (category === 'runs') {
     const rComp   = Math.max(-15, Math.min(30, (r   / gp - 0.45) * 65));
