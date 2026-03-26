@@ -565,9 +565,11 @@ export default function DashboardPage() {
     fetchPP();
   }, []);
 
-  // Re-score pitchers once PP lines arrive
+  // Re-score pitchers once PP lines arrive — OR once the board loads (whichever is later).
+  // /pp-lines.json is a static file (~100ms) but the board takes 5-10s to build,
+  // so we depend on boardPlayers.length to catch the case where PP loads first.
   useEffect(() => {
-    if (!ppLinesByName) return;
+    if (!ppLinesByName || !boardPlayers.length) return;
     setBoardPlayers(prev => prev.map(p => {
       if (p.position !== 'SP') return p;
       const ppMatch = findPPLines(p.fullName, ppLinesByName);
@@ -575,7 +577,8 @@ export default function DashboardPage() {
       const newScore = scorePitcher({ era: p.era, whip: p.whip, k9: p.k9 }, ppMatch.strikeouts);
       return { ...p, scores: { ...p.scores, pitching: newScore } };
     }));
-  }, [ppLinesByName]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ppLinesByName, boardPlayers.length]);
 
   async function loadDailyBoard() {
     // Bust localStorage cache on new deploy.
