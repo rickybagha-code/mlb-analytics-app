@@ -685,15 +685,6 @@ function InteractiveDemoCard({ propKey }) {
 }
 
 function EVSection() {
-  const [activeProp, setActiveProp] = useState('strikeouts');
-  const PROP_TABS = [
-    { id:'hits',       label:'Hits'       },
-    { id:'hr',         label:'Home Runs'  },
-    { id:'runs',       label:'Runs'       },
-    { id:'rbi',        label:'RBI'        },
-    { id:'strikeouts', label:'Strikeouts' },
-  ];
-
   return (
     <section id="ev-model" className="py-24 relative overflow-hidden">
       <div className="absolute inset-0 bg-gradient-to-b from-transparent via-blue-950/10 to-transparent pointer-events-none"/>
@@ -783,26 +774,10 @@ function EVSection() {
             </div>
           </div>
 
-          {/* Right interactive card */}
-          <div className="flex flex-col items-center lg:items-end gap-4">
-            {/* Prop selector pills */}
-            <div className="flex flex-wrap gap-2 justify-center lg:justify-end">
-              {PROP_TABS.map(tab => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveProp(tab.id)}
-                  className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all ${
-                    activeProp === tab.id
-                      ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25'
-                      : 'border border-gray-700 text-gray-400 hover:border-gray-500 hover:text-white'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
+          {/* Right demo card — Strikeouts model */}
+          <div className="flex justify-center lg:justify-end">
             <div className="w-full max-w-sm">
-              <InteractiveDemoCard propKey={activeProp} />
+              <InteractiveDemoCard propKey="strikeouts" />
             </div>
           </div>
 
