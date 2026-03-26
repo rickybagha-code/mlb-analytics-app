@@ -2112,7 +2112,7 @@ export default function PlayerDetailPage() {
     if (!name) return;
     async function fetchPP() {
       try {
-        const res = await fetch(`${API_URL}/prizepicks/mlb`, { signal: AbortSignal.timeout(10000) });
+        const res = await fetch(`/api/prizepicks`, { signal: AbortSignal.timeout(15000) });
         if (!res.ok) return;
         const data = await res.json();
         if (!data.lines) return;
