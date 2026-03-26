@@ -19,15 +19,20 @@ function Navbar() {
             <a href="#pricing" className="text-sm text-gray-400 hover:text-white transition-colors">Pricing</a>
             <Link href="/dashboard" className="text-sm text-gray-400 hover:text-white transition-colors">Dashboard</Link>
           </div>
-          <Link
-            href="/dashboard"
-            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 transition-all shadow-lg shadow-blue-500/20 hover:-translate-y-px"
-          >
-            Get Started
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-            </svg>
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/login"
+              className="rounded-lg border border-gray-700 px-4 py-2 text-sm font-semibold text-gray-300 hover:border-gray-500 hover:text-white transition-all"
+            >
+              Log In
+            </Link>
+            <Link
+              href="/#pricing"
+              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 transition-all shadow-lg shadow-blue-500/20 hover:-translate-y-px"
+            >
+              Sign Up
+            </Link>
+          </div>
         </div>
       </div>
     </nav>
