@@ -138,21 +138,21 @@ function poissonCDF(k, lambda) {
 
 // ─── Pitcher Score — Poisson P(Ks > line) via K/9 ───────────────────────────
 // ppKLine: actual PrizePicks K line for this pitcher (fallback 5.5).
-// ERA + WHIP adjust ±10%/±5% as quality modifiers.
+// Uses 5.0 IP avg (aligns with player-page model; *100 scale for consistency).
 function scorePitcher(stats, ppKLine) {
   const era   = stats.era  ?? 4.50;
   const whip  = stats.whip ?? 1.30;
   const k9    = stats.k9   ?? 8.0;
   const line  = ppKLine ?? 5.5;
   const floor = Math.floor(line);
-  // Estimate per-start Ks from season K/9 (avg SP ≈ 5.5 IP)
-  const projKs = Math.max(0, k9 / 9 * 5.5);
-  // P(Ks > line) — same math as player page K projection model
-  const pOver   = 1 - poissonCDF(floor, projKs);
-  const eraAdj  = Math.max(-0.10, Math.min(0.10, (4.50 - era)  * 0.025));
-  const whipAdj = Math.max(-0.05, Math.min(0.05, (1.30 - whip) * 0.10));
-  const adjusted = Math.min(0.90, Math.max(0.03, pOver + eraAdj + whipAdj));
-  return Math.round(Math.max(5, Math.min(99, adjusted * 105)));
+  // Use 5.0 IP (conservative avg; matches scale of player-page K projection model)
+  const projKs = Math.max(0, k9 / 9 * 5.0);
+  const pOver  = 1 - poissonCDF(floor, projKs);
+  // Small quality modifiers — do not dominate pOver
+  const eraAdj  = Math.max(-0.05, Math.min(0.05, (4.50 - era)  * 0.018));
+  const whipAdj = Math.max(-0.03, Math.min(0.03, (1.30 - whip) * 0.07));
+  const adjusted = Math.min(0.95, Math.max(0.03, pOver + eraAdj + whipAdj));
+  return Math.round(Math.max(5, Math.min(99, adjusted * 100)));
 }
 
 // ─── PP name matching (exact → case-insensitive → last+first-initial) ────────

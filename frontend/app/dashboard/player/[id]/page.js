@@ -41,6 +41,11 @@ const ABBREV_ALIASES = {
 };
 function normAbbrev(a) { return a ? (ABBREV_ALIASES[a] || a) : a; }
 
+function degToCompass(deg) {
+  const dirs = ['N','NE','E','SE','S','SW','W','NW'];
+  return dirs[Math.round(((deg ?? 0) % 360) / 45) % 8];
+}
+
 // ─── Frontend weather adjustment (mirrors services/weatherLogic.js) ────────────
 function calcWeatherAdj(weather) {
   if (!weather) return { adjustment: 0, notes: [], temp: null, windSpeed: null, windDir: null };
@@ -160,9 +165,13 @@ function computeFIP(st) {
   if (ip < 1) return null;
   return (13 * hr + 3 * bb - 2 * k) / ip + 3.10;
 }
-function pitcherScoreFromERA(era) {
+function pitcherScoreFromERA(era, whip) {
   if (era == null) return null;
-  return Math.round(Math.max(10, Math.min(95, 50 + (4.50 - era) * 15)));
+  // ERA component: league avg ~4.20 (2024); elite ~2.50, poor ~5.50
+  const eraComp  = Math.max(-20, Math.min(25, (4.20 - era) * 12));
+  // WHIP component (when available): league avg ~1.25; elite ~0.95, poor ~1.60
+  const whipComp = whip != null ? Math.max(-12, Math.min(15, (1.25 - whip) * 20)) : 0;
+  return Math.round(Math.max(10, Math.min(95, 50 + eraComp + whipComp)));
 }
 function pitcherScoreFromKProj(projected, ppLine) {
   if (projected == null) return null;
@@ -908,7 +917,7 @@ function PoissonBarChart({ lambda, bookLine }) {
 function EVGaugeSVG({ evPct }) {
   const v    = isNaN(evPct) ? 0 : Math.max(-15, Math.min(15, evPct));
   const norm = (v + 15) / 30;
-  const W=160, H=92, cx=80, cy=84, R=62, sw=16;
+  const W=160, H=105, cx=80, cy=84, R=62, sw=16;
   const d2r = deg => deg * Math.PI / 180;
   const sweepDeg = norm * 180;
   const sx = cx + R * Math.cos(d2r(180)), sy = cy + R * Math.sin(d2r(180));
@@ -916,15 +925,15 @@ function EVGaugeSVG({ evPct }) {
   const col = v > 5 ? '#10b981' : v > 2 ? '#eab308' : v > -2 ? '#6b7280' : '#ef4444';
   const lbl = `${evPct >= 0 ? '+' : ''}${(evPct||0).toFixed(1)}%`;
   return (
-    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{overflow:'visible'}}>
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
       <path d={`M ${cx-R} ${cy} A ${R} ${R} 0 0 1 ${cx+R} ${cy}`} fill="none" stroke="#1f2937" strokeWidth={sw} strokeLinecap="round"/>
       {sweepDeg > 0.5 && (
         <path d={`M ${sx} ${sy} A ${R} ${R} 0 ${sweepDeg>180?1:0} 1 ${ex} ${ey}`} fill="none" stroke={col} strokeWidth={sw} strokeLinecap="round"/>
       )}
-      <text x={cx} y={cy-28} textAnchor="middle" fontSize="22" fontWeight="900" fill={col} fontFamily="monospace">{lbl}</text>
-      <text x={cx} y={cy-12} textAnchor="middle" fontSize="9" fill="#6b7280">EV%</text>
-      <text x={cx-R-2} y={cy+16} textAnchor="end"   fontSize="8" fill="#374151">-15%</text>
-      <text x={cx+R+2} y={cy+16} textAnchor="start" fontSize="8" fill="#374151">+15%</text>
+      <text x={cx} y={cy-6} textAnchor="middle" fontSize="22" fontWeight="900" fill={col} fontFamily="monospace">{lbl}</text>
+      <text x={cx} y={cy+12} textAnchor="middle" fontSize="9" fill="#6b7280">EV%</text>
+      <text x={cx-R-2} y={cy+26} textAnchor="end"   fontSize="8" fill="#374151">-15%</text>
+      <text x={cx+R+2} y={cy+26} textAnchor="start" fontSize="8" fill="#374151">+15%</text>
     </svg>
   );
 }
@@ -1433,20 +1442,16 @@ function BaseballDiamondCard({ spTeamAbbrev, spOppAbbrev, spIsHome, activeCat, w
                 </g>
               )}
 
-              {/* Wind speed (when below threshold — just show mph, no arrow) */}
-              {weather && wx.windSpeed > 0 && !hasWind && (
+              {/* Wind speed + direction */}
+              {weather && wx.windSpeed > 0 && (
                 <g>
-                  <rect x="4" y="4" width="56" height="26" rx="5" fill="#0f172a" fillOpacity="0.95"/>
-                  <text x="32" y="21" textAnchor="middle" fontSize="11" fontWeight="700" fill="#9ca3af">
+                  <rect x="4" y="4" width="60" height="32" rx="5" fill="#0f172a" fillOpacity="0.95"/>
+                  <text x="34" y="17" textAnchor="middle" fontSize="10" fontWeight="700" fill="#9ca3af">
                     {Math.round(wx.windSpeed)} mph
                   </text>
-                </g>
-              )}
-              {weather && wx.windSpeed > 0 && hasWind && (
-                <g>
-                  <rect x="4" y="4" width="56" height="26" rx="5" fill="#0f172a" fillOpacity="0.95"/>
-                  <text x="32" y="21" textAnchor="middle" fontSize="11" fontWeight="700" fill="#9ca3af">
-                    {Math.round(wx.windSpeed)} mph
+                  <text x="34" y="30" textAnchor="middle" fontSize="11" fontWeight="900"
+                    fill={hasWind ? windClr : '#9ca3af'}>
+                    {degToCompass(wx.windDir)}
                   </text>
                 </g>
               )}
@@ -1495,7 +1500,7 @@ function BaseballDiamondCard({ spTeamAbbrev, spOppAbbrev, spIsHome, activeCat, w
                     {Math.round(wx.temp)}°C
                   </span>
                 )}
-                {wx.windSpeed > 0 && <span>{Math.round(wx.windSpeed)} mph wind</span>}
+                {wx.windSpeed > 0 && <span>{Math.round(wx.windSpeed)} mph {degToCompass(wx.windDir)} wind</span>}
                 {wx.notes.map((n,i) => <span key={i} className="text-gray-500">· {n}</span>)}
               </div>
             </div>
@@ -2361,7 +2366,7 @@ export default function PlayerDetailPage() {
   const pitcherFIP   = useMemo(() => computeFIP(seasonStats), [seasonStats]);
   const pitcherERAScore = useMemo(() => {
     if (!isPitcherView || !seasonStats?.era) return null;
-    return pitcherScoreFromERA(parseFloat(seasonStats.era));
+    return pitcherScoreFromERA(parseFloat(seasonStats.era), parseFloat(seasonStats.whip) || null);
   }, [isPitcherView, seasonStats]);
 
   // Page-level K projection (mirrors ProjectionEVCard)
