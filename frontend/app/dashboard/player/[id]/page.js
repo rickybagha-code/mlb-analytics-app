@@ -164,12 +164,13 @@ function pitcherScoreFromERA(era) {
   if (era == null) return null;
   return Math.round(Math.max(10, Math.min(95, 50 + (4.50 - era) * 15)));
 }
-function pitcherScoreFromKProj(projected) {
+function pitcherScoreFromKProj(projected, ppLine) {
   if (projected == null) return null;
-  // Use Poisson P(over 5.5 line) — same math as ProjectionEVCard.
-  // league avg line ≈ 5.5 → floor = 5.
-  // This keeps the score ring directly consistent with the EV model.
-  const pOver = 1 - poissonCDF(5, projected);
+  // Use actual PP K line when available — makes score ring directly reflect
+  // P(beats this pitcher's specific line today), not just a fixed 5.5.
+  const line  = ppLine ?? 5.5;
+  const floor = Math.floor(line);
+  const pOver = 1 - poissonCDF(floor, projected);
   return Math.round(Math.max(10, Math.min(99, pOver * 100)));
 }
 function getStartResult(s) {
@@ -1261,46 +1262,43 @@ const PARK_FACTORS = {
   SFG:{ name:'Oracle Park',        hits:0.97, hr:0.88, runs:0.95, k:1.04 },
 };
 
-// ─── Baseball Diamond Card (park factors + weather) ──────────────────────────
+// ─── Baseball Diamond / Stadium Card (park factors + weather) ────────────────
 function BaseballDiamondCard({ spTeamAbbrev, spOppAbbrev, spIsHome, activeCat, weather }) {
-  const rawHome = spIsHome ? spTeamAbbrev : (spOppAbbrev || spTeamAbbrev);
+  const rawHome    = spIsHome ? spTeamAbbrev : (spOppAbbrev || spTeamAbbrev);
   const homeAbbrev = normAbbrev(rawHome);
-  const park = homeAbbrev ? PARK_FACTORS[homeAbbrev] : null;
-  const wx = calcWeatherAdj(weather);
+  const park       = homeAbbrev ? PARK_FACTORS[homeAbbrev] : null;
+  const wx         = calcWeatherAdj(weather);
 
   const pctStr = v => `${v >= 1 ? '+' : ''}${Math.round((v-1)*100)}%`;
   const valCls = v => v >= 1.03 ? 'text-emerald-400' : v <= 0.97 ? 'text-red-400' : 'text-gray-400';
   const valBg  = v => v >= 1.03 ? 'bg-emerald-500/15 border-emerald-500/30' : v <= 0.97 ? 'bg-red-500/10 border-red-500/25' : 'bg-gray-800/50 border-gray-700/50';
 
-  // SVG dimensions
-  const W = 280, H = 250;
-  // Base positions (top-down, HP at bottom center)
-  const HP = { x:140, y:228 };
-  const B1 = { x:214, y:162 };
-  const B2 = { x:140, y:96  };
-  const B3 = { x:66,  y:162 };
-  const PM = { x:140, y:165 }; // pitcher's mound
+  // SVG field layout — HP at bottom center, outfield arc at top
+  const W = 300, H = 260;
+  const HP = { x:150, y:248 };
+  const B1 = { x:218, y:172 };
+  const B2 = { x:150, y: 96 };
+  const B3 = { x: 82, y:172 };
+  const PM = { x:150, y:160 };
+  // Foul poles (where the foul lines meet the outfield wall)
+  const LFP = { x:10,  y:108 };
+  const RFP = { x:290, y:108 };
+  const CF  = { x:150, y: 18 };
 
-  // Wind arrow — direction is meteorological (where it comes FROM)
-  // Positive adj = blowing out (good for HR) → arrow toward outfield (up)
-  // Negative adj = blowing in (bad for HR) → arrow toward HP (down)
-  const windAdj = wx.adjustment;
-  const arrowColor = windAdj > 0 ? '#34d399' : windAdj < 0 ? '#f87171' : '#6b7280';
-  const arrowEndY = windAdj >= 4 ? 105 : windAdj >= 1 ? 130 : windAdj <= -4 ? 195 : windAdj <= -1 ? 185 : null;
+  // Wind
+  const windAdj  = wx.adjustment;
+  const hasWind  = weather && (wx.windSpeed ?? 0) >= 8;
+  const windClr  = windAdj > 0 ? '#34d399' : windAdj < 0 ? '#f87171' : '#9ca3af';
+  const windLbl  = windAdj > 0 ? `${Math.round(wx.windSpeed)}mph — Blowing Out ↑` :
+                   windAdj < 0 ? `${Math.round(wx.windSpeed)}mph — Blowing In ↓` :
+                                 `${Math.round(wx.windSpeed)}mph Crosswind`;
 
-  // Park color (overall hitter vs pitcher friendliness)
-  const isHitterPark  = park && (park.hits >= 1.04 || park.hr >= 1.08);
-  const isPitcherPark = park && (park.hits <= 0.96 || park.hr <= 0.92);
-  const outfieldFill  = isHitterPark ? '#16a34a' : isPitcherPark ? '#7f1d1d' : '#14532d';
-
-  // Active cat indicator values
   const catVal = activeCat === 'hits' ? park?.hits : activeCat === 'hr' ? park?.hr :
                  activeCat === 'runs' ? park?.runs : activeCat === 'sb' ? park?.runs : null;
 
   return (
     <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
-      {/* Header */}
-      <div className="flex items-center gap-2 mb-4">
+      <div className="flex items-center gap-2 mb-3">
         <span className="text-base">🏟️</span>
         <h3 className="text-sm font-bold text-white">Park & Conditions</h3>
         {park && <span className="ml-auto text-xs text-gray-500 truncate max-w-[160px]">{park.name}</span>}
@@ -1310,133 +1308,162 @@ function BaseballDiamondCard({ spTeamAbbrev, spOppAbbrev, spIsHome, activeCat, w
         <p className="text-xs text-gray-600 italic">Park data unavailable — team not identified.</p>
       ) : (
         <>
-          {/* Baseball Diamond SVG */}
-          <div className="mb-4">
-            <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',maxHeight:220}}>
-              {/* Outfield arc */}
-              <path d={`M 22,${H-22} Q ${W/2},18 ${W-22},${H-22} Z`}
-                fill={outfieldFill} opacity="0.35"/>
-              <path d={`M 22,${H-22} Q ${W/2},18 ${W-22},${H-22}`}
-                fill="none" stroke={outfieldFill} strokeWidth="2.5" opacity="0.6"/>
+          {/* ── Stadium SVG ─────────────────────────────────────────────── */}
+          <div className="mb-3 rounded-lg overflow-hidden bg-gray-950/60">
+            <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%', maxHeight:230}} xmlns="http://www.w3.org/2000/svg">
 
-              {/* Foul lines */}
-              <line x1={HP.x} y1={HP.y} x2={22}    y2={H-22} stroke="#ca8a04" strokeWidth="1" opacity="0.5"/>
-              <line x1={HP.x} y1={HP.y} x2={W-22}  y2={H-22} stroke="#ca8a04" strokeWidth="1" opacity="0.5"/>
+              {/* ── Grass background (fair territory) ── */}
+              <path d={`M ${HP.x},${HP.y} L ${LFP.x},${LFP.y} Q ${CF.x},${CF.y} ${RFP.x},${RFP.y} Z`}
+                fill="#14532d"/>
 
-              {/* Base paths (infield diamond) */}
+              {/* ── Warning track (thick arc stroke inside outfield wall) ── */}
+              <path d={`M ${LFP.x},${LFP.y} Q ${CF.x},${CF.y} ${RFP.x},${RFP.y}`}
+                fill="none" stroke="#92400e" strokeWidth="20" opacity="0.75"/>
+              {/* Inner edge of warning track (grass covers it) */}
+              <path d={`M 30,116 Q ${CF.x},38 270,116`}
+                fill="none" stroke="#166534" strokeWidth="4"/>
+
+              {/* ── Foul lines ── */}
+              <line x1={HP.x} y1={HP.y} x2={LFP.x} y2={LFP.y} stroke="#ca8a04" strokeWidth="1.5" opacity="0.8"/>
+              <line x1={HP.x} y1={HP.y} x2={RFP.x} y2={RFP.y} stroke="#ca8a04" strokeWidth="1.5" opacity="0.8"/>
+
+              {/* ── Outfield wall (top boundary arc) ── */}
+              <path d={`M ${LFP.x},${LFP.y} Q ${CF.x},${CF.y} ${RFP.x},${RFP.y}`}
+                fill="none" stroke="#374151" strokeWidth="5"/>
+              <path d={`M ${LFP.x},${LFP.y} Q ${CF.x},${CF.y} ${RFP.x},${RFP.y}`}
+                fill="none" stroke="#6b7280" strokeWidth="1.5" opacity="0.5"/>
+
+              {/* ── Infield dirt circle ── */}
+              <circle cx={W/2} cy={175} r="78" fill="#92400e" opacity="0.38"/>
+
+              {/* ── Infield grass diamond ── */}
               <polygon
                 points={`${HP.x},${HP.y} ${B1.x},${B1.y} ${B2.x},${B2.y} ${B3.x},${B3.y}`}
-                fill="#92400e" fillOpacity="0.25" stroke="#ca8a04" strokeWidth="1.5" strokeOpacity="0.5"
-              />
+                fill="#166534" opacity="0.85"/>
 
-              {/* Pitcher's mound */}
-              <circle cx={PM.x} cy={PM.y} r="9" fill="#92400e" stroke="#ca8a04" strokeWidth="1" opacity="0.7"/>
+              {/* ── Basepaths (dirt strips between bags) ── */}
+              <line x1={HP.x} y1={HP.y} x2={B1.x} y2={B1.y} stroke="#92400e" strokeWidth="6" opacity="0.5"/>
+              <line x1={B1.x} y1={B1.y} x2={B2.x} y2={B2.y} stroke="#92400e" strokeWidth="6" opacity="0.5"/>
+              <line x1={B2.x} y1={B2.y} x2={B3.x} y2={B3.y} stroke="#92400e" strokeWidth="6" opacity="0.5"/>
+              <line x1={B3.x} y1={B3.y} x2={HP.x} y2={HP.y} stroke="#92400e" strokeWidth="6" opacity="0.5"/>
 
-              {/* Wind arrow (when significant wind) */}
-              {arrowEndY && weather && (
+              {/* ── Pitcher's mound ── */}
+              <circle cx={PM.x} cy={PM.y} r="11" fill="#a16207" opacity="0.85"/>
+              <circle cx={PM.x} cy={PM.y} r="5"  fill="#ca8a04" opacity="0.6"/>
+
+              {/* ── Wind arrow (centered in outfield, prominent) ── */}
+              {hasWind && (
                 <g>
                   <defs>
-                    <marker id="arrowhead" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
-                      <path d={windAdj > 0 ? 'M0,6 L3,0 L6,6 Z' : 'M0,0 L3,6 L6,0 Z'} fill={arrowColor}/>
+                    <marker id="windHead" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto">
+                      <path d={windAdj >= 0 ? 'M1,9 L5,1 L9,9 Z' : 'M1,1 L5,9 L9,1 Z'} fill={windClr}/>
                     </marker>
                   </defs>
                   <line
-                    x1={W/2} y1={windAdj > 0 ? 198 : 115}
-                    x2={W/2} y2={arrowEndY}
-                    stroke={arrowColor} strokeWidth="2.5" strokeDasharray="5 3"
-                    markerEnd="url(#arrowhead)" opacity="0.85"
-                  />
-                  <rect x={W/2-30} y={windAdj > 0 ? arrowEndY-22 : arrowEndY+6}
-                    width="60" height="16" rx="3" fill="#111827" fillOpacity="0.85"/>
-                  <text x={W/2} y={windAdj > 0 ? arrowEndY-10 : arrowEndY+17}
-                    textAnchor="middle" fill={arrowColor} fontSize="9" fontWeight="700">
-                    {wx.notes[wx.notes.length-1] || ''}
+                    x1={W/2} y1={windAdj >= 0 ? 182 : 68}
+                    x2={W/2} y2={windAdj >= 0 ? 78  : 178}
+                    stroke={windClr} strokeWidth="4.5" strokeDasharray="7 4"
+                    markerEnd="url(#windHead)" opacity="0.95"/>
+                  {/* Wind label pill */}
+                  <rect x={W/2-52} y={windAdj >= 0 ? 51 : 180} width="104" height="20" rx="5" fill="#0f172a" fillOpacity="0.95"/>
+                  <text x={W/2} y={windAdj >= 0 ? 64 : 193}
+                    textAnchor="middle" fill={windClr} fontSize="9.5" fontWeight="800">
+                    {windLbl}
                   </text>
                 </g>
               )}
 
-              {/* HR factor — outfield arc center */}
+              {/* ── Park factor labels ── */}
+              {/* HR — deep center (top center) */}
               {park && (
                 <g>
-                  <rect x={W/2-22} y="26" width="44" height="22" rx="4" fill="#111827" fillOpacity="0.9"/>
-                  <text x={W/2} y="38" textAnchor="middle" fontSize="9" fontWeight="700"
+                  <rect x={W/2-28} y={hasWind && windAdj < 0 ? 43 : 18} width="56" height="24" rx="5" fill="#0f172a" fillOpacity="0.95"/>
+                  <text x={W/2} y={hasWind && windAdj < 0 ? 31 : 30.5} textAnchor="middle" fontSize="10" fontWeight="800"
                     fill={park.hr >= 1.03 ? '#34d399' : park.hr <= 0.97 ? '#f87171' : '#9ca3af'}>
                     HR {pctStr(park.hr)}
                   </text>
-                  <text x={W/2} y="46" textAnchor="middle" fontSize="7.5" fill="#6b7280">HR factor</text>
                 </g>
               )}
 
-              {/* Hits factor — near 2B */}
+              {/* Hits — left field */}
               {park && (
                 <g>
-                  <rect x={B2.x-20} y={B2.y+12} width="40" height="20" rx="3" fill="#111827" fillOpacity="0.9"/>
-                  <text x={B2.x} y={B2.y+23} textAnchor="middle" fontSize="8.5" fontWeight="700"
+                  <rect x="10" y="72" width="54" height="24" rx="4" fill="#0f172a" fillOpacity="0.95"/>
+                  <text x="37" y="82" textAnchor="middle" fontSize="9" fontWeight="700"
                     fill={park.hits >= 1.03 ? '#34d399' : park.hits <= 0.97 ? '#f87171' : '#9ca3af'}>
                     H {pctStr(park.hits)}
                   </text>
-                  <text x={B2.x} y={B2.y+30} textAnchor="middle" fontSize="7" fill="#6b7280">Hits</text>
+                  <text x="37" y="92" textAnchor="middle" fontSize="7.5" fill="#6b7280">Hits</text>
                 </g>
               )}
 
-              {/* Runs factor — near 3B */}
+              {/* Runs — right field */}
               {park && (
                 <g>
-                  <rect x={B3.x-20} y={B3.y-28} width="40" height="20" rx="3" fill="#111827" fillOpacity="0.9"/>
-                  <text x={B3.x} y={B3.y-17} textAnchor="middle" fontSize="8.5" fontWeight="700"
+                  <rect x={W-64} y="72" width="54" height="24" rx="4" fill="#0f172a" fillOpacity="0.95"/>
+                  <text x={W-37} y="82" textAnchor="middle" fontSize="9" fontWeight="700"
                     fill={park.runs >= 1.03 ? '#34d399' : park.runs <= 0.97 ? '#f87171' : '#9ca3af'}>
                     R {pctStr(park.runs)}
                   </text>
-                  <text x={B3.x} y={B3.y-10} textAnchor="middle" fontSize="7" fill="#6b7280">Runs</text>
+                  <text x={W-37} y="92" textAnchor="middle" fontSize="7.5" fill="#6b7280">Runs</text>
                 </g>
               )}
 
-              {/* K factor — pitcher mound */}
+              {/* K — pitcher mound label (below mound) */}
               {park && (
                 <g>
-                  <rect x={PM.x-20} y={PM.y+13} width="40" height="20" rx="3" fill="#111827" fillOpacity="0.9"/>
-                  <text x={PM.x} y={PM.y+24} textAnchor="middle" fontSize="8.5" fontWeight="700"
+                  <rect x={PM.x-26} y={PM.y+15} width="52" height="24" rx="4" fill="#0f172a" fillOpacity="0.95"/>
+                  <text x={PM.x} y={PM.y+26} textAnchor="middle" fontSize="9.5" fontWeight="700"
                     fill={park.k <= 0.97 ? '#34d399' : park.k >= 1.03 ? '#f87171' : '#9ca3af'}>
                     K {pctStr(park.k)}
                   </text>
-                  <text x={PM.x} y={PM.y+31} textAnchor="middle" fontSize="7" fill="#6b7280">K factor</text>
+                  <text x={PM.x} y={PM.y+35} textAnchor="middle" fontSize="7.5" fill="#6b7280">Strikeouts</text>
                 </g>
               )}
 
+              {/* ── Weather badges (corners) ── */}
               {/* Temperature — top right */}
               {weather && wx.temp != null && (
                 <g>
-                  <rect x={W-62} y="6" width="54" height="22" rx="4" fill="#111827" fillOpacity="0.9"/>
-                  <text x={W-35} y="20" textAnchor="middle" fontSize="10" fontWeight="700"
-                    fill={wx.temp >= 29 ? '#f97316' : wx.temp <= 13 ? '#60a5fa' : '#e5e7eb'}>
+                  <rect x={W-58} y="4" width="54" height="26" rx="5" fill="#0f172a" fillOpacity="0.95"/>
+                  <text x={W-31} y="21" textAnchor="middle" fontSize="12" fontWeight="900"
+                    fill={wx.temp >= 29 ? '#fb923c' : wx.temp <= 13 ? '#60a5fa' : '#e5e7eb'}>
                     {Math.round(wx.temp)}°C
                   </text>
                 </g>
               )}
 
-              {/* Wind speed — top left */}
-              {weather && wx.windSpeed != null && wx.windSpeed > 0 && (
+              {/* Wind speed (when below threshold — just show mph, no arrow) */}
+              {weather && wx.windSpeed > 0 && !hasWind && (
                 <g>
-                  <rect x="8" y="6" width="52" height="22" rx="4" fill="#111827" fillOpacity="0.9"/>
-                  <text x="34" y="20" textAnchor="middle" fontSize="9" fontWeight="600" fill="#9ca3af">
+                  <rect x="4" y="4" width="56" height="26" rx="5" fill="#0f172a" fillOpacity="0.95"/>
+                  <text x="32" y="21" textAnchor="middle" fontSize="11" fontWeight="700" fill="#9ca3af">
+                    {Math.round(wx.windSpeed)} mph
+                  </text>
+                </g>
+              )}
+              {weather && wx.windSpeed > 0 && hasWind && (
+                <g>
+                  <rect x="4" y="4" width="56" height="26" rx="5" fill="#0f172a" fillOpacity="0.95"/>
+                  <text x="32" y="21" textAnchor="middle" fontSize="11" fontWeight="700" fill="#9ca3af">
                     {Math.round(wx.windSpeed)} mph
                   </text>
                 </g>
               )}
 
-              {/* Bases */}
+              {/* ── Bases ── */}
               {[B1, B2, B3].map((b, i) => (
-                <rect key={i} x={b.x-5} y={b.y-5} width="10" height="10" rx="1"
-                  fill="white" opacity="0.9" transform={`rotate(45 ${b.x} ${b.y})`}/>
+                <rect key={i} x={b.x-5.5} y={b.y-5.5} width="11" height="11" rx="2"
+                  fill="white" opacity="0.95" transform={`rotate(45 ${b.x} ${b.y})`}/>
               ))}
               {/* Home plate pentagon */}
               <polygon
-                points={`${HP.x},${HP.y-8} ${HP.x+6},${HP.y-4} ${HP.x+6},${HP.y+4} ${HP.x-6},${HP.y+4} ${HP.x-6},${HP.y-4}`}
-                fill="white" opacity="0.9"/>
+                points={`${HP.x},${HP.y-10} ${HP.x+8},${HP.y-5} ${HP.x+8},${HP.y+6} ${HP.x-8},${HP.y+6} ${HP.x-8},${HP.y-5}`}
+                fill="white" opacity="0.95"/>
             </svg>
           </div>
 
-          {/* Stats row */}
+          {/* ── Park factor pill stats ── */}
           <div className="grid grid-cols-4 gap-2">
             {[
               { label:'Hits',  val:park.hits, cat:'hits' },
@@ -1444,14 +1471,14 @@ function BaseballDiamondCard({ spTeamAbbrev, spOppAbbrev, spIsHome, activeCat, w
               { label:'Runs',  val:park.runs, cat:'runs' },
               { label:'K',     val:park.k,    cat:'k'    },
             ].map(r => (
-              <div key={r.label} className={`rounded-lg border p-2.5 text-center ${r.cat===activeCat ? 'border-blue-500/40 bg-blue-500/10' : valBg(r.val)}`}>
+              <div key={r.label} className={`rounded-lg border p-2.5 text-center transition-colors ${r.cat===activeCat ? 'border-blue-500/40 bg-blue-500/10' : valBg(r.val)}`}>
                 <div className={`text-sm font-black tabular-nums ${r.cat===activeCat ? 'text-blue-400' : valCls(r.val)}`}>{pctStr(r.val)}</div>
                 <div className="text-xs text-gray-600 mt-0.5">{r.label}</div>
               </div>
             ))}
           </div>
 
-          {/* Weather row */}
+          {/* ── Game conditions row ── */}
           {weather ? (
             <div className="mt-3 pt-3 border-t border-gray-800/60">
               <div className="flex items-center gap-2 mb-1.5">
@@ -1474,15 +1501,17 @@ function BaseballDiamondCard({ spTeamAbbrev, spOppAbbrev, spIsHome, activeCat, w
             </div>
           ) : (
             <div className="mt-3 pt-3 border-t border-gray-800/60">
-              <p className="text-xs text-gray-700 italic">Weather loading...</p>
+              <p className="text-xs text-gray-700 italic">Weather loading…</p>
             </div>
           )}
 
-          {/* Active cat summary */}
+          {/* Active cat summary line */}
           {catVal != null && (
             <p className="mt-2 text-xs text-gray-500 leading-relaxed">
               {park.name} {catVal >= 1.03 ? 'boosts' : catVal <= 0.97 ? 'suppresses' : 'is neutral for'}{' '}
-              <span className={`font-bold ${valCls(catVal)}`}>{activeCat === 'hits' ? 'hits' : activeCat === 'hr' ? 'home runs' : activeCat === 'runs' ? 'runs' : activeCat}</span>{' '}
+              <span className={`font-bold ${valCls(catVal)}`}>
+                {activeCat === 'hits' ? 'hits' : activeCat === 'hr' ? 'home runs' : activeCat === 'runs' ? 'runs' : activeCat}
+              </span>{' '}
               by <span className="font-bold tabular-nums">{pctStr(catVal)}</span> vs league avg.
             </p>
           )}
@@ -2334,8 +2363,8 @@ export default function PlayerDetailPage() {
   const pageKProj = useKProjection(isPitcherView ? pitcherStarts : [], isPitcherView ? seasonStats : null, spOppAbbrev);
   const kProjScore = useMemo(() => {
     if (!isPitcherView || !pageKProj) return null;
-    return pitcherScoreFromKProj(pageKProj.projected);
-  }, [isPitcherView, pageKProj]);
+    return pitcherScoreFromKProj(pageKProj.projected, ppLines?.strikeouts ?? null);
+  }, [isPitcherView, pageKProj, ppLines]);
 
   // Main pitcher score is K projection; fall back to ERA score
   const pitcherScore = kProjScore ?? pitcherERAScore;

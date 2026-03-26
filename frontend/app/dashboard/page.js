@@ -93,12 +93,17 @@ function computeProjectionScore(player, category) {
     base = 53 + wComp - kPenalty + bbBonus + hardBonus + pitcherMod;
 
   } else if (category === 'hr') {
-    const hrComp  = Math.min(55, (hrRate / 0.08) * 55);
-    const isoComp = Math.max(0, Math.min(15, (iso - 0.100) / 0.200 * 15));
-    const kHit    = Math.max(0, (kPct - 0.25) * 25);
-    // Barrel bonus: league avg ~7%, elite ~20%+ (brl_percent from Baseball Savant)
-    const barrelBonus = barrelPct != null ? Math.max(0, Math.min(15, (barrelPct - 5) / 15 * 15)) : 0;
-    base = 18 + hrComp + isoComp - kHit + barrelBonus + pitcherMod * 0.7;
+    // Poisson-based P(HR ≥ 1 today) — prevents 99-inflation seen with additive cap formula.
+    // lambda = seasonal HR/AB rate × avg ABs per game
+    const avgABs    = Math.max(3.0, Math.min(4.5, gp > 0 ? ab / gp : 3.8));
+    const lambda    = Math.max(0, hrRate * avgABs);
+    const pHR       = 1 - Math.exp(-lambda); // P(HR ≥ 1) = 1 − Poisson(0, λ)
+    // ISO and barrel % as quality-of-contact modifiers (small adjustments, not dominant)
+    const isoMod    = Math.max(-0.03, Math.min(0.03, (iso - 0.150) * 0.15));
+    const barrelMod = barrelPct != null ? Math.max(0, Math.min(0.025, (barrelPct - 8) / 48)) : 0;
+    const adjustedP = Math.min(0.40, Math.max(0.005, pHR + isoMod + barrelMod));
+    // Scale: 0.40 (elite max) → base≈90, 0.20 → base≈49, 0.10 → base≈27
+    base = Math.round(adjustedP * 212 + 6) + pitcherMod * 0.5;
 
   } else if (category === 'runs') {
     const rComp   = Math.max(-15, Math.min(30, (r   / gp - 0.45) * 65));
@@ -123,15 +128,47 @@ function computeProjectionScore(player, category) {
   return Math.round(Math.max(5, Math.min(99, adjusted + recencyBoost)));
 }
 
-function scorePitcher(stats) {
-  const era  = stats.era  ?? 4.50;
-  const whip = stats.whip ?? 1.30;
-  const k9   = stats.k9   ?? 8.0;
-  // Centred at league avg: ERA 4.50, WHIP 1.30, K/9 8.5
-  const eraScore  = Math.max(-20, Math.min(30, (4.50 - era)  * 12));
-  const k9Score   = Math.max(-10, Math.min(20, (k9   - 7.50) * 5));
-  const whipScore = Math.max(-10, Math.min(15, (1.30 - whip) * 25));
-  return Math.round(Math.max(5, Math.min(99, 50 + eraScore + k9Score + whipScore)));
+// ─── Poisson CDF ─────────────────────────────────────────────────────────────
+function poissonCDF(k, lambda) {
+  if (lambda <= 0) return 1;
+  let sum = 0, term = Math.exp(-lambda);
+  for (let i = 0; i <= k; i++) { sum += term; term *= lambda / (i + 1); }
+  return Math.min(1, sum);
+}
+
+// ─── Pitcher Score — Poisson P(Ks > line) via K/9 ───────────────────────────
+// ppKLine: actual PrizePicks K line for this pitcher (fallback 5.5).
+// ERA + WHIP adjust ±10%/±5% as quality modifiers.
+function scorePitcher(stats, ppKLine) {
+  const era   = stats.era  ?? 4.50;
+  const whip  = stats.whip ?? 1.30;
+  const k9    = stats.k9   ?? 8.0;
+  const line  = ppKLine ?? 5.5;
+  const floor = Math.floor(line);
+  // Estimate per-start Ks from season K/9 (avg SP ≈ 5.5 IP)
+  const projKs = Math.max(0, k9 / 9 * 5.5);
+  // P(Ks > line) — same math as player page K projection model
+  const pOver   = 1 - poissonCDF(floor, projKs);
+  const eraAdj  = Math.max(-0.10, Math.min(0.10, (4.50 - era)  * 0.025));
+  const whipAdj = Math.max(-0.05, Math.min(0.05, (1.30 - whip) * 0.10));
+  const adjusted = Math.min(0.90, Math.max(0.03, pOver + eraAdj + whipAdj));
+  return Math.round(Math.max(5, Math.min(99, adjusted * 105)));
+}
+
+// ─── PP name matching (exact → case-insensitive → last+first-initial) ────────
+function findPPLines(name, linesMap) {
+  if (!name || !linesMap) return null;
+  if (linesMap[name]) return linesMap[name];
+  const lower = name.toLowerCase();
+  const k1 = Object.keys(linesMap).find(k => k.toLowerCase() === lower);
+  if (k1) return linesMap[k1];
+  const parts = name.split(' ');
+  if (parts.length >= 2) {
+    const partial = `${parts[0][0]}. ${parts.slice(1).join(' ')}`;
+    const k2 = Object.keys(linesMap).find(k => k.toLowerCase() === partial.toLowerCase());
+    if (k2) return linesMap[k2];
+  }
+  return null;
 }
 
 // ─── Streak ───────────────────────────────────────────────────────────────────
@@ -280,6 +317,16 @@ function SkeletonCard() {
   );
 }
 
+// ─── Score tooltip text by category ─────────────────────────────────────────
+const SCORE_TOOLTIP = {
+  hitting:  'ProprStats Model Score — likelihood of recording a hit today',
+  hr:       'ProprStats HR Score — likelihood of hitting a home run today',
+  runs:     'ProprStats Model Score — likelihood of scoring a run today',
+  rbi:      'ProprStats Model Score — likelihood of driving in a run today',
+  sb:       'ProprStats Model Score — likelihood of stealing a base today',
+  pitching: 'ProprStats K Score — likelihood of exceeding the strikeout line today',
+};
+
 // ─── Auto Board Player Card ───────────────────────────────────────────────────
 function AutoPlayerCard({ player, category, rank }) {
   const score      = player.scores?.[category] ?? 50;
@@ -312,7 +359,12 @@ function AutoPlayerCard({ player, category, rank }) {
           <p className="text-xs text-gray-500">{player.position} · {player.teamAbbrev || player.teamName}</p>
           {matchupTxt && <p className="text-xs text-blue-400 mt-0.5 truncate">{matchupTxt}</p>}
         </div>
-        <ScoreRing score={score} size={44} />
+        <div className="relative group flex-shrink-0">
+          <ScoreRing score={score} size={44} />
+          <div className="absolute bottom-full right-0 mb-2 w-52 bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-2 text-xs text-gray-300 leading-snug opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 shadow-xl">
+            {SCORE_TOOLTIP[category] ?? 'ProprStats Model Score'}
+          </div>
+        </div>
       </div>
 
       {isPitcher ? (
@@ -438,10 +490,10 @@ function ManualPlayerCard({ player, category, win, todayGames, onRemove }) {
 
 // ─── Categories ───────────────────────────────────────────────────────────────
 const CATEGORIES = [
-  { id:'hitting',  label:'Hitting'       },
-  { id:'hr',       label:'Home Runs'     },
+  { id:'hitting',  label:'Hits'          },
   { id:'runs',     label:'Runs'          },
   { id:'rbi',      label:'RBI'           },
+  { id:'hr',       label:'Home Runs'     },
   { id:'sb',       label:'Stolen Bases'  },
   { id:'pitching', label:'Pitching'      },
 ];
@@ -459,6 +511,9 @@ export default function DashboardPage() {
   const [boardLoading,  setBoardLoading]  = useState(true);
   const [boardError,    setBoardError]    = useState(null);
   const [todayGames,    setTodayGames]    = useState([]);
+
+  // ── PrizePicks lines (keyed by player name) ────────────────────────────────
+  const [ppLinesByName,  setPpLinesByName]  = useState(null);
 
   // ── Manual research ───────────────────────────────────────────────────────
   const [teams,            setTeams]           = useState([]);
@@ -493,11 +548,34 @@ export default function DashboardPage() {
 
   // ── Load daily board ──────────────────────────────────────────────────────
   useEffect(() => {
-    // Fire a no-op ping to Render immediately so the cold-start wake-up begins
-    // as early as possible (before loadDailyBoard's first real fetch).
     fetch(`${API_URL}/`).catch(() => {});
     loadDailyBoard();
   }, []);
+
+  // ── Fetch PrizePicks lines (non-blocking, re-scores pitchers when ready) ──
+  useEffect(() => {
+    async function fetchPP() {
+      try {
+        const res = await fetch(`${API_URL}/prizepicks/mlb`, { signal: AbortSignal.timeout(10000) });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.lines) setPpLinesByName(data.lines);
+      } catch {}
+    }
+    fetchPP();
+  }, []);
+
+  // Re-score pitchers once PP lines arrive
+  useEffect(() => {
+    if (!ppLinesByName) return;
+    setBoardPlayers(prev => prev.map(p => {
+      if (p.position !== 'SP') return p;
+      const ppMatch = findPPLines(p.fullName, ppLinesByName);
+      if (!ppMatch?.strikeouts) return p;
+      const newScore = scorePitcher({ era: p.era, whip: p.whip, k9: p.k9 }, ppMatch.strikeouts);
+      return { ...p, scores: { ...p.scores, pitching: newScore } };
+    }));
+  }, [ppLinesByName]);
 
   async function loadDailyBoard() {
     // Bust localStorage cache on new deploy.
