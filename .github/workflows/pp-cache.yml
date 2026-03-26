@@ -2,7 +2,7 @@ name: Cache PrizePicks Lines
 
 on:
   schedule:
-    - cron: '0 * * * *'   # every hour
+    - cron: '*/20 * * * *'  # every 20 minutes
   workflow_dispatch:        # manual trigger
 
 jobs:
