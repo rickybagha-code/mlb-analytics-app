@@ -2443,7 +2443,7 @@ export default function PlayerDetailPage() {
                     {/* K Projection — main score */}
                     <div className="text-center">
                       {kProjScore != null
-                        ? <><ScoreRing score={kProjScore} size={64}/><p className="text-xs text-gray-600 mt-1">K Proj</p></>
+                        ? <><ScoreRing score={kProjScore} size={64}/><p className="text-xs text-gray-600 mt-1">K Score</p></>
                         : loading
                           ? <Skeleton className="w-16 h-16 rounded-full"/>
                           : <div className="w-16 h-16 rounded-full border-2 border-gray-800 bg-gray-800/50 flex items-center justify-center"><span className="text-gray-700 text-xs">N/A</span></div>

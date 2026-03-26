@@ -7,6 +7,17 @@ import ProprStatsLogo from '../../components/ProprStatsLogo';
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 const MLB_API  = 'https://statsapi.mlb.com/api/v1';
 
+// ─── Opponent K rate per 9-inning game (2024 MLB actuals) — mirrors player page ─
+const TEAM_K_RATES = {
+  NYY:8.8, BOS:8.5, BAL:8.7, TBR:9.1, TOR:8.9,
+  CLE:8.6, DET:8.4, CWS:8.8, KCR:8.3, MIN:8.5,
+  HOU:8.2, LAA:9.0, OAK:9.2, SEA:8.7, TEX:8.9,
+  ATL:8.1, MIA:9.0, NYM:8.6, PHI:8.3, WSN:9.1,
+  CHC:8.9, CIN:9.2, MIL:8.6, PIT:8.8, STL:7.9,
+  ARI:8.5, COL:9.1, LAD:8.0, SDP:8.4, SFG:8.7,
+};
+const LG_K_RATE = 8.6;
+
 // ─── LocalStorage Cache ───────────────────────────────────────────────────────
 function getCached(key, ttlMs) {
   try {
@@ -136,7 +147,39 @@ function poissonCDF(k, lambda) {
   return Math.min(1, sum);
 }
 
-// ─── Pitcher Score — Poisson P(Ks > line) via K/9 ───────────────────────────
+// ─── K Projection (pure fn mirroring player-page useKProjection hook) ────────
+// starts: [{strikeOuts, inningsPitched, date}, ...] — last N regular starts
+function computeKProjection(starts, k9, oppTeamAbbrev) {
+  if (!starts?.length) return null;
+  const last5  = starts.slice(-5);
+  const last10 = starts.slice(-10);
+  const l5Ks   = last5.map(s => s.strikeOuts);
+  const l5K    = l5Ks.reduce((a, b) => a + b, 0) / l5Ks.length;
+  const l5IP   = last5.map(s => parseFloat(s.inningsPitched) || 0);
+  const avgL5IP = Math.max(1, l5IP.reduce((a, b) => a + b, 0) / l5IP.length);
+  const seasonK = k9 != null ? k9 / 9 * avgL5IP : null;
+  const leagueK = 5.5;
+  const raw = l5K * 0.60 + (seasonK ?? leagueK) * 0.30 + leagueK * 0.10;
+  const oppKRate   = TEAM_K_RATES[oppTeamAbbrev] || LG_K_RATE;
+  const oppKFactor = oppKRate / LG_K_RATE;
+  const last = starts[starts.length - 1];
+  const daysRest = last?.date
+    ? Math.floor((Date.now() - new Date(last.date).getTime()) / 86400000)
+    : null;
+  const restFactor = daysRest != null ? (daysRest < 4 ? 0.95 : daysRest >= 6 ? 1.02 : 1.0) : 1.0;
+  return Math.round(raw * restFactor * oppKFactor * 10) / 10;
+}
+
+// ─── Score from K projection (same formula as pitcherScoreFromKProj on player page)
+function pitcherKScore(projected, ppKLine) {
+  if (projected == null) return null;
+  const line  = ppKLine ?? 5.5;
+  const floor = Math.floor(line);
+  const pOver = 1 - poissonCDF(floor, projected);
+  return Math.round(Math.max(5, Math.min(99, pOver * 100)));
+}
+
+// ─── Pitcher Score — fallback when no start history available ─────────────────
 // ppKLine: actual PrizePicks K line for this pitcher (fallback 5.5).
 // Uses 5.0 IP avg (aligns with player-page model; *100 scale for consistency).
 function scorePitcher(stats, ppKLine) {
@@ -370,8 +413,9 @@ function AutoPlayerCard({ player, category, rank }) {
           <p className="text-xs text-gray-500">{player.position} · {player.teamAbbrev || player.teamName}</p>
           {matchupTxt && <p className="text-xs text-blue-400 mt-0.5 truncate">{matchupTxt}</p>}
         </div>
-        <div className="relative group flex-shrink-0">
+        <div className="relative group flex-shrink-0 text-center">
           <ScoreRing score={score} size={44} />
+          {isPitcher && <p className="text-xs text-gray-600 mt-0.5 whitespace-nowrap">K Score</p>}
           <div className="absolute bottom-full right-0 mb-2 w-52 bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-2 text-xs text-gray-300 leading-snug opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 shadow-xl">
             {SCORE_TOOLTIP[category] ?? 'ProprStats Model Score'}
           </div>
@@ -585,7 +629,9 @@ export default function DashboardPage() {
       if (p.position !== 'SP') return p;
       const ppMatch = findPPLines(p.fullName, ppLinesByName);
       if (!ppMatch?.strikeouts) return p;
-      const newScore = scorePitcher({ era: p.era, whip: p.whip, k9: p.k9 }, ppMatch.strikeouts);
+      const kProj   = computeKProjection(p.pitcherStarts, p.k9, p.matchup?.oppAbbrev);
+      const newScore = (kProj != null ? pitcherKScore(kProj, ppMatch.strikeouts) : null)
+        ?? scorePitcher({ era: p.era, whip: p.whip, k9: p.k9 }, ppMatch.strikeouts);
       return { ...p, scores: { ...p.scores, pitching: newScore } };
     }));
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -666,6 +712,29 @@ export default function DashboardPage() {
             }
           }
         } catch {}
+      }
+
+      // 4b. Fetch pitcher game logs to power full K projection (mirrors player page)
+      if (Object.keys(pitcherMap).length > 0) {
+        await Promise.all(Object.keys(pitcherMap).map(async (pid) => {
+          const cKey = `mlb_pitcher_starts_${pid}_2025`;
+          const cached = getCached(cKey, 2 * 60 * 60 * 1000); // 2h TTL
+          if (cached) { pitcherMap[pid].starts = cached; return; }
+          try {
+            const gr = await fetch(`${MLB_API}/people/${pid}/stats?stats=gameLog&group=pitching&season=2025&gameType=R`);
+            const gd = await gr.json();
+            const splits = gd.stats?.[0]?.splits || [];
+            const starts = splits
+              .filter(s => (parseFloat(s.stat?.inningsPitched) || 0) >= 3) // real starts only
+              .map(s => ({
+                date:           s.date,
+                strikeOuts:     parseInt(s.stat?.strikeOuts)      || 0,
+                inningsPitched: parseFloat(s.stat?.inningsPitched) || 0,
+              }));
+            pitcherMap[pid].starts = starts;
+            setCached(cKey, starts);
+          } catch { pitcherMap[pid].starts = []; }
+        }));
       }
 
       // 5. For each team playing: get roster + batch batter season stats
@@ -764,19 +833,22 @@ export default function DashboardPage() {
         const myPitcher   = pitcherMap[myPitcherId];
         if (myPitcher && myPitcherId) {
           const oppAbbrevP = teamMap[oppId]?.abbreviation ?? '';
+          const kProj = computeKProjection(myPitcher.starts, myPitcher.k9, oppAbbrevP);
+          const pitchingScore = pitcherKScore(kProj) ?? scorePitcher(myPitcher);
           allPlayers.push({
-            playerId:    myPitcherId,
-            fullName:    myPitcher.name,
-            position:    'SP',
+            playerId:      myPitcherId,
+            fullName:      myPitcher.name,
+            position:      'SP',
             teamId,
-            teamName:    team.name,
-            teamAbbrev:  team.abbreviation,
-            era:         myPitcher.era,
-            whip:        myPitcher.whip,
-            k9:          myPitcher.k9,
-            matchup:     { isHome, oppAbbrev: oppAbbrevP, pitcher: null },
-            scores:      { hitting:0, hr:0, runs:0, rbi:0, sb:0, pitching: scorePitcher(myPitcher) },
-            streak:      null,
+            teamName:      team.name,
+            teamAbbrev:    team.abbreviation,
+            era:           myPitcher.era,
+            whip:          myPitcher.whip,
+            k9:            myPitcher.k9,
+            pitcherStarts: myPitcher.starts || [],
+            matchup:       { isHome, oppAbbrev: oppAbbrevP, pitcher: null },
+            scores:        { hitting:0, hr:0, runs:0, rbi:0, sb:0, pitching: pitchingScore },
+            streak:        null,
             streakLoading: false,
           });
         }
