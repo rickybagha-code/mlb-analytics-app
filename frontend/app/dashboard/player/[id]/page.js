@@ -2392,6 +2392,9 @@ export default function PlayerDetailPage() {
   const streak = useMemo(() => computeStreak(gameLog),  [gameLog]);
   const l10Avg = useMemo(() => computeL10Avg(gameLog),  [gameLog]);
 
+  // ── HR projection for badge alignment ────────────────────────────────────
+  const hrProj = useHRProjection(gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev);
+
   // ── Derived: model score ──────────────────────────────────────────────────
   const modelScore = useMemo(() => {
     const modelCat = CAT_MODEL[cat];
