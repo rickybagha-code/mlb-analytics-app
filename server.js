@@ -981,13 +981,23 @@ app.get('/pitcher/:id/splits', async (req, res) => {
 // ─── PrizePicks MLB proxy (avoids browser CORS) ──────────────────────────────
 app.get('/prizepicks/mlb', async (req, res) => {
   try {
-    const response = await fetch('https://api.prizepicks.com/projections?league_id=2', {
+    const response = await fetch('https://api.prizepicks.com/projections?league_id=2&per_page=250&single_stat=true', {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; MLBAnalytics/1.0)',
-        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Origin': 'https://app.prizepicks.com',
         'Referer': 'https://app.prizepicks.com/',
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'same-site',
+        'Sec-Ch-Ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
+        'Connection': 'keep-alive',
       },
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(15000),
     });
     if (!response.ok) throw new Error(`PrizePicks returned ${response.status}`);
     const data = await response.json();
