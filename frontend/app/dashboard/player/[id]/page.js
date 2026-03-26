@@ -109,16 +109,20 @@ function computeProjectionScore(player, category) {
   const confidence = Math.min(1.0, Math.max(0.5, (ab - 150) / 300 + 0.5));
   const era = player.matchupEra ?? null;
   const pitcherMod = era != null ? Math.max(-10, Math.min(10, (era - 4.50) * 2.5)) : 0;
+  // Recency boost — hit streak / L10 avg used for hitting/runs/rbi/sb categories.
+  // HR uses l10HRrate directly in the base formula (hit streaks don't predict HRs).
   let recencyBoost = 0;
   const { streak, l10Avg } = player;
-  if (streak != null) {
-    if      (streak >= 8) recencyBoost += 12;
-    else if (streak >= 5) recencyBoost += 8;
-    else if (streak >= 3) recencyBoost += 4;
-    else if (streak === 0) recencyBoost -= 5;
-  }
-  if (l10Avg != null && avg > 0) {
-    recencyBoost += Math.max(-8, Math.min(8, ((l10Avg - avg) / avg) * 25));
+  if (category !== 'hr') {
+    if (streak != null) {
+      if      (streak >= 8) recencyBoost += 12;
+      else if (streak >= 5) recencyBoost += 8;
+      else if (streak >= 3) recencyBoost += 4;
+      else if (streak === 0) recencyBoost -= 5;
+    }
+    if (l10Avg != null && avg > 0) {
+      recencyBoost += Math.max(-8, Math.min(8, ((l10Avg - avg) / avg) * 25));
+    }
   }
   let base = 50;
   if (category === 'hitting') {
@@ -128,15 +132,35 @@ function computeProjectionScore(player, category) {
     const hardBonus = hardHitPct != null ? Math.max(0, Math.min(8, (hardHitPct - 40) / 18 * 8)) : 0;
     base = 53 + wComp - kPenalty + bbBonus + hardBonus + pitcherMod;
   } else if (category === 'hr') {
-    // Poisson: P(HR ≥ 1 today), centered at league avg so an average power hitter scores 50.
-    // Matches dashboard formula — league avg ~3.4% HR/AB × 3.8 AB/game → pHR ≈ 12.7%
-    const avgABs      = Math.max(3.0, Math.min(4.5, gp > 0 ? ab / gp : 3.8));
-    const lambda      = Math.max(0, hrRate * avgABs);
-    const pHR         = 1 - Math.exp(-lambda);
-    const barrelAdj   = barrelPct != null ? Math.max(-0.03, Math.min(0.06, (barrelPct - 8) / 100)) : 0;
-    const isoAdj      = Math.max(-0.01, Math.min(0.02, (iso - 0.150) * 0.08));
-    const adjustedPHR = Math.min(0.45, Math.max(0.005, pHR + barrelAdj + isoAdj));
-    base = 50 + (adjustedPHR - 0.127) * 200 + pitcherMod * 0.7;
+    // Poisson base: blends L10 HR rate (if loaded) with season rate
+    // This is the fallback path — on player page the badge is driven from useHRProjection
+    const pa_safe     = Math.max(1, pa);
+    const seasonHRpa  = hr / pa_safe;
+    const l10HRrate   = player.l10HRrate ?? null;
+    const effectiveHR = l10HRrate != null
+      ? l10HRrate * 0.50 + seasonHRpa * 0.40 + 0.034 * 0.10
+      : seasonHRpa;
+    const avgPAs  = Math.max(3.0, Math.min(5.0, gp > 0 ? pa_safe / gp : 4.0));
+    const lambda  = Math.max(0, effectiveHR * avgPAs);
+    const pHR     = 1 - Math.exp(-lambda);
+    // Contact quality — additive pHR shifts (prevents multiplicative compounding)
+    const barrelShift  = barrelPct != null ? Math.max(-0.04, Math.min(0.08, (barrelPct - 8.2) / 100)) : 0;
+    const evoShift     = (player.exitVelo ?? null) != null ? Math.max(-0.03, Math.min(0.05, (player.exitVelo - 88.5) / 200)) : 0;
+    // Situational
+    const parkShift    = (player.parkHR ?? null) != null ? Math.max(-0.06, Math.min(0.07, (player.parkHR - 1.0) * 0.35)) : 0;
+    const splitShift   = (player.splitSLG != null && slg > 0) ? Math.max(-0.05, Math.min(0.06, (player.splitSLG / slg - 1.0) * 0.22)) : 0;
+    const h2hShift     = (() => {
+      const hSlg = player.h2hSlg ?? null;
+      const hAB  = player.h2hAB  ?? 0;
+      if (!hSlg || slg <= 0 || hAB < 10) return 0;
+      return Math.max(-0.03, Math.min(0.04, (hSlg / slg - 1.0) * 0.12 * Math.min(0.5, hAB / 60)));
+    })();
+    const pitcherHRShift = Math.max(-0.03, Math.min(0.03, pitcherMod * 0.003));
+    const adjustedPHR = Math.min(0.36, Math.max(0.005,
+      pHR + barrelShift + evoShift + parkShift + splitShift + h2hShift + pitcherHRShift
+    ));
+    // Center at league avg pHR (0.127) → 50; max adjustedPHR (0.36) → ~91; hard cap 92
+    base = 50 + (adjustedPHR - 0.127) * 175;
   } else if (category === 'runs') {
     const rComp   = Math.max(-15, Math.min(25, (r   / gp - 0.45) * 55));
     const rbiComp = Math.max(-15, Math.min(25, (rbi / gp - 0.45) * 55));
@@ -1641,7 +1665,11 @@ function buildHittingCtx(gameLog, seasonStats, splits, statcast, pitcher, spPitc
   const xwobaFactor = statcast?.xwoba
     ? Math.min(1.10, Math.max(0.90, statcast.xwoba / LG.xwoba)) : 1.0;
   const barrelPct = statcast?.barrelPct || LG.barrel;
-  const powerEdge = 1 + ((barrelPct - LG.barrel) / LG.barrel * 0.5);
+  // Cap powerEdge: uncapped it could reach 1.72 for elite barrel%, causing compounding inflation
+  const powerEdge = Math.min(1.25, Math.max(0.80, 1 + ((barrelPct - LG.barrel) / LG.barrel * 0.4)));
+  // Exit velocity — raw power signal; avg 88.5 mph, elite 94+
+  const exitVelo  = statcast?.exitVelo ?? null;
+  const evoFactor = exitVelo != null ? Math.min(1.08, Math.max(0.93, 1 + (exitVelo - 88.5) / 200)) : 1.0;
 
   const avgSlot = (() => {
     const orders = L10.map(g => g.battingOrder ? Math.ceil(parseInt(g.battingOrder)/100) : null).filter(v=>v&&v>=1&&v<=9);
@@ -1654,7 +1682,7 @@ function buildHittingCtx(gameLog, seasonStats, splits, statcast, pitcher, spPitc
     pitcherERA, pitcherAdj,
     relSplit, splitAVG, splitOBP, splitSLG, handFactor,
     homeAbbrev, park,
-    xwobaFactor, barrelPct, powerEdge,
+    xwobaFactor, barrelPct, powerEdge, exitVelo, evoFactor,
     avgSlot,
   };
 }
@@ -1716,11 +1744,16 @@ function useHRProjection(gameLog, seasonStats, splits, statcast, pitcher, spPitc
     const l10HRpa = L10PA.reduce((a,b)=>a+b,0) > 0
       ? L10HR.reduce((a,b)=>a+b,0) / L10PA.reduce((a,b)=>a+b,0) : seasonHRpa;
     const hrRate = l10HRpa * 0.50 + seasonHRpa * 0.40 + seasonHRpa * 0.9 * 0.10;
-    const pitcherHRAdj = (c.pitcherERA - LG.era) * 0.04;
+    // Pitcher ERA as HR proxy — bounded; ERA ≠ HR tendency but is the best available signal
+    const pitcherHRAdj = Math.max(-0.12, Math.min(0.15, (c.pitcherERA - LG.era) * 0.04));
+    // Handedness SLG split tightened to ±20% — prevents extreme compounding
     const hrHandFactor = c.splitSLG && c.seasonSLG > 0
-      ? Math.max(0.70, Math.min(1.30, c.splitSLG / c.seasonSLG)) : 1.0;
+      ? Math.max(0.80, Math.min(1.20, c.splitSLG / c.seasonSLG)) : 1.0;
     const parkHR = c.park?.hr || 1.0;
-    const adjRate = Math.max(0.001, hrRate * c.powerEdge * (1 + pitcherHRAdj) * hrHandFactor * parkHR);
+    // All factors multiplicative but adjRate capped at 0.12 HR/PA (realistic ceiling)
+    const adjRate = Math.min(0.12, Math.max(0.001,
+      hrRate * c.powerEdge * c.evoFactor * (1 + pitcherHRAdj) * hrHandFactor * parkHR
+    ));
     const lambda  = adjRate * c.avgPA;
     const pHR     = 1 - Math.exp(-lambda);
     return {
@@ -1732,6 +1765,7 @@ function useHRProjection(gameLog, seasonStats, splits, statcast, pitcher, spPitc
       factorImpacts: [
         { label:'L10 HR rate',           impact:Math.round((l10HRpa-seasonHRpa)*c.avgPA*100)/100, dir:l10HRpa>seasonHRpa?'↑':'↓' },
         { label:'Barrel% power edge',    impact:Math.round((c.powerEdge-1)*lambda*100)/100,       dir:c.powerEdge>=1?'↑':'↓', note:!statcast?.barrelPct?'no Statcast':null },
+        { label:'Exit velocity',         impact:Math.round((c.evoFactor-1)*lambda*100)/100,       dir:c.evoFactor>=1?'↑':'↓', note:c.exitVelo==null?'no Statcast':null },
         { label:'Pitcher HR tendency',   impact:Math.round(pitcherHRAdj*lambda*100)/100,          dir:pitcherHRAdj>=0?'↑':'↓' },
         { label:`${spPitcherHand||'?'}HP SLG split`, impact:Math.round((hrHandFactor-1)*lambda*100)/100, dir:hrHandFactor>=1?'↑':'↓', note:!c.splitSLG?'no split data':null },
         { label:'Park HR factor',        impact:Math.round((parkHR-1)*lambda*100)/100,            dir:parkHR>=1?'↑':'↓', note:!c.park?'no data':null },
@@ -2363,6 +2397,30 @@ export default function PlayerDetailPage() {
     const modelCat = CAT_MODEL[cat];
     if (!modelCat || !seasonStats) return null;
     const st = seasonStats;
+
+    // HR badge: driven directly from useHRProjection for perfect alignment with the
+    // Poisson chart. Career H2H is the only factor not yet in useHRProjection.
+    if (modelCat === 'hr' && hrProj?.pHR != null) {
+      // Cap raw pHR at 36% — above that the model is overclaiming
+      const pHR = Math.min(0.36, hrProj.pHR / 100);
+      const h2hMatch = h2hData?.careerMatchup;
+      const h2hAB    = h2hMatch ? (parseInt(h2hMatch.atBats)  || 0) : 0;
+      const h2hSLG   = h2hMatch ? (parseFloat(h2hMatch.slg)   || null) : null;
+      const seasonSLG = parseFloat(st.slg) || 0;
+      let h2hShift = 0;
+      if (h2hSLG && seasonSLG > 0 && h2hAB >= 10) {
+        h2hShift = Math.max(-0.03, Math.min(0.04,
+          (h2hSLG / seasonSLG - 1.0) * 0.12 * Math.min(0.5, h2hAB / 60)
+        ));
+      }
+      const adjustedPHR = Math.min(0.36, Math.max(0.005, pHR + h2hShift));
+      const base = 50 + (adjustedPHR - 0.127) * 175;
+      const ab   = parseInt(st.atBats) || 0;
+      const conf = Math.min(1.0, Math.max(0.5, (ab - 150) / 300 + 0.5));
+      const adj  = 50 + (base - 50) * conf;
+      return Math.round(Math.max(5, Math.min(92, adj)));
+    }
+
     return computeProjectionScore({
       avg:              parseFloat(st.avg)             || 0,
       obp:              parseFloat(st.obp)             || 0,
@@ -2381,11 +2439,12 @@ export default function PlayerDetailPage() {
       xwoba:      statcast?.xwoba      ?? null,
       barrelPct:  statcast?.barrelPct  ?? null,
       hardHitPct: statcast?.hardHitPct ?? null,
+      exitVelo:   statcast?.exitVelo   ?? null,
       matchupEra: pitcher?.stats?.era ? parseFloat(pitcher.stats.era) : null,
       streak,
       l10Avg,
     }, modelCat);
-  }, [cat, seasonStats, statcast, pitcher, streak, l10Avg]);
+  }, [cat, seasonStats, statcast, pitcher, streak, l10Avg, hrProj, h2hData]);
 
   // ── Relevant split (vs today's pitcher hand) ──────────────────────────────
   const relevantSplit = useMemo(() => {

@@ -23,6 +23,19 @@ const TEAM_K_RATES = {
 };
 const LG_K_RATE = 8.6;
 
+// ─── Park HR factors (Baseball Reference 2024/2025 avg) ──────────────────────
+const PARK_HR = {
+  NYY:1.18, BOS:0.97, BAL:1.07, TBR:0.92, TOR:0.99,
+  CLE:0.90, DET:0.98, CWS:0.96, KCR:1.03, MIN:1.06,
+  HOU:0.92, LAA:1.08, OAK:0.95, SEA:0.91, TEX:1.10,
+  ATL:1.02, MIA:0.89, NYM:0.99, PHI:1.14, WSN:1.05,
+  CHC:1.09, CIN:1.17, MIL:0.98, PIT:0.94, STL:1.00,
+  ARI:1.12, COL:1.38, LAD:0.95, SDP:0.89, SFG:0.82,
+};
+// Normalize MLB API abbreviations to match PARK_HR keys
+const ABBREV_MAP = { TB:'TBR', KC:'KCR', SD:'SDP', SF:'SFG', WSH:'WSN', MIA:'MIA' };
+function normDashAbbrev(abbr) { return ABBREV_MAP[abbr] || abbr || ''; }
+
 // ─── LocalStorage Cache ───────────────────────────────────────────────────────
 function getCached(key, ttlMs) {
   try {
@@ -84,17 +97,20 @@ function computeProjectionScore(player, category) {
   const era = player.matchup?.pitcher?.era;
   const pitcherMod = era != null ? Math.max(-10, Math.min(10, (era - 4.50) * 2.5)) : 0;
 
-  // Recency boost — applied when game log loads (defaults 0 until then)
+  // Recency boost — hit streak / L10 avg used for hitting/runs/rbi/sb.
+  // HR uses l10HRrate directly in the base formula (hit streaks don't predict HRs).
   let recencyBoost = 0;
   const { streak, l10Avg } = player;
-  if (streak != null) {
-    if      (streak >= 8) recencyBoost += 12;
-    else if (streak >= 5) recencyBoost += 8;
-    else if (streak >= 3) recencyBoost += 4;
-    else if (streak === 0) recencyBoost -= 5;
-  }
-  if (l10Avg != null && avg > 0) {
-    recencyBoost += Math.max(-8, Math.min(8, ((l10Avg - avg) / avg) * 25));
+  if (category !== 'hr') {
+    if (streak != null) {
+      if      (streak >= 8) recencyBoost += 12;
+      else if (streak >= 5) recencyBoost += 8;
+      else if (streak >= 3) recencyBoost += 4;
+      else if (streak === 0) recencyBoost -= 5;
+    }
+    if (l10Avg != null && avg > 0) {
+      recencyBoost += Math.max(-8, Math.min(8, ((l10Avg - avg) / avg) * 25));
+    }
   }
 
   let base = 50;
@@ -109,19 +125,27 @@ function computeProjectionScore(player, category) {
     base = 53 + wComp - kPenalty + bbBonus + hardBonus + pitcherMod;
 
   } else if (category === 'hr') {
-    // Poisson: P(HR ≥ 1 today), centered at league avg so an average power hitter scores 50.
-    // League avg: ~3.4% HR/AB × 3.8 AB/game → pHR ≈ 12.7%
-    const avgABs      = Math.max(3.0, Math.min(4.5, gp > 0 ? ab / gp : 3.8));
-    const lambda      = Math.max(0, hrRate * avgABs);
-    const pHR         = 1 - Math.exp(-lambda);
-    // Barrel % is the strongest secondary HR predictor — weight it meaningfully
-    // avg=8%, elite 14%+; shifts adjustedPHR by up to +6 / -3 percentage points
-    const barrelAdj   = barrelPct != null ? Math.max(-0.03, Math.min(0.06, (barrelPct - 8) / 100)) : 0;
-    // ISO adds modest directional signal for pure power
-    const isoAdj      = Math.max(-0.01, Math.min(0.02, (iso - 0.150) * 0.08));
-    const adjustedPHR = Math.min(0.45, Math.max(0.005, pHR + barrelAdj + isoAdj));
-    // Center at league avg (0.127): avg=50, Henderson-tier≈76, Judge-tier≈95
-    base = 50 + (adjustedPHR - 0.127) * 200 + pitcherMod * 0.5;
+    // Poisson base: blends L10 HR rate (loaded async) with season rate
+    const pa_safe     = Math.max(1, pa);
+    const seasonHRpa  = hr / pa_safe;
+    const l10HRrate   = player.l10HRrate ?? null;
+    const effectiveHR = l10HRrate != null
+      ? l10HRrate * 0.50 + seasonHRpa * 0.40 + 0.034 * 0.10
+      : seasonHRpa;
+    const avgPAs  = Math.max(3.0, Math.min(5.0, gp > 0 ? pa_safe / gp : 4.0));
+    const lambda  = Math.max(0, effectiveHR * avgPAs);
+    const pHR     = 1 - Math.exp(-lambda);
+    // Contact quality (additive pHR shifts — prevents multiplicative compounding)
+    const barrelShift    = barrelPct != null ? Math.max(-0.04, Math.min(0.08, (barrelPct - 8.2) / 100)) : 0;
+    const evoShift       = (player.exitVelo ?? null) != null ? Math.max(-0.03, Math.min(0.05, (player.exitVelo - 88.5) / 200)) : 0;
+    // Situational (park loaded at build time; splits/H2H not available in dashboard)
+    const parkShift      = (player.parkHR ?? null) != null ? Math.max(-0.06, Math.min(0.07, (player.parkHR - 1.0) * 0.35)) : 0;
+    const pitcherHRShift = Math.max(-0.03, Math.min(0.03, pitcherMod * 0.003));
+    const adjustedPHR    = Math.min(0.36, Math.max(0.005,
+      pHR + barrelShift + evoShift + parkShift + pitcherHRShift
+    ));
+    // Center at league avg (0.127) → 50; max (0.36) → ~91; hard cap 92
+    base = 50 + (adjustedPHR - 0.127) * 175;
 
   } else if (category === 'runs') {
     const rComp   = Math.max(-15, Math.min(30, (r   / gp - 0.45) * 65));
@@ -861,6 +885,9 @@ export default function DashboardPage() {
         for (const rp of roster) {
           const stats = statsMap[rp.id];
           if (!stats) continue;
+          const homeAbbrevPark = isHome ? normDashAbbrev(team.abbreviation) : normDashAbbrev(oppAbbrev);
+          const parkHR         = PARK_HR[homeAbbrevPark] ?? null;
+          const playerWithCtx  = { ...stats, matchup:{ isHome, oppAbbrev, pitcher }, parkHR };
           allPlayers.push({
             playerId:    rp.id,
             fullName:    rp.fullName,
@@ -869,13 +896,14 @@ export default function DashboardPage() {
             teamName:    team.name,
             teamAbbrev:  team.abbreviation,
             ...stats,
+            parkHR,
             matchup:     { isHome, oppAbbrev, pitcher },
             scores: {
-              hitting:  computeProjectionScore({ ...stats, matchup:{ isHome, oppAbbrev, pitcher } }, 'hitting'),
-              hr:       computeProjectionScore({ ...stats, matchup:{ isHome, oppAbbrev, pitcher } }, 'hr'),
-              runs:     computeProjectionScore({ ...stats, matchup:{ isHome, oppAbbrev, pitcher } }, 'runs'),
-              rbi:      computeProjectionScore({ ...stats, matchup:{ isHome, oppAbbrev, pitcher } }, 'rbi'),
-              sb:       computeProjectionScore({ ...stats, matchup:{ isHome, oppAbbrev, pitcher } }, 'sb'),
+              hitting:  computeProjectionScore(playerWithCtx, 'hitting'),
+              hr:       computeProjectionScore(playerWithCtx, 'hr'),
+              runs:     computeProjectionScore(playerWithCtx, 'runs'),
+              rbi:      computeProjectionScore(playerWithCtx, 'rbi'),
+              sb:       computeProjectionScore(playerWithCtx, 'sb'),
               pitching: 0,
             },
             streak:        null,
@@ -956,9 +984,14 @@ export default function DashboardPage() {
           const l10AB = last10.reduce((a, g) => a + (Number(g.atBats) || 0), 0);
           const l10Avg = l10AB >= 15 ? l10H / l10AB : null;
 
+          // L10 HR rate — HR-specific recency signal (hit streak ≠ HR predictor)
+          const l10HR = last10.reduce((a, g) => a + (Number(g.homeRuns)        || 0), 0);
+          const l10PA = last10.reduce((a, g) => a + (Number(g.plateAppearances)|| 0), 0);
+          const l10HRrate = l10PA >= 20 ? l10HR / l10PA : null;
+
           setBoardPlayers(prev => prev.map(p => {
             if (p.playerId !== pid) return p;
-            const updated = { ...p, streak, l10Avg, streakLoading: false };
+            const updated = { ...p, streak, l10Avg, l10HRrate, streakLoading: false };
             // Re-score all batting categories now that recency data is available
             const newScores = { ...p.scores };
             for (const cat of ['hitting', 'hr', 'runs', 'rbi', 'sb']) {
