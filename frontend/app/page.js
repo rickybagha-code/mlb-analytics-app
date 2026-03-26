@@ -207,18 +207,18 @@ function Hero() {
           <div className="max-w-xl">
             <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-blue-500/30 bg-blue-500/10 px-4 py-2 backdrop-blur-sm">
               <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse"/>
-              <span className="text-sm font-medium text-blue-300">Live Data · Updated Daily</span>
+              <span className="text-sm font-medium text-blue-300">MLB Statcast · Updated Daily</span>
             </div>
 
             <h1 className="text-5xl font-black leading-[1.08] tracking-tight text-white sm:text-6xl lg:text-7xl">
-              Stop Guessing.<br/>
+              Beat the Line.<br/>
               <span className="bg-gradient-to-r from-blue-400 via-blue-300 to-cyan-400 bg-clip-text text-transparent">
-                Start Cooking.
+                Backed by Statcast.
               </span>
             </h1>
 
             <p className="mt-6 text-lg leading-relaxed text-gray-400">
-              ProprStats turns raw MLB Statcast data into a clear edge signal for every prop — hits, home runs, runs, RBI, and strikeouts. Know if the line is mispriced before you bet it.
+              ProprStats quantifies the edge on every MLB prop — hits, home runs, runs, RBI, and strikeouts — using live Statcast data and Poisson probability models. Find the mispriced lines before you play them.
             </p>
 
             {/* 3-col trust row */}
