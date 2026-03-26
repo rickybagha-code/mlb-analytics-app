@@ -10,7 +10,7 @@ const { getCachedPlayer, setCachedPlayer, getCachedGameLog, setCachedGameLog, sa
 
 const PORT = process.env.PORT || 3001;
 // Switch to 2026 once the regular season starts (same gate as frontend)
-const OPENING_DAY    = new Date('2026-03-26');
+const OPENING_DAY    = new Date('2026-05-01');
 const DEFAULT_SEASON = process.env.DEFAULT_SEASON || (new Date() >= OPENING_DAY ? '2026' : '2025');
 
 const app = express();
