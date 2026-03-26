@@ -9,7 +9,9 @@ const { PARK_FACTORS } = require('./services/parkFactors');
 const { getCachedPlayer, setCachedPlayer, getCachedGameLog, setCachedGameLog, saveMatchupResult } = require('./services/cache');
 
 const PORT = process.env.PORT || 3001;
-const DEFAULT_SEASON = process.env.DEFAULT_SEASON || '2026';
+// Switch to 2026 once the regular season starts (same gate as frontend)
+const OPENING_DAY    = new Date('2026-03-26');
+const DEFAULT_SEASON = process.env.DEFAULT_SEASON || (new Date() >= OPENING_DAY ? '2026' : '2025');
 
 const app = express();
 

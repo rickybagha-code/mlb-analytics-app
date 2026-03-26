@@ -8,6 +8,10 @@ import ProprStatsLogo from '../../../../components/ProprStatsLogo';
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 const MLB_API  = 'https://statsapi.mlb.com/api/v1';
 
+// ─── Season gate — use 2025 until the regular season starts ──────────────────
+const OPENING_DAY = new Date('2026-03-26');
+const SEASON      = new Date() >= OPENING_DAY ? '2026' : '2025';
+
 // ─── Opponent K rate per 9-inning game (2024 MLB actuals) ────────────────────
 const TEAM_K_RATES = {
   NYY:8.8, BOS:8.5, BAL:8.7, TBR:9.1, TOR:8.9,
@@ -2191,8 +2195,8 @@ export default function PlayerDetailPage() {
     try {
       if (isPitcherLoad) {
         // ── Pitcher loading path ──────────────────────────────────────────
-        // Phase 1: game log — 2026 primary, 2025 fallback if no starts yet
-        const glRes = await fetch(`${API_URL}/pitcher/${id}/gamelog?season=2026`);
+        // Phase 1: game log — current season primary, 2025 fallback if no starts yet
+        const glRes = await fetch(`${API_URL}/pitcher/${id}/gamelog?season=${SEASON}`);
         if (glRes.ok) {
           const d = await glRes.json();
           let starts = d.starts || [];
@@ -2206,9 +2210,9 @@ export default function PlayerDetailPage() {
         }
         setChartLoading(false);
 
-        // Phase 2: season stats + splits — 2026 primary, 2025 fallback
+        // Phase 2: season stats + splits — current season primary, 2025 fallback
         const [mlbRes, mlbRes25, splitsRes] = await Promise.allSettled([
-          fetch(`${MLB_API}/people/${id}?hydrate=stats(group=pitching,type=season,season=2026)`),
+          fetch(`${MLB_API}/people/${id}?hydrate=stats(group=pitching,type=season,season=${SEASON})`),
           fetch(`${MLB_API}/people/${id}?hydrate=stats(group=pitching,type=season,season=2025)`),
           fetch(`${API_URL}/pitcher/${id}/splits?season=2025`),
         ]);
@@ -2245,8 +2249,8 @@ export default function PlayerDetailPage() {
 
       } else {
         // ── Batter loading path ───────────────────────────────────────────
-        // Phase 1: game log — 2026 primary, 2025 fallback if no games yet
-        const glRes = await fetch(`${API_URL}/player/${id}/gamelog?season=2026`);
+        // Phase 1: game log — current season primary, 2025 fallback if no games yet
+        const glRes = await fetch(`${API_URL}/player/${id}/gamelog?season=${SEASON}`);
         if (glRes.ok) {
           const d = await glRes.json();
           let games = d.games || [];
@@ -2260,9 +2264,9 @@ export default function PlayerDetailPage() {
         }
         setChartLoading(false);
 
-        // Phase 2: everything else in parallel — 2026 primary
+        // Phase 2: everything else in parallel — current season primary
         const [mlbRes, mlbRes25, splitsRes, statcastRes, pitcherRes, h2hRes] = await Promise.allSettled([
-          fetch(`${MLB_API}/people/${id}?hydrate=stats(group=hitting,type=season,season=2026)`),
+          fetch(`${MLB_API}/people/${id}?hydrate=stats(group=hitting,type=season,season=${SEASON})`),
           fetch(`${MLB_API}/people/${id}?hydrate=stats(group=hitting,type=season,season=2025)`),
           fetch(`${API_URL}/player/${id}/splits?season=2025`),
           fetch(`${API_URL}/statcast/batters?season=2025`),

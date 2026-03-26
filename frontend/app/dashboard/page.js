@@ -7,6 +7,11 @@ import ProprStatsLogo from '../../components/ProprStatsLogo';
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 const MLB_API  = 'https://statsapi.mlb.com/api/v1';
 
+// ─── Season gate — switch to 2026 only once the regular season is underway ───
+// Change OPENING_DAY to the actual first game date when known.
+const OPENING_DAY = new Date('2026-03-26');
+const SEASON      = new Date() >= OPENING_DAY ? '2026' : '2025';
+
 // ─── Opponent K rate per 9-inning game (2024 MLB actuals) — mirrors player page ─
 const TEAM_K_RATES = {
   NYY:8.8, BOS:8.5, BAL:8.7, TBR:9.1, TOR:8.9,
@@ -676,13 +681,13 @@ export default function DashboardPage() {
       if (!games.length) { setBoardLoading(false); return; }
 
       // 2. Build team map from teams API (cached)
-      let teamList = getCached('mlb_teams_2026', 24*60*60*1000);
+      let teamList = getCached(`mlb_teams_${SEASON}`, 24*60*60*1000);
       if (!teamList) {
-        const tr   = await fetch(`${MLB_API}/teams?sportId=1&season=2026`);
+        const tr   = await fetch(`${MLB_API}/teams?sportId=1&season=${SEASON}`);
         const td   = await tr.json();
         teamList   = (td.teams||[]).filter(t=>t.sport?.id===1&&t.active)
           .map(t=>({ id:t.id, name:t.name, abbreviation:t.abbreviation }));
-        setCached('mlb_teams_2026', teamList);
+        setCached(`mlb_teams_${SEASON}`, teamList);
         setTeams(teamList);
       }
       const teamMap = Object.fromEntries(teamList.map(t=>[t.id, t]));
@@ -710,9 +715,9 @@ export default function DashboardPage() {
           hand: p.pitchHand?.code || null,
           gs26: parseInt(st.gamesStarted) || 0,
         });
-        // 2026 primary
+        // current season primary
         try {
-          const pr = await fetch(`${MLB_API}/people?personIds=${ids}&hydrate=stats(group=pitching,type=season,season=2026)`);
+          const pr = await fetch(`${MLB_API}/people?personIds=${ids}&hydrate=stats(group=pitching,type=season,season=${SEASON})`);
           const pd = await pr.json();
           for (const p of (pd.people||[])) {
             const st = p.stats?.find(s=>s.group?.displayName==='pitching')?.splits?.[0]?.stat;
@@ -746,11 +751,11 @@ export default function DashboardPage() {
 
       if (Object.keys(pitcherMap).length > 0) {
         await Promise.all(Object.keys(pitcherMap).map(async (pid) => {
-          const cKey = `mlb_pitcher_starts_${pid}_2026`;
+          const cKey = `mlb_pitcher_starts_${pid}_${SEASON}`;
           const cached = getCached(cKey, 2 * 60 * 60 * 1000);
           if (cached) { pitcherMap[pid].starts = cached; return; }
           try {
-            const gr26 = await fetch(`${MLB_API}/people/${pid}/stats?stats=gameLog&group=pitching&season=2026&gameType=R`);
+            const gr26 = await fetch(`${MLB_API}/people/${pid}/stats?stats=gameLog&group=pitching&season=${SEASON}&gameType=R`);
             const gd26 = await gr26.json();
             let starts = parseStarts(gd26.stats?.[0]?.splits || []);
             // Supplement with 2025 tail if fewer than 5 starts in 2026
@@ -773,11 +778,11 @@ export default function DashboardPage() {
       const allPlayers = [];
       await Promise.all([...teamIds].map(async (teamId) => {
         // Roster (cached 6h)
-        const rKey   = `mlb_roster_${teamId}_2026`;
+        const rKey   = `mlb_roster_${teamId}_${SEASON}`;
         let roster   = getCached(rKey, 6*60*60*1000);
         if (!roster) {
           try {
-            const rr = await fetch(`${MLB_API}/teams/${teamId}/roster?rosterType=active&season=2026`);
+            const rr = await fetch(`${MLB_API}/teams/${teamId}/roster?rosterType=active&season=${SEASON}`);
             const rd = await rr.json();
             // Deduplicate by player id — API sometimes returns same player twice
             const seen = new Set();
@@ -813,9 +818,9 @@ export default function DashboardPage() {
           babip:            parseFloat(st.babip)            || 0,
           stolenBases:      parseInt(st.stolenBases)        || 0,
         });
-        const thin26 = []; // player IDs with < 50 AB in 2026
+        const thin26 = []; // player IDs with < 50 AB in current season
         try {
-          const sr = await fetch(`${MLB_API}/people?personIds=${ids}&hydrate=stats(group=hitting,type=season,season=2026)`);
+          const sr = await fetch(`${MLB_API}/people?personIds=${ids}&hydrate=stats(group=hitting,type=season,season=${SEASON})`);
           const sd = await sr.json();
           for (const p of (sd.people||[])) {
             const st = p.stats?.find(s=>s.group?.displayName==='hitting')?.splits?.[0]?.stat;
@@ -937,7 +942,7 @@ export default function DashboardPage() {
       const batch = playerIds.slice(i, i + 10);
       await Promise.all(batch.map(async (pid) => {
         try {
-          const r = await fetch(`${API_URL}/player/${pid}/gamelog?season=2026`);
+          const r = await fetch(`${API_URL}/player/${pid}/gamelog?season=${SEASON}`);
           if (!r.ok) throw new Error();
           const d    = await r.json();
           const games = d.games || [];
@@ -992,16 +997,16 @@ export default function DashboardPage() {
   useEffect(() => {
     if (teams.length) return; // already loaded by loadDailyBoard
     async function fetchTeams() {
-      const cached = getCached('mlb_teams_2026', 24*60*60*1000);
+      const cached = getCached(`mlb_teams_${SEASON}`, 24*60*60*1000);
       if (cached) { setTeams(cached); return; }
       setTeamsLoading(true);
       try {
-        const r = await fetch(`${MLB_API}/teams?sportId=1&season=2026`);
+        const r = await fetch(`${MLB_API}/teams?sportId=1&season=${SEASON}`);
         const d = await r.json();
         const list = (d.teams||[]).filter(t=>t.sport?.id===1&&t.active)
           .map(t=>({id:t.id,name:t.name,abbreviation:t.abbreviation}))
           .sort((a,b)=>a.name.localeCompare(b.name));
-        setCached('mlb_teams_2026', list);
+        setCached(`mlb_teams_${SEASON}`, list);
         setTeams(list);
       } catch {}
       setTeamsLoading(false);
@@ -1013,12 +1018,12 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!selectedTeamId) { setRoster([]); setSelectedPlayerId(''); return; }
     async function fetchRoster() {
-      const key    = `mlb_roster_${selectedTeamId}_2026`;
+      const key    = `mlb_roster_${selectedTeamId}_${SEASON}`;
       const cached = getCached(key, 6*60*60*1000);
       if (cached) { setRoster(cached); setSelectedPlayerId(''); return; }
       setRosterLoading(true);
       try {
-        const r = await fetch(`${MLB_API}/teams/${selectedTeamId}/roster?rosterType=active&season=2026`);
+        const r = await fetch(`${MLB_API}/teams/${selectedTeamId}/roster?rosterType=active&season=${SEASON}`);
         const d = await r.json();
         const list = (d.roster||[]).map(p=>({id:p.person.id,fullName:p.person.fullName,position:p.position?.abbreviation??''})).sort((a,b)=>a.fullName.localeCompare(b.fullName));
         setCached(key, list);
@@ -1039,7 +1044,7 @@ export default function DashboardPage() {
     const entry = { playerId:player.id, fullName:player.fullName, primaryPosition:player.position, teamId:Number(selectedTeamId), teamName:team?.name??'', gamelog:[], loading:true, error:null };
     setResearchList(prev => [entry, ...prev]);
     try {
-      const r = await fetch(`${API_URL}/player/${player.id}/gamelog?season=2026`);
+      const r = await fetch(`${API_URL}/player/${player.id}/gamelog?season=${SEASON}`);
       if (!r.ok) throw new Error();
       const d = await r.json();
       setResearchList(prev => prev.map(p => p.playerId===player.id ? {...p, gamelog:d.games??[], loading:false} : p));
