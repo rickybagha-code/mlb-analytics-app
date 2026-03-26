@@ -676,13 +676,13 @@ export default function DashboardPage() {
       if (!games.length) { setBoardLoading(false); return; }
 
       // 2. Build team map from teams API (cached)
-      let teamList = getCached('mlb_teams_2025', 24*60*60*1000);
+      let teamList = getCached('mlb_teams_2026', 24*60*60*1000);
       if (!teamList) {
-        const tr   = await fetch(`${MLB_API}/teams?sportId=1&season=2025`);
+        const tr   = await fetch(`${MLB_API}/teams?sportId=1&season=2026`);
         const td   = await tr.json();
         teamList   = (td.teams||[]).filter(t=>t.sport?.id===1&&t.active)
           .map(t=>({ id:t.id, name:t.name, abbreviation:t.abbreviation }));
-        setCached('mlb_teams_2025', teamList);
+        setCached('mlb_teams_2026', teamList);
         setTeams(teamList);
       }
       const teamMap = Object.fromEntries(teamList.map(t=>[t.id, t]));
@@ -698,46 +698,71 @@ export default function DashboardPage() {
         if (g.awayProbablePitcherId) pitcherIds.add(g.awayProbablePitcherId);
       }
 
-      // 4. Fetch pitcher season stats (one batch call)
+      // 4. Fetch pitcher season stats — 2026 primary, 2025 fallback for thin samples
       const pitcherMap = {};
       if (pitcherIds.size > 0) {
+        const ids = [...pitcherIds].join(',');
+        const extractPitcher = (p, st) => ({
+          id:   p.id, name: p.fullName,
+          era:  parseFloat(st.era)  || 4.50,
+          whip: parseFloat(st.whip) || 1.30,
+          k9:   parseFloat(st.strikeoutsPer9Inn) || parseFloat(st.k9) || 8.0,
+          hand: p.pitchHand?.code || null,
+          gs26: parseInt(st.gamesStarted) || 0,
+        });
+        // 2026 primary
         try {
-          const ids  = [...pitcherIds].join(',');
-          const pr   = await fetch(`${MLB_API}/people?personIds=${ids}&hydrate=stats(group=pitching,type=season,season=2025)`);
-          const pd   = await pr.json();
+          const pr = await fetch(`${MLB_API}/people?personIds=${ids}&hydrate=stats(group=pitching,type=season,season=2026)`);
+          const pd = await pr.json();
           for (const p of (pd.people||[])) {
             const st = p.stats?.find(s=>s.group?.displayName==='pitching')?.splits?.[0]?.stat;
-            if (st) {
-              pitcherMap[p.id] = {
-                id:   p.id,
-                name: p.fullName,
-                era:  parseFloat(st.era)  || 4.50,
-                whip: parseFloat(st.whip) || 1.30,
-                k9:   parseFloat(st.strikeoutsPer9Inn) || parseFloat(st.k9) || 8.0,
-                hand: p.pitchHand?.code || null,
-              };
-            }
+            if (st) pitcherMap[p.id] = extractPitcher(p, st);
           }
         } catch {}
+        // 2025 fallback for pitchers with < 3 starts in 2026
+        const thin = ids.split(',').filter(pid => !pitcherMap[pid] || (pitcherMap[pid].gs26 < 3));
+        if (thin.length > 0) {
+          try {
+            const pr25 = await fetch(`${MLB_API}/people?personIds=${thin.join(',')}&hydrate=stats(group=pitching,type=season,season=2025)`);
+            const pd25 = await pr25.json();
+            for (const p of (pd25.people||[])) {
+              const st = p.stats?.find(s=>s.group?.displayName==='pitching')?.splits?.[0]?.stat;
+              if (st && !pitcherMap[p.id]) pitcherMap[p.id] = extractPitcher(p, st);
+              else if (st && pitcherMap[p.id]?.gs26 < 3) {
+                // Blend: prefer 2025 ERA/WHIP/K9 as more reliable signal
+                pitcherMap[p.id].era  = parseFloat(st.era)  || pitcherMap[p.id].era;
+                pitcherMap[p.id].whip = parseFloat(st.whip) || pitcherMap[p.id].whip;
+                pitcherMap[p.id].k9   = parseFloat(st.strikeoutsPer9Inn) || pitcherMap[p.id].k9;
+              }
+            }
+          } catch {}
+        }
       }
 
-      // 4b. Fetch pitcher game logs to power full K projection (mirrors player page)
+      // 4b. Fetch pitcher game logs — 2026 primary, supplement with 2025 if < 5 starts
+      const parseStarts = splits => splits
+        .filter(s => (parseFloat(s.stat?.inningsPitched) || 0) >= 3)
+        .map(s => ({ date: s.date, strikeOuts: parseInt(s.stat?.strikeOuts)||0, inningsPitched: parseFloat(s.stat?.inningsPitched)||0 }));
+
       if (Object.keys(pitcherMap).length > 0) {
         await Promise.all(Object.keys(pitcherMap).map(async (pid) => {
-          const cKey = `mlb_pitcher_starts_${pid}_2025`;
-          const cached = getCached(cKey, 2 * 60 * 60 * 1000); // 2h TTL
+          const cKey = `mlb_pitcher_starts_${pid}_2026`;
+          const cached = getCached(cKey, 2 * 60 * 60 * 1000);
           if (cached) { pitcherMap[pid].starts = cached; return; }
           try {
-            const gr = await fetch(`${MLB_API}/people/${pid}/stats?stats=gameLog&group=pitching&season=2025&gameType=R`);
-            const gd = await gr.json();
-            const splits = gd.stats?.[0]?.splits || [];
-            const starts = splits
-              .filter(s => (parseFloat(s.stat?.inningsPitched) || 0) >= 3) // real starts only
-              .map(s => ({
-                date:           s.date,
-                strikeOuts:     parseInt(s.stat?.strikeOuts)      || 0,
-                inningsPitched: parseFloat(s.stat?.inningsPitched) || 0,
-              }));
+            const gr26 = await fetch(`${MLB_API}/people/${pid}/stats?stats=gameLog&group=pitching&season=2026&gameType=R`);
+            const gd26 = await gr26.json();
+            let starts = parseStarts(gd26.stats?.[0]?.splits || []);
+            // Supplement with 2025 tail if fewer than 5 starts in 2026
+            if (starts.length < 5) {
+              try {
+                const gr25 = await fetch(`${MLB_API}/people/${pid}/stats?stats=gameLog&group=pitching&season=2025&gameType=R`);
+                const gd25 = await gr25.json();
+                const starts25 = parseStarts(gd25.stats?.[0]?.splits || []);
+                const needed = Math.max(0, 5 - starts.length);
+                starts = [...starts25.slice(-needed), ...starts];
+              } catch {}
+            }
             pitcherMap[pid].starts = starts;
             setCached(cKey, starts);
           } catch { pitcherMap[pid].starts = []; }
@@ -748,11 +773,11 @@ export default function DashboardPage() {
       const allPlayers = [];
       await Promise.all([...teamIds].map(async (teamId) => {
         // Roster (cached 6h)
-        const rKey   = `mlb_roster_${teamId}_2025`;
+        const rKey   = `mlb_roster_${teamId}_2026`;
         let roster   = getCached(rKey, 6*60*60*1000);
         if (!roster) {
           try {
-            const rr = await fetch(`${MLB_API}/teams/${teamId}/roster?rosterType=active&season=2025`);
+            const rr = await fetch(`${MLB_API}/teams/${teamId}/roster?rosterType=active&season=2026`);
             const rd = await rr.json();
             // Deduplicate by player id — API sometimes returns same player twice
             const seen = new Set();
@@ -767,37 +792,54 @@ export default function DashboardPage() {
         roster = roster.filter(p => seenIds.has(p.id) ? false : seenIds.add(p.id));
         if (!roster.length) return;
 
-        // Batch season batting stats
-        const ids    = roster.map(p=>p.id).join(',');
+        // Batch season batting stats — 2026 primary, 2025 fallback for thin samples
+        const ids = roster.map(p=>p.id).join(',');
         const statsMap = {};
+        const extractBatter = st => ({
+          avg:              parseFloat(st.avg)             || 0,
+          slg:              parseFloat(st.slg)             || 0,
+          obp:              parseFloat(st.obp)             || 0,
+          homeRuns:         parseInt(st.homeRuns)           || 0,
+          atBats:           parseInt(st.atBats)             || 0,
+          gamesPlayed:      parseInt(st.gamesPlayed)        || 1,
+          runs:             parseInt(st.runs)               || 0,
+          rbi:              parseInt(st.rbi)                || 0,
+          hits:             parseInt(st.hits)               || 0,
+          doubles:          parseInt(st.doubles)            || 0,
+          triples:          parseInt(st.triples)            || 0,
+          baseOnBalls:      parseInt(st.baseOnBalls)        || 0,
+          strikeOuts:       parseInt(st.strikeOuts)         || 0,
+          plateAppearances: parseInt(st.plateAppearances)   || 0,
+          babip:            parseFloat(st.babip)            || 0,
+          stolenBases:      parseInt(st.stolenBases)        || 0,
+        });
+        const thin26 = []; // player IDs with < 50 AB in 2026
         try {
-          const sr = await fetch(`${MLB_API}/people?personIds=${ids}&hydrate=stats(group=hitting,type=season,season=2025)`);
+          const sr = await fetch(`${MLB_API}/people?personIds=${ids}&hydrate=stats(group=hitting,type=season,season=2026)`);
           const sd = await sr.json();
           for (const p of (sd.people||[])) {
             const st = p.stats?.find(s=>s.group?.displayName==='hitting')?.splits?.[0]?.stat;
-            if (st && (parseInt(st.atBats)||0) >= 150) {
-              statsMap[p.id] = {
-                avg:               parseFloat(st.avg)              || 0,
-                slg:               parseFloat(st.slg)              || 0,
-                obp:               parseFloat(st.obp)              || 0,
-                homeRuns:          parseInt(st.homeRuns)            || 0,
-                atBats:            parseInt(st.atBats)              || 0,
-                gamesPlayed:       parseInt(st.gamesPlayed)         || 1,
-                runs:              parseInt(st.runs)                || 0,
-                rbi:               parseInt(st.rbi)                 || 0,
-                // Extra fields for wOBA proxy + K%/BB% model
-                hits:              parseInt(st.hits)                || 0,
-                doubles:           parseInt(st.doubles)             || 0,
-                triples:           parseInt(st.triples)             || 0,
-                baseOnBalls:       parseInt(st.baseOnBalls)         || 0,
-                strikeOuts:        parseInt(st.strikeOuts)          || 0,
-                plateAppearances:  parseInt(st.plateAppearances)    || 0,
-                babip:             parseFloat(st.babip)             || 0,
-                stolenBases:       parseInt(st.stolenBases)         || 0,
-              };
+            const ab = parseInt(st?.atBats) || 0;
+            if (st && ab >= 50) {
+              statsMap[p.id] = extractBatter(st);
+            } else {
+              thin26.push(p.id); // needs 2025 fallback
             }
           }
         } catch { return; }
+        // 2025 fallback for players not yet reaching 50 AB in 2026
+        if (thin26.length > 0) {
+          try {
+            const sr25 = await fetch(`${MLB_API}/people?personIds=${thin26.join(',')}&hydrate=stats(group=hitting,type=season,season=2025)`);
+            const sd25 = await sr25.json();
+            for (const p of (sd25.people||[])) {
+              const st = p.stats?.find(s=>s.group?.displayName==='hitting')?.splits?.[0]?.stat;
+              if (st && (parseInt(st.atBats)||0) >= 150) {
+                statsMap[p.id] = extractBatter(st);
+              }
+            }
+          } catch {}
+        }
 
         // Build game context for this team
         const game     = gameByTeam[teamId];
@@ -895,7 +937,7 @@ export default function DashboardPage() {
       const batch = playerIds.slice(i, i + 10);
       await Promise.all(batch.map(async (pid) => {
         try {
-          const r = await fetch(`${API_URL}/player/${pid}/gamelog?season=2025`);
+          const r = await fetch(`${API_URL}/player/${pid}/gamelog?season=2026`);
           if (!r.ok) throw new Error();
           const d    = await r.json();
           const games = d.games || [];
@@ -928,7 +970,7 @@ export default function DashboardPage() {
 
   async function fetchStatcastData() {
     try {
-      const r = await fetch(`${API_URL}/statcast/batters?season=2025`);
+      const r = await fetch(`${API_URL}/statcast/batters?season=2026`);
       if (!r.ok) return;
       const map = await r.json();
       setBoardPlayers(prev => prev.map(p => {
@@ -950,16 +992,16 @@ export default function DashboardPage() {
   useEffect(() => {
     if (teams.length) return; // already loaded by loadDailyBoard
     async function fetchTeams() {
-      const cached = getCached('mlb_teams_2025', 24*60*60*1000);
+      const cached = getCached('mlb_teams_2026', 24*60*60*1000);
       if (cached) { setTeams(cached); return; }
       setTeamsLoading(true);
       try {
-        const r = await fetch(`${MLB_API}/teams?sportId=1&season=2025`);
+        const r = await fetch(`${MLB_API}/teams?sportId=1&season=2026`);
         const d = await r.json();
         const list = (d.teams||[]).filter(t=>t.sport?.id===1&&t.active)
           .map(t=>({id:t.id,name:t.name,abbreviation:t.abbreviation}))
           .sort((a,b)=>a.name.localeCompare(b.name));
-        setCached('mlb_teams_2025', list);
+        setCached('mlb_teams_2026', list);
         setTeams(list);
       } catch {}
       setTeamsLoading(false);
@@ -971,12 +1013,12 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!selectedTeamId) { setRoster([]); setSelectedPlayerId(''); return; }
     async function fetchRoster() {
-      const key    = `mlb_roster_${selectedTeamId}_2025`;
+      const key    = `mlb_roster_${selectedTeamId}_2026`;
       const cached = getCached(key, 6*60*60*1000);
       if (cached) { setRoster(cached); setSelectedPlayerId(''); return; }
       setRosterLoading(true);
       try {
-        const r = await fetch(`${MLB_API}/teams/${selectedTeamId}/roster?rosterType=active&season=2025`);
+        const r = await fetch(`${MLB_API}/teams/${selectedTeamId}/roster?rosterType=active&season=2026`);
         const d = await r.json();
         const list = (d.roster||[]).map(p=>({id:p.person.id,fullName:p.person.fullName,position:p.position?.abbreviation??''})).sort((a,b)=>a.fullName.localeCompare(b.fullName));
         setCached(key, list);
@@ -997,7 +1039,7 @@ export default function DashboardPage() {
     const entry = { playerId:player.id, fullName:player.fullName, primaryPosition:player.position, teamId:Number(selectedTeamId), teamName:team?.name??'', gamelog:[], loading:true, error:null };
     setResearchList(prev => [entry, ...prev]);
     try {
-      const r = await fetch(`${API_URL}/player/${player.id}/gamelog?season=2025`);
+      const r = await fetch(`${API_URL}/player/${player.id}/gamelog?season=2026`);
       if (!r.ok) throw new Error();
       const d = await r.json();
       setResearchList(prev => prev.map(p => p.playerId===player.id ? {...p, gamelog:d.games??[], loading:false} : p));

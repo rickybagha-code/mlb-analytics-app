@@ -2191,18 +2191,26 @@ export default function PlayerDetailPage() {
     try {
       if (isPitcherLoad) {
         // ── Pitcher loading path ──────────────────────────────────────────
-        // Phase 1: game log (for table & sparklines)
-        const glRes = await fetch(`${API_URL}/pitcher/${id}/gamelog?season=2025`);
+        // Phase 1: game log — 2026 primary, 2025 fallback if no starts yet
+        const glRes = await fetch(`${API_URL}/pitcher/${id}/gamelog?season=2026`);
         if (glRes.ok) {
           const d = await glRes.json();
-          setPitcherStarts(d.starts || []);
+          let starts = d.starts || [];
+          if (starts.length < 3) {
+            try {
+              const gl25 = await fetch(`${API_URL}/pitcher/${id}/gamelog?season=2025`);
+              if (gl25.ok) { const d25 = await gl25.json(); starts = d25.starts || starts; }
+            } catch {}
+          }
+          setPitcherStarts(starts);
         }
         setChartLoading(false);
 
-        // Phase 2: season stats + splits in parallel
-        const [mlbRes, splitsRes] = await Promise.allSettled([
+        // Phase 2: season stats + splits — 2026 primary, 2025 fallback
+        const [mlbRes, mlbRes25, splitsRes] = await Promise.allSettled([
+          fetch(`${MLB_API}/people/${id}?hydrate=stats(group=pitching,type=season,season=2026)`),
           fetch(`${MLB_API}/people/${id}?hydrate=stats(group=pitching,type=season,season=2025)`),
-          fetch(`${API_URL}/pitcher/${id}/splits?season=2025`),
+          fetch(`${API_URL}/pitcher/${id}/splits?season=2026`),
         ]);
 
         if (mlbRes.status === 'fulfilled' && mlbRes.value?.ok) {
@@ -2216,8 +2224,17 @@ export default function PlayerDetailPage() {
               position:   p.primaryPosition?.abbreviation || spPosition,
               pitchHand:  p.pitchHand?.code || '',
             });
-            const st = p.stats?.find(s => s.group?.displayName === 'pitching')?.splits?.[0]?.stat;
-            if (st) setSeasonStats(st);
+            const st26 = p.stats?.find(s => s.group?.displayName === 'pitching')?.splits?.[0]?.stat;
+            // Use 2025 stats if 2026 has < 3 GS (more reliable ERA/K9 signal)
+            const gs26 = parseInt(st26?.gamesStarted) || 0;
+            if (st26 && gs26 >= 3) {
+              setSeasonStats(st26);
+            } else if (mlbRes25.status === 'fulfilled' && mlbRes25.value?.ok) {
+              const d25 = await mlbRes25.value.json();
+              const st25 = d25.people?.[0]?.stats?.find(s => s.group?.displayName === 'pitching')?.splits?.[0]?.stat;
+              if (st25) setSeasonStats(st25);
+              else if (st26) setSeasonStats(st26);
+            }
           }
         }
 
@@ -2228,24 +2245,32 @@ export default function PlayerDetailPage() {
 
       } else {
         // ── Batter loading path ───────────────────────────────────────────
-        // Phase 1: game log (for chart — show ASAP)
-        const glRes = await fetch(`${API_URL}/player/${id}/gamelog?season=2025`);
+        // Phase 1: game log — 2026 primary, 2025 fallback if no games yet
+        const glRes = await fetch(`${API_URL}/player/${id}/gamelog?season=2026`);
         if (glRes.ok) {
           const d = await glRes.json();
-          setGameLog(d.games || []);
+          let games = d.games || [];
+          if (games.length < 3) {
+            try {
+              const gl25 = await fetch(`${API_URL}/player/${id}/gamelog?season=2025`);
+              if (gl25.ok) { const d25 = await gl25.json(); games = d25.games || games; }
+            } catch {}
+          }
+          setGameLog(games);
         }
         setChartLoading(false);
 
-        // Phase 2: everything else in parallel
-        const [mlbRes, splitsRes, statcastRes, pitcherRes, h2hRes] = await Promise.allSettled([
+        // Phase 2: everything else in parallel — 2026 primary
+        const [mlbRes, mlbRes25, splitsRes, statcastRes, pitcherRes, h2hRes] = await Promise.allSettled([
+          fetch(`${MLB_API}/people/${id}?hydrate=stats(group=hitting,type=season,season=2026)`),
           fetch(`${MLB_API}/people/${id}?hydrate=stats(group=hitting,type=season,season=2025)`),
-          fetch(`${API_URL}/player/${id}/splits?season=2025`),
-          fetch(`${API_URL}/statcast/batters?season=2025`),
+          fetch(`${API_URL}/player/${id}/splits?season=2026`),
+          fetch(`${API_URL}/statcast/batters?season=2026`),
           spPitcherId ? fetch(`${API_URL}/pitcher/${spPitcherId}`) : Promise.resolve(null),
           spPitcherId ? fetch(`${API_URL}/career-matchup/batter/${id}/pitcher/${spPitcherId}`) : Promise.resolve(null),
         ]);
 
-        // Player info + season stats
+        // Player info + season stats — use 2025 if < 50 AB in 2026
         if (mlbRes.status === 'fulfilled' && mlbRes.value?.ok) {
           const d = await mlbRes.value.json();
           const p = d.people?.[0];
@@ -2257,8 +2282,16 @@ export default function PlayerDetailPage() {
               position:   p.primaryPosition?.abbreviation || '',
               batSide:    p.batSide?.code || '',
             });
-            const st = p.stats?.find(s => s.group?.displayName === 'hitting')?.splits?.[0]?.stat;
-            if (st) setSeasonStats(st);
+            const st26 = p.stats?.find(s => s.group?.displayName === 'hitting')?.splits?.[0]?.stat;
+            const ab26 = parseInt(st26?.atBats) || 0;
+            if (st26 && ab26 >= 50) {
+              setSeasonStats(st26);
+            } else if (mlbRes25.status === 'fulfilled' && mlbRes25.value?.ok) {
+              const d25 = await mlbRes25.value.json();
+              const st25 = d25.people?.[0]?.stats?.find(s => s.group?.displayName === 'hitting')?.splits?.[0]?.stat;
+              if (st25) setSeasonStats(st25);
+              else if (st26) setSeasonStats(st26);
+            }
           }
         }
 

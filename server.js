@@ -9,7 +9,7 @@ const { PARK_FACTORS } = require('./services/parkFactors');
 const { getCachedPlayer, setCachedPlayer, getCachedGameLog, setCachedGameLog, saveMatchupResult } = require('./services/cache');
 
 const PORT = process.env.PORT || 3001;
-const DEFAULT_SEASON = process.env.DEFAULT_SEASON || '2025';
+const DEFAULT_SEASON = process.env.DEFAULT_SEASON || '2026';
 
 const app = express();
 
