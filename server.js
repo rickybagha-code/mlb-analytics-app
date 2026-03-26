@@ -1001,16 +1001,22 @@ app.get('/prizepicks/mlb', async (req, res) => {
     });
 
     const STAT_MAP = {
-      'Strikeouts':      'strikeouts',
-      'Hits':            'hits',
-      'Home Runs':       'hr',
-      'Runs':            'runs',
-      'RBIs':            'rbi',
-      'Stolen Bases':    'sb',
-      'Walks':           'walks',
-      'Innings Pitched': 'ip',
-      'Pitching Outs':   'outs',
-      'Hits+Runs+RBIs':  'hrr',
+      'Pitcher Strikeouts': 'strikeouts',  // actual PP stat_type for pitcher Ks
+      'Hitter Strikeouts':  'hitterK',
+      'Hits':               'hits',
+      'Home Runs':          'hr',
+      'Runs':               'runs',
+      'RBIs':               'rbi',
+      'Stolen Bases':       'sb',
+      'Walks':              'walks',
+      'Total Bases':        'tb',
+      'Singles':            'singles',
+      'Doubles':            'doubles',
+      'Pitching Outs':      'outs',
+      'Hits+Runs+RBIs':     'hrr',
+      'Walks Allowed':      'walksAllowed',
+      'Earned Runs Allowed':'earnedRuns',
+      'Hits Allowed':       'hitsAllowed',
     };
 
     const lines = {};
