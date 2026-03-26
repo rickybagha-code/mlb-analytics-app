@@ -970,7 +970,7 @@ export default function DashboardPage() {
 
   async function fetchStatcastData() {
     try {
-      const r = await fetch(`${API_URL}/statcast/batters?season=2026`);
+      const r = await fetch(`${API_URL}/statcast/batters?season=2025`);
       if (!r.ok) return;
       const map = await r.json();
       setBoardPlayers(prev => prev.map(p => {

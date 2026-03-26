@@ -2210,7 +2210,7 @@ export default function PlayerDetailPage() {
         const [mlbRes, mlbRes25, splitsRes] = await Promise.allSettled([
           fetch(`${MLB_API}/people/${id}?hydrate=stats(group=pitching,type=season,season=2026)`),
           fetch(`${MLB_API}/people/${id}?hydrate=stats(group=pitching,type=season,season=2025)`),
-          fetch(`${API_URL}/pitcher/${id}/splits?season=2026`),
+          fetch(`${API_URL}/pitcher/${id}/splits?season=2025`),
         ]);
 
         if (mlbRes.status === 'fulfilled' && mlbRes.value?.ok) {
@@ -2264,8 +2264,8 @@ export default function PlayerDetailPage() {
         const [mlbRes, mlbRes25, splitsRes, statcastRes, pitcherRes, h2hRes] = await Promise.allSettled([
           fetch(`${MLB_API}/people/${id}?hydrate=stats(group=hitting,type=season,season=2026)`),
           fetch(`${MLB_API}/people/${id}?hydrate=stats(group=hitting,type=season,season=2025)`),
-          fetch(`${API_URL}/player/${id}/splits?season=2026`),
-          fetch(`${API_URL}/statcast/batters?season=2026`),
+          fetch(`${API_URL}/player/${id}/splits?season=2025`),
+          fetch(`${API_URL}/statcast/batters?season=2025`),
           spPitcherId ? fetch(`${API_URL}/pitcher/${spPitcherId}`) : Promise.resolve(null),
           spPitcherId ? fetch(`${API_URL}/career-matchup/batter/${id}/pitcher/${spPitcherId}`) : Promise.resolve(null),
         ]);
