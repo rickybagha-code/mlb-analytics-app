@@ -158,14 +158,25 @@ function scorePitcher(stats, ppKLine) {
 // ─── PP name matching (exact → case-insensitive → last+first-initial) ────────
 function findPPLines(name, linesMap) {
   if (!name || !linesMap) return null;
+  // Tier 1: exact
   if (linesMap[name]) return linesMap[name];
   const lower = name.toLowerCase();
+  // Tier 2: case-insensitive exact
   const k1 = Object.keys(linesMap).find(k => k.toLowerCase() === lower);
   if (k1) return linesMap[k1];
+  // Tier 3: last name + first name prefix match
+  // Handles "M. Fried" vs "Max Fried", "Yoshi Yamamoto" vs "Yoshinobu Yamamoto"
   const parts = name.split(' ');
   if (parts.length >= 2) {
-    const partial = `${parts[0][0]}. ${parts.slice(1).join(' ')}`;
-    const k2 = Object.keys(linesMap).find(k => k.toLowerCase() === partial.toLowerCase());
+    const lastName  = parts[parts.length - 1].toLowerCase();
+    const firstName = parts[0].toLowerCase();
+    const k2 = Object.keys(linesMap).find(k => {
+      const kl = k.toLowerCase();
+      if (!kl.includes(lastName)) return false;
+      if (kl.includes(firstName) || kl.includes(firstName[0] + '.')) return true;
+      const ppFirst = kl.split(' ')[0];
+      return firstName.startsWith(ppFirst) || ppFirst.startsWith(firstName);
+    });
     if (k2) return linesMap[k2];
   }
   return null;

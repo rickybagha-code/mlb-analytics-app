@@ -2126,10 +2126,15 @@ export default function PlayerDetailPage() {
           const exactKey = Object.keys(data.lines).find(k => k.toLowerCase() === nameLower);
           if (exactKey) { playerLines = data.lines[exactKey]; }
           else {
-            // 3. Last name + first initial match (e.g., "M. Fried" vs "Max Fried")
+            // 3. Last name + first name prefix match
+            // Handles: "M. Fried" vs "Max Fried", "Yoshi Yamamoto" vs "Yoshinobu Yamamoto"
             const partialKey = Object.keys(data.lines).find(k => {
               const kl = k.toLowerCase();
-              return kl.includes(lastName) && (kl.includes(firstName) || kl.includes(firstName[0] + '.'));
+              if (!kl.includes(lastName)) return false;
+              if (kl.includes(firstName) || kl.includes(firstName[0] + '.')) return true;
+              // Nickname prefix: MLB "yoshinobu" starts with PP "yoshi", or vice versa
+              const ppFirst = kl.split(' ')[0];
+              return firstName.startsWith(ppFirst) || ppFirst.startsWith(firstName);
             });
             if (partialKey) playerLines = data.lines[partialKey];
           }
