@@ -793,51 +793,53 @@ const plans = [
     name: 'Free',
     price: '$0',
     period: 'forever',
-    description: 'Great for casual research and trying out the model.',
+    description: 'Explore the model before you commit. One player card visible per category.',
     highlight: false,
+    badge: null,
     features: [
-      'Full dashboard access',
-      'Basic batter & pitcher stats',
-      'Handedness splits',
-      'L5 game log charts',
+      '1 player card visible per category',
+      '1 deep-dive player profile',
+      'Score ring & matchup preview',
+      'Upgrade anytime — no card required',
     ],
     cta: 'Start Free',
-    ctaHref: '/dashboard',
+    ctaHref: '/signup',
   },
   {
-    name: 'Pro',
-    price: '$29',
+    name: 'Monthly',
+    price: '$18.99',
     period: '/month',
-    description: 'The full toolkit for serious prop researchers.',
+    description: 'Full access to every model, every player, every game day.',
+    highlight: false,
+    badge: null,
+    features: [
+      'Full dashboard — all players ranked',
+      'Unlimited player deep-dives',
+      'Statcast xwOBA · Barrel% · Hard Hit%',
+      'Poisson EV% model + factor breakdown',
+      'Live PrizePicks lines auto-filled',
+      'Park factors · weather intelligence',
+      'Career vs pitcher · handedness splits',
+      'Cancel anytime',
+    ],
+    cta: 'Get Monthly Access',
+    ctaHref: '/signup?plan=monthly',
+  },
+  {
+    name: 'Yearly',
+    price: '$189.99',
+    period: '/year',
+    description: 'Best value — save $37 vs monthly. Two months free.',
     highlight: true,
     badge: 'Most Popular',
     features: [
-      'Everything in Free',
-      'Statcast xwOBA + Barrel% model',
-      'Career head-to-head history',
-      'L10 recency-weighted scores',
-      'Real-time weather intelligence',
-      'Priority email support',
+      'Everything in Monthly',
+      'Two months free vs monthly',
+      'Early access to new prop models',
+      'Priority support',
     ],
-    cta: 'Start Pro Trial',
-    ctaHref: '/dashboard',
-  },
-  {
-    name: 'Elite',
-    price: '$79',
-    period: '/month',
-    description: 'For power users and professional handicappers.',
-    highlight: false,
-    features: [
-      'Everything in Pro',
-      'Full REST API access',
-      'CSV bulk export',
-      'Custom backtesting (date range)',
-      'Dedicated Slack channel',
-      'Priority feature requests',
-    ],
-    cta: 'Go Elite',
-    ctaHref: '/dashboard',
+    cta: 'Get Annual Access',
+    ctaHref: '/signup?plan=yearly',
   },
 ];
 
@@ -886,7 +888,7 @@ function PricingSection() {
               <ul className="mb-8 flex-1 space-y-3">
                 {plan.features.map((feature) => (
                   <li key={feature} className="flex items-start gap-3">
-                    <svg className={`mt-0.5 h-4 w-4 flex-shrink-0 ${plan.highlight ? 'text-blue-400' : 'text-gray-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className={`mt-0.5 h-4 w-4 flex-shrink-0 ${plan.highlight ? 'text-blue-400' : !plan.highlight && plan.name !== 'Free' ? 'text-emerald-500' : 'text-gray-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7"/>
                     </svg>
                     <span className="text-sm text-gray-300">{feature}</span>

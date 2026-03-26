@@ -558,6 +558,13 @@ const CAT_TO_PLAYER_TAB = { hitting:'hits', hr:'hr', runs:'runs', rbi:'rbi', sb:
 
 // ─── Main Dashboard Page ──────────────────────────────────────────────────────
 export default function DashboardPage() {
+  // ── Free tier plan check ──────────────────────────────────────────────────
+  const [isPro, setIsPro] = useState(false);
+  useEffect(() => {
+    const plan = localStorage.getItem('proprstats_plan');
+    setIsPro(plan === 'pro' || plan === 'yearly');
+  }, []);
+
   // ── Category ──────────────────────────────────────────────────────────────
   const [category, setCategory] = useState('hitting');
 
@@ -1108,30 +1115,66 @@ export default function DashboardPage() {
                 </button>
               </div>
             )}
-            <div className={`grid gap-3 mb-10 ${selectedPlayerId ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'}`}>
-              {filteredBoard.map((player, idx) => {
-                const pitcher = player.matchup?.pitcher;
-                const playerTab = CAT_TO_PLAYER_TAB[category];
-                const params = new URLSearchParams({
-                  name:        player.fullName        || '',
-                  teamId:      player.teamId          || '',
-                  pitcherId:   pitcher?.id            || '',
-                  pitcherName: pitcher?.name          || '',
-                  pitcherHand: pitcher?.hand          || '',
-                  oppAbbrev:   player.matchup?.oppAbbrev || '',
-                  isHome:      player.matchup?.isHome ? 'true' : 'false',
-                  teamName:    player.teamName        || '',
-                  teamAbbrev:  player.teamAbbrev      || '',
-                  position:    player.position        || '',
-                  ...(playerTab ? { cat: playerTab } : {}),
-                });
-                return (
-                  <Link key={player.playerId} href={`/dashboard/player/${player.playerId}?${params}`} className="block">
-                    <AutoPlayerCard player={player} category={category} rank={idx+1}/>
-                  </Link>
-                );
-              })}
-            </div>
+            {(() => {
+              const FREE_LIMIT = 4;
+              const visiblePlayers = isPro ? filteredBoard : filteredBoard.slice(0, FREE_LIMIT);
+              const lockedPlayers  = isPro ? [] : filteredBoard.slice(FREE_LIMIT);
+              const gridCls = `grid gap-3 mb-2 ${selectedPlayerId ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'}`;
+              return (
+                <>
+                  <div className={gridCls}>
+                    {visiblePlayers.map((player, idx) => {
+                      const pitcher = player.matchup?.pitcher;
+                      const playerTab = CAT_TO_PLAYER_TAB[category];
+                      const params = new URLSearchParams({
+                        name:        player.fullName        || '',
+                        teamId:      player.teamId          || '',
+                        pitcherId:   pitcher?.id            || '',
+                        pitcherName: pitcher?.name          || '',
+                        pitcherHand: pitcher?.hand          || '',
+                        oppAbbrev:   player.matchup?.oppAbbrev || '',
+                        isHome:      player.matchup?.isHome ? 'true' : 'false',
+                        teamName:    player.teamName        || '',
+                        teamAbbrev:  player.teamAbbrev      || '',
+                        position:    player.position        || '',
+                        ...(playerTab ? { cat: playerTab } : {}),
+                      });
+                      return (
+                        <Link key={player.playerId} href={`/dashboard/player/${player.playerId}?${params}`} className="block">
+                          <AutoPlayerCard player={player} category={category} rank={idx+1}/>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                  {lockedPlayers.length > 0 && (
+                    <div className="relative mb-10">
+                      <div className={`${gridCls} pointer-events-none select-none`}>
+                        {lockedPlayers.map((player, idx) => (
+                          <div key={player.playerId} className="blur-md opacity-40">
+                            <AutoPlayerCard player={player} category={category} rank={visiblePlayers.length + idx + 1}/>
+                          </div>
+                        ))}
+                      </div>
+                      {/* Gradient fade + CTA overlay */}
+                      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-gray-950/60 to-gray-950 pointer-events-none"/>
+                      <div className="absolute inset-x-0 bottom-0 flex flex-col items-center justify-end pb-6 gap-3">
+                        <p className="text-sm font-bold text-white">Unlock the full board</p>
+                        <p className="text-xs text-gray-400">{lockedPlayers.length} more players ranked below your free preview</p>
+                        <div className="flex gap-3">
+                          <Link href="/signup?plan=monthly" className="rounded-xl bg-blue-600 hover:bg-blue-500 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-500/30 transition-all hover:-translate-y-0.5">
+                            Upgrade — $18.99/mo
+                          </Link>
+                          <Link href="/signup?plan=yearly" className="rounded-xl border border-blue-500/50 bg-blue-500/10 hover:bg-blue-500/20 px-5 py-2.5 text-sm font-bold text-blue-300 transition-all hover:-translate-y-0.5">
+                            $189.99/yr · Best Value
+                          </Link>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {isPro && <div className="mb-10"/>}
+                </>
+              );
+            })()}
           </>
         )}
 

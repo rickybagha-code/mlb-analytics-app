@@ -2107,6 +2107,9 @@ export default function PlayerDetailPage() {
   const [pitcherChartLine, setPitcherChartLine] = useState(4.5);
   const [pitcherChartWin,  setPitcherChartWin]  = useState(10);
 
+  // ── Free tier paywall ─────────────────────────────────────────────────
+  const [showPaywall, setShowPaywall] = useState(false);
+
   // ── Weather + PrizePicks state ─────────────────────────────────────────
   const [weather,       setWeather]      = useState(null);
   const [ppLines,       setPpLines]      = useState(null); // { hits:1.5, hr:0.5, ... } for this player
@@ -2161,6 +2164,19 @@ export default function PlayerDetailPage() {
     const cfg = PITCHER_CHART_CATS.find(c => c.id === pitcherChartCat);
     if (cfg) setPitcherChartLine(cfg.defaultLine);
   }, [pitcherChartCat]);
+
+  // ── Paywall check ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    const plan = localStorage.getItem('proprstats_plan') || 'free';
+    if (plan !== 'pro' && plan !== 'yearly') {
+      const views = parseInt(localStorage.getItem('proprstats_player_views') || '0');
+      if (views >= 1) {
+        setShowPaywall(true);
+      } else {
+        localStorage.setItem('proprstats_player_views', String(views + 1));
+      }
+    }
+  }, []);
 
   // ── Load data ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -2394,7 +2410,42 @@ export default function PlayerDetailPage() {
   }, [seasonStats]);
 
   return (
-    <div className="min-h-screen bg-gray-950">
+    <>
+      {showPaywall && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/95 backdrop-blur-sm px-4">
+          <div className="relative w-full max-w-md rounded-2xl border border-gray-800 bg-gray-900 p-8 shadow-2xl text-center">
+            <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-blue-400 to-transparent rounded-t-2xl"/>
+            <div className="mb-4 inline-flex h-14 w-14 items-center justify-center rounded-full bg-blue-500/10 border border-blue-500/20">
+              <svg className="h-7 w-7 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+              </svg>
+            </div>
+            <h2 className="text-xl font-black text-white mb-2">You&apos;ve used your free preview</h2>
+            <p className="text-sm text-gray-400 leading-relaxed mb-6">
+              Your free account includes <span className="text-white font-semibold">1 player deep-dive</span>. Upgrade for unlimited access to every player&apos;s Statcast model, EV%, and prop projections.
+            </p>
+            <div className="flex flex-col gap-3 mb-5">
+              <Link
+                href="/signup?plan=yearly"
+                className="block w-full rounded-xl bg-blue-600 hover:bg-blue-500 px-6 py-3.5 text-sm font-bold text-white shadow-lg shadow-blue-500/25 transition-all hover:-translate-y-0.5"
+              >
+                Get Annual Access — $189.99/yr
+                <span className="ml-2 text-xs font-normal text-blue-200">Most Popular · Save $37</span>
+              </Link>
+              <Link
+                href="/signup?plan=monthly"
+                className="block w-full rounded-xl border border-gray-700 hover:border-gray-500 px-6 py-3 text-sm font-semibold text-gray-300 hover:text-white transition-all"
+              >
+                Monthly Access — $18.99/mo
+              </Link>
+            </div>
+            <Link href="/dashboard" className="text-xs text-gray-600 hover:text-gray-400 transition-colors">
+              &larr; Back to dashboard
+            </Link>
+          </div>
+        </div>
+      )}
+      <div className="min-h-screen bg-gray-950">
       {/* ── Navbar ─────────────────────────────────────────────────────────── */}
       <nav className="sticky top-0 z-50 border-b border-white/5 bg-gray-950/90 backdrop-blur-xl">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -2920,5 +2971,6 @@ export default function PlayerDetailPage() {
 
       </main>
     </div>
+    </>
   );
 }
