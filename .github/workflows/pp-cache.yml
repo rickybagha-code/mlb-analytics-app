@@ -1,0 +1,95 @@
+name: Cache PrizePicks Lines
+
+on:
+  schedule:
+    - cron: '0 * * * *'   # every hour
+  workflow_dispatch:        # manual trigger
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch and process PrizePicks MLB lines
+        run: |
+          node -e "
+          const https = require('https');
+
+          const STAT_MAP = {
+            'Pitcher Strikeouts': 'strikeouts',
+            'Hitter Strikeouts':  'hitterK',
+            'Hits':               'hits',
+            'Home Runs':          'hr',
+            'Runs':               'runs',
+            'RBIs':               'rbi',
+            'Stolen Bases':       'sb',
+            'Walks':              'walks',
+            'Total Bases':        'tb',
+            'Singles':            'singles',
+            'Doubles':            'doubles',
+            'Pitching Outs':      'outs',
+            'Hits+Runs+RBIs':     'hrr',
+            'Walks Allowed':      'walksAllowed',
+            'Earned Runs Allowed':'earnedRuns',
+            'Hits Allowed':       'hitsAllowed',
+          };
+
+          const options = {
+            hostname: 'api.prizepicks.com',
+            path: '/projections?league_id=2',
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+              'Accept': 'application/json',
+              'Referer': 'https://app.prizepicks.com/',
+              'Origin': 'https://app.prizepicks.com',
+            },
+          };
+
+          https.get(options, res => {
+            let body = '';
+            res.on('data', chunk => body += chunk);
+            res.on('end', () => {
+              if (res.statusCode !== 200) {
+                console.error('PP returned', res.statusCode);
+                process.exit(1);
+              }
+              const data = JSON.parse(body);
+
+              const playerMap = {};
+              (data.included || []).forEach(item => {
+                if (item.type === 'new_player')
+                  playerMap[item.id] = item.attributes?.display_name || '';
+              });
+
+              const lines = {};
+              (data.data || []).forEach(proj => {
+                const pid  = proj.relationships?.new_player?.data?.id;
+                const name = playerMap[pid];
+                if (!name) return;
+                const stat = STAT_MAP[proj.attributes?.stat_type];
+                if (!stat) return;
+                const line = parseFloat(proj.attributes?.line_score);
+                if (isNaN(line)) return;
+                if (!lines[name]) lines[name] = {};
+                lines[name][name] = lines[name][name]; // keep existing
+                lines[name][stat] = line;
+              });
+
+              const output = JSON.stringify({ lines, updated: new Date().toISOString() });
+              require('fs').writeFileSync('frontend/public/pp-lines.json', output);
+              console.log('Wrote', Object.keys(lines).length, 'players to pp-lines.json');
+            });
+          }).on('error', err => { console.error(err); process.exit(1); });
+          "
+
+      - name: Commit updated PP lines
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add frontend/public/pp-lines.json
+          git diff --staged --quiet || git commit -m "chore: refresh PrizePicks lines cache [skip ci]"
+          git push
