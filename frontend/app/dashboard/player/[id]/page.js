@@ -76,7 +76,7 @@ const PROP_CATS = [
   { id:'hr',   label:'Home Runs',    field:'homeRuns',    lines:[0.5],         def:0.5 },
   { id:'sb',   label:'Stolen Bases', field:'stolenBases', lines:[0.5],         def:0.5 },
 ];
-const CAT_MODEL = { hits:'hitting', runs:'runs', rbi:'runs', hr:'hr', sb:null };
+const CAT_MODEL = { hits:'hitting', runs:'runs', rbi:'rbi', hr:'hr', sb:null };
 
 // ─── Projection Model (mirrors dashboard) ────────────────────────────────────
 function computeProjectionScore(player, category) {
@@ -182,11 +182,24 @@ function computeProjectionScore(player, category) {
     // Center at league avg pHR (0.127) → 50; max (0.30, elite tier) → ~80; keeps HR below hits
     base = 50 + (adjustedPHR - 0.127) * 175;
   } else if (category === 'runs') {
-    const rComp   = Math.max(-15, Math.min(25, (r   / gp - 0.45) * 55));
-    const rbiComp = Math.max(-15, Math.min(25, (rbi / gp - 0.45) * 55));
-    const obpComp = Math.max(0,   Math.min(15, (obp - 0.300) / 0.120 * 15));
-    const hardBonus = hardHitPct != null ? Math.max(0, Math.min(5, (hardHitPct - 40) / 18 * 5)) : 0;
-    base = 40 + rComp + rbiComp + obpComp + hardBonus + pitcherMod;
+    const rComp      = Math.max(-15, Math.min(25, (r / gp - 0.45) * 55));
+    const obpComp    = Math.max(0,   Math.min(15, (obp - 0.317) / 0.100 * 12));
+    const hardBonus  = hardHitPct != null ? Math.max(0, Math.min(5, (hardHitPct - 40) / 18 * 5)) : 0;
+    // Handedness split on OBP — how much better/worse they get on base vs today's pitcher hand
+    const splitOBPbonus = (player.splitOBP != null && obp > 0)
+      ? Math.max(-8, Math.min(10, (player.splitOBP - obp) / obp * 30))
+      : 0;
+    base = 40 + rComp + obpComp + hardBonus + pitcherMod + splitOBPbonus;
+  } else if (category === 'rbi') {
+    const rbiComp    = Math.max(-15, Math.min(35, (rbi / gp - 0.45) * 70));
+    const slgComp    = Math.max(0,   Math.min(15, (slg - 0.400) / 0.200 * 15));
+    const hrComp     = Math.max(0,   Math.min(10, (hrRate / 0.06) * 10));
+    const xwobaBonus = xwoba != null ? Math.max(0, Math.min(8, (xwoba - 0.315) / 0.100 * 8)) : 0;
+    // Handedness split on SLG — power vs today's pitcher hand
+    const splitSLGbonus = (player.splitSLG != null && slg > 0)
+      ? Math.max(-8, Math.min(10, (player.splitSLG - slg) / slg * 30))
+      : 0;
+    base = 38 + rbiComp + slgComp + hrComp + xwobaBonus + pitcherMod + splitSLGbonus;
   }
   const adjusted = 50 + (base - 50) * confidence;
   return Math.round(Math.max(5, Math.min(99, adjusted + recencyBoost)));
@@ -1824,14 +1837,25 @@ function useRunsProjection(gameLog, seasonStats, splits, statcast, pitcher, spPi
     const L10BB = c.L10.reduce((a,g)=>a+(Number(g.baseOnBalls)||0),0);
     const L10PA = c.L10.reduce((a,g)=>a+(Number(g.plateAppearances)||0),0);
     const l10OBP = L10PA > 15 ? (L10H+L10BB)/L10PA : c.seasonOBP;
+    // OBP blend: split when vs pitcher hand available, else L10 vs season
     const obpW = c.splitOBP
       ? c.splitOBP*0.40 + l10OBP*0.35 + c.seasonOBP*0.25
       : l10OBP*0.50 + c.seasonOBP*0.50;
-    const teamRunEnv = c.park?.runs || 1.0;
-    const slotFactor = c.avgSlot ? (SLOT_FACTORS[c.avgSlot]||1.0) : 1.0;
+    const teamRunEnv    = c.park?.runs || 1.0;
+    const slotFactor    = c.avgSlot ? (SLOT_FACTORS[c.avgSlot]||1.0) : 1.0;
     const pitcherRunAdj = Math.min(1.25, Math.max(0.75, 1+(c.pitcherERA-LG.era)*0.05));
-    const rateProj = l10Rpg*0.50 + seasonRpg*0.40 + 0.45*0.10;
-    const proj = Math.max(0.05, rateProj * pitcherRunAdj * teamRunEnv * slotFactor);
+    // Blend: 35% L10, 55% season, 10% league avg — less reactive to short-term noise
+    const LG_RPG   = 0.45;
+    const rateProj = l10Rpg * 0.35 + seasonRpg * 0.55 + LG_RPG * 0.10;
+    const baseProj = Math.max(0.05, rateProj);
+    // OBP quality: absolute on-base ability centered at league avg (0.317)
+    // This is the wired-in OBP signal that was previously computed but unused
+    const obpShift     = Math.max(-0.06, Math.min(0.10, (obpW - 0.317) * 0.6));
+    // Context: additive shifts (not multiplicative) to prevent compounding
+    const pitcherShift = Math.max(-0.06, Math.min(0.08, (pitcherRunAdj - 1.0) * baseProj));
+    const parkShift    = Math.max(-0.05, Math.min(0.07, (teamRunEnv - 1.0) * baseProj));
+    const slotShift    = Math.max(-0.08, Math.min(0.10, (slotFactor - 1.0) * baseProj));
+    const proj = Math.max(0.05, baseProj + obpShift + pitcherShift + parkShift + slotShift);
     const std = l10StdDev(L10R, 0.5);
     const adj = Math.round(proj*10)/10;
     return {
@@ -1840,11 +1864,11 @@ function useRunsProjection(gameLog, seasonStats, splits, statcast, pitcher, spPi
       upper80: Math.round((adj+1.28*std)*10)/10,
       stdDev: Math.round(std*10)/10,
       factorImpacts: [
-        { label:'L10 R/game avg',     impact:Math.round((l10Rpg-seasonRpg)*10)/10,          dir:l10Rpg>seasonRpg?'↑':'↓' },
-        { label:'OBP on-base opp',    impact:Math.round((obpW-c.seasonOBP)*adj*10)/10,       dir:obpW>c.seasonOBP?'↑':'↓' },
-        { label:'Pitcher quality',    impact:Math.round((pitcherRunAdj-1)*adj*10)/10,        dir:pitcherRunAdj>=1?'↑':'↓' },
-        { label:'Park run factor',    impact:Math.round((teamRunEnv-1)*adj*10)/10,           dir:teamRunEnv>=1?'↑':'↓', note:!c.park?'no data':null },
-        { label:'Batting slot',       impact:Math.round((slotFactor-1)*adj*10)/10,           dir:slotFactor>=1?'↑':'↓', note:!c.avgSlot?'slot unavail':` #${c.avgSlot}` },
+        { label:'L10 R/game avg',   impact:Math.round((l10Rpg-seasonRpg)*10)/10,   dir:l10Rpg>=seasonRpg?'↑':'↓' },
+        { label:'OBP on-base opp',  impact:Math.round(obpShift*10)/10,             dir:obpShift>=0?'↑':'↓' },
+        { label:'Pitcher quality',  impact:Math.round(pitcherShift*10)/10,         dir:pitcherShift>=0?'↑':'↓' },
+        { label:'Park run factor',  impact:Math.round(parkShift*10)/10,            dir:parkShift>=0?'↑':'↓', note:!c.park?'no data':null },
+        { label:'Batting slot',     impact:Math.round(slotShift*10)/10,            dir:slotShift>=0?'↑':'↓', note:!c.avgSlot?'slot unavail':` #${c.avgSlot}` },
       ],
     };
   }, [gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev]);
@@ -1858,27 +1882,39 @@ function useRBIProjection(gameLog, seasonStats, splits, statcast, pitcher, spPit
     const seasonRBIpg = seasonRBI / c.seasonGP;
     const L10RBI  = c.L10.map(g=>Number(g.rbi)||0);
     const l10RBIpg = L10RBI.reduce((a,b)=>a+b,0) / Math.max(L10RBI.length,1);
-    const slgFactor = c.splitSLG && c.seasonSLG > 0
-      ? Math.max(0.75, Math.min(1.25, c.splitSLG/c.seasonSLG)) : 1.0;
-    const rbiSlot = c.avgSlot
-      ? (c.avgSlot<=2?0.85:c.avgSlot<=5?1.08:c.avgSlot<=7?0.95:0.82) : 1.0;
-    const pitcherRBIAdj = Math.min(1.25, Math.max(0.75, 1+(c.pitcherERA-LG.era)*0.05));
-    const parkFactor = c.park?.runs || 1.0;
-    const rateProj = l10RBIpg*0.50 + seasonRBIpg*0.40 + 0.43*0.10;
-    const proj = Math.max(0.05, rateProj * pitcherRBIAdj * slgFactor * parkFactor * rbiSlot);
-    const std = l10StdDev(L10RBI, 0.5);
-    const adj = Math.round(proj*10)/10;
+    const LG_RBIpg = 0.43;
+    const rateProj  = l10RBIpg * 0.35 + seasonRBIpg * 0.55 + LG_RBIpg * 0.10;
+    const baseProj  = Math.max(0.05, rateProj);
+
+    // additive shifts
+    const slgShift = c.splitSLG && c.seasonSLG > 0
+      ? Math.max(-0.08, Math.min(0.10, (c.splitSLG / c.seasonSLG - 1.0) * baseProj * 0.65))
+      : 0;
+    const xwobaShift = c.xwoba != null
+      ? Math.max(-0.05, Math.min(0.08, (c.xwoba - 0.315) / 0.100 * 0.04))
+      : 0;
+    const pitcherRBIAdj = Math.min(1.25, Math.max(0.75, 1 + (c.pitcherERA - LG.era) * 0.05));
+    const pitcherShift  = Math.max(-0.06, Math.min(0.08, (pitcherRBIAdj - 1.0) * baseProj));
+    const parkShift     = Math.max(-0.05, Math.min(0.07, ((c.park?.runs || 1.0) - 1.0) * baseProj));
+    const rbiSlotFactor = c.avgSlot
+      ? (c.avgSlot <= 2 ? 0.85 : c.avgSlot <= 5 ? 1.08 : c.avgSlot <= 7 ? 0.95 : 0.82) : 1.0;
+    const slotShift     = Math.max(-0.08, Math.min(0.10, (rbiSlotFactor - 1.0) * baseProj));
+
+    const proj = Math.max(0.05, baseProj + slgShift + xwobaShift + pitcherShift + parkShift + slotShift);
+    const std  = l10StdDev(L10RBI, 0.5);
+    const adj  = Math.round(proj * 10) / 10;
     return {
       projected: adj,
-      lower80: Math.max(0, Math.round((adj-1.28*std)*10)/10),
-      upper80: Math.round((adj+1.28*std)*10)/10,
-      stdDev: Math.round(std*10)/10,
+      lower80: Math.max(0, Math.round((adj - 1.28 * std) * 10) / 10),
+      upper80: Math.round((adj + 1.28 * std) * 10) / 10,
+      stdDev: Math.round(std * 10) / 10,
       factorImpacts: [
-        { label:'L10 RBI/game avg',   impact:Math.round((l10RBIpg-seasonRBIpg)*10)/10,      dir:l10RBIpg>seasonRBIpg?'↑':'↓' },
-        { label:`${spPitcherHand||'?'}HP SLG split`, impact:Math.round((slgFactor-1)*adj*10)/10, dir:slgFactor>=1?'↑':'↓', note:!c.splitSLG?'no split data':null },
-        { label:'Pitcher quality',    impact:Math.round((pitcherRBIAdj-1)*adj*10)/10,       dir:pitcherRBIAdj>=1?'↑':'↓' },
-        { label:'Batting slot (RBI)', impact:Math.round((rbiSlot-1)*adj*10)/10,             dir:rbiSlot>=1?'↑':'↓', note:!c.avgSlot?'slot unavail':` #${c.avgSlot}` },
-        { label:'Park run factor',    impact:Math.round((parkFactor-1)*adj*10)/10,          dir:parkFactor>=1?'↑':'↓', note:!c.park?'no data':null },
+        { label:'L10 RBI/game avg',   impact:Math.round((l10RBIpg - seasonRBIpg) * 10) / 10,    dir:l10RBIpg > seasonRBIpg ? '↑' : '↓' },
+        { label:`${spPitcherHand||'?'}HP SLG split`, impact:Math.round(slgShift * 10) / 10,       dir:slgShift >= 0 ? '↑' : '↓', note:!c.splitSLG ? 'no split data' : null },
+        { label:'xwOBA quality',      impact:Math.round(xwobaShift * 10) / 10,                   dir:xwobaShift >= 0 ? '↑' : '↓', note:c.xwoba == null ? 'no data' : null },
+        { label:'Pitcher quality',    impact:Math.round(pitcherShift * 10) / 10,                 dir:pitcherShift >= 0 ? '↑' : '↓' },
+        { label:'Batting slot (RBI)', impact:Math.round(slotShift * 10) / 10,                    dir:slotShift >= 0 ? '↑' : '↓', note:!c.avgSlot ? 'slot unavail' : ` #${c.avgSlot}` },
+        { label:'Park run factor',    impact:Math.round(parkShift * 10) / 10,                    dir:parkShift >= 0 ? '↑' : '↓', note:!c.park ? 'no data' : null },
       ],
     };
   }, [gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev]);
@@ -2500,6 +2536,12 @@ export default function PlayerDetailPage() {
       l10Avg,
       splitAVG: splits && spPitcherHand
         ? parseFloat((spPitcherHand === 'L' ? splits.vsLeftHandedPitching : splits.vsRightHandedPitching)?.avg) || null
+        : null,
+      splitOBP: splits && spPitcherHand
+        ? parseFloat((spPitcherHand === 'L' ? splits.vsLeftHandedPitching : splits.vsRightHandedPitching)?.obp) || null
+        : null,
+      splitSLG: splits && spPitcherHand
+        ? parseFloat((spPitcherHand === 'L' ? splits.vsLeftHandedPitching : splits.vsRightHandedPitching)?.slg) || null
         : null,
     }, modelCat);
   }, [cat, seasonStats, statcast, pitcher, streak, l10Avg, hrProj, h2hData, splits, spPitcherHand]);
