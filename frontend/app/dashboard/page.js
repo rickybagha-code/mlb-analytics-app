@@ -116,13 +116,19 @@ function computeProjectionScore(player, category) {
   let base = 50;
 
   if (category === 'hitting') {
-    // effectiveWOBA (blended with xwOBA) centred at league avg ~0.315
-    const wComp     = (effectiveWOBA - 0.315) * 250;
+    // Contact-adjusted wOBA: reduce HR weight (2.101→1.3) since HRs don't add extra hits
+    const hitWOBA = pa > 0
+      ? (bb*0.690 + singles*0.888 + dbl*1.271 + tri*1.616 + hr*1.300) / pa
+      : (avg * 0.88 + obp * 0.12);
+    const effectiveHitWOBA = xwoba != null ? hitWOBA * 0.35 + xwoba * 0.65 : hitWOBA;
+    const wComp     = (effectiveHitWOBA - 0.302) * 250;  // league avg contactWOBA ≈ 0.302
     const kPenalty  = Math.max(0, (kPct - 0.20) * 50);
     const bbBonus   = Math.max(0, (bbPct - 0.08) * 25);
-    // Hard hit bonus: league median ~40%, elite ~58%+ (ev95percent from Baseball Savant)
     const hardBonus = hardHitPct != null ? Math.max(0, Math.min(8, (hardHitPct - 40) / 18 * 8)) : 0;
-    base = 53 + wComp - kPenalty + bbBonus + hardBonus + pitcherMod;
+    const splitBonus = (player.splitAVG != null && avg > 0)
+      ? Math.max(-10, Math.min(12, (player.splitAVG - avg) / avg * 40))
+      : 0;
+    base = 53 + wComp - kPenalty + bbBonus + hardBonus + pitcherMod + splitBonus;
 
   } else if (category === 'hr') {
     // Poisson base: blends L10 HR rate (loaded async) with season rate
