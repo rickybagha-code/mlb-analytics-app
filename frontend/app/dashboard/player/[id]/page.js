@@ -151,10 +151,20 @@ function computeProjectionScore(player, category) {
     const parkShift    = (player.parkHR ?? null) != null ? Math.max(-0.06, Math.min(0.07, (player.parkHR - 1.0) * 0.35)) : 0;
     const splitShift   = (player.splitSLG != null && slg > 0) ? Math.max(-0.04, Math.min(0.05, (player.splitSLG / slg - 1.0) * 0.15)) : 0;
     const h2hShift     = (() => {
-      const hSlg = player.h2hSlg ?? null;
       const hAB  = player.h2hAB  ?? 0;
-      if (!hSlg || slg <= 0 || hAB < 10) return 0;
-      return Math.max(-0.03, Math.min(0.04, (hSlg / slg - 1.0) * 0.12 * Math.min(0.5, hAB / 60)));
+      const hHR  = player.h2hHR  ?? 0;
+      const hSlg = player.h2hSlg ?? null;
+      if (hAB < 15) return 0;
+      const abWeight = Math.min(1.0, (hAB - 15) / 45);
+      const h2hHRrate   = hHR / hAB;
+      const seasonHRrate = ab > 0 ? hr / ab : 0;
+      const hrRateShift = seasonHRrate > 0
+        ? Math.max(-0.04, Math.min(0.05, (h2hHRrate / seasonHRrate - 1.0) * 0.10 * abWeight))
+        : 0;
+      const slgShift = hSlg && slg > 0
+        ? Math.max(-0.02, Math.min(0.03, (hSlg / slg - 1.0) * 0.06 * abWeight))
+        : 0;
+      return hrRateShift + slgShift;
     })();
     const pitcherHRShift = Math.max(-0.03, Math.min(0.03, pitcherMod * 0.003));
     const adjustedPHR = Math.min(0.30, Math.max(0.005,
@@ -2419,15 +2429,29 @@ export default function PlayerDetailPage() {
     if (modelCat === 'hr' && hrProj?.pHR != null) {
       // Cap raw pHR at 36% — above that the model is overclaiming
       const pHR = Math.min(0.30, hrProj.pHR / 100);
-      const h2hMatch = h2hData?.careerMatchup;
-      const h2hAB    = h2hMatch ? (parseInt(h2hMatch.atBats)  || 0) : 0;
-      const h2hSLG   = h2hMatch ? (parseFloat(h2hMatch.slg)   || null) : null;
+      const h2hMatch  = h2hData?.careerMatchup;
+      const h2hAB     = h2hMatch ? (parseInt(h2hMatch.atBats)   || 0) : 0;
+      const h2hHR     = h2hMatch ? (parseInt(h2hMatch.homeRuns) || 0) : 0;
+      const h2hSLG    = h2hMatch ? (parseFloat(h2hMatch.slg)    || null) : null;
       const seasonSLG = parseFloat(st.slg) || 0;
+      const seasonAB  = parseInt(st.atBats) || 1;
+      const seasonHR  = parseInt(st.homeRuns) || 0;
       let h2hShift = 0;
-      if (h2hSLG && seasonSLG > 0 && h2hAB >= 10) {
-        h2hShift = Math.max(-0.03, Math.min(0.04,
-          (h2hSLG / seasonSLG - 1.0) * 0.12 * Math.min(0.5, h2hAB / 60)
-        ));
+      if (h2hAB >= 15) {
+        // Sample weight: 0 at 15 AB → 1.0 at 60+ AB
+        const abWeight = Math.min(1.0, (h2hAB - 15) / 45);
+        // Signal 1 — direct HR rate vs this pitcher vs season HR rate
+        // e.g. 4 HR in 30 AB (0.133) vs season 0.05 HR/AB → ratio 2.67x → strong boost
+        const h2hHRrate   = h2hHR / h2hAB;
+        const seasonHRrate = seasonHR / seasonAB;
+        const hrRateShift = seasonHRrate > 0
+          ? Math.max(-0.04, Math.min(0.05, (h2hHRrate / seasonHRrate - 1.0) * 0.10 * abWeight))
+          : 0;
+        // Signal 2 — SLG ratio (broader power proxy, lower weight)
+        const slgShift = h2hSLG && seasonSLG > 0
+          ? Math.max(-0.02, Math.min(0.03, (h2hSLG / seasonSLG - 1.0) * 0.06 * abWeight))
+          : 0;
+        h2hShift = hrRateShift + slgShift;
       }
       const adjustedPHR = Math.min(0.30, Math.max(0.005, pHR + h2hShift));
       const base = 50 + (adjustedPHR - 0.127) * 175;
