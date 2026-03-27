@@ -143,12 +143,13 @@ function computeProjectionScore(player, category) {
     const avgPAs  = Math.max(3.0, Math.min(5.0, gp > 0 ? pa_safe / gp : 4.0));
     const lambda  = Math.max(0, effectiveHR * avgPAs);
     const pHR     = 1 - Math.exp(-lambda);
-    // Contact quality — additive pHR shifts (prevents multiplicative compounding)
-    const barrelShift  = barrelPct != null ? Math.max(-0.04, Math.min(0.08, (barrelPct - 8.2) / 100)) : 0;
-    const evoShift     = (player.exitVelo ?? null) != null ? Math.max(-0.03, Math.min(0.05, (player.exitVelo - 88.5) / 200)) : 0;
+    // Contact quality — additive pHR shifts (prevents multiplicative compounding).
+    // Barrel/evo halved vs raw output because seasonHRpa already reflects actual production.
+    const barrelShift  = barrelPct != null ? Math.max(-0.03, Math.min(0.05, (barrelPct - 8.2) / 200)) : 0;
+    const evoShift     = (player.exitVelo ?? null) != null ? Math.max(-0.02, Math.min(0.03, (player.exitVelo - 88.5) / 300)) : 0;
     // Situational
     const parkShift    = (player.parkHR ?? null) != null ? Math.max(-0.06, Math.min(0.07, (player.parkHR - 1.0) * 0.35)) : 0;
-    const splitShift   = (player.splitSLG != null && slg > 0) ? Math.max(-0.05, Math.min(0.06, (player.splitSLG / slg - 1.0) * 0.22)) : 0;
+    const splitShift   = (player.splitSLG != null && slg > 0) ? Math.max(-0.04, Math.min(0.05, (player.splitSLG / slg - 1.0) * 0.15)) : 0;
     const h2hShift     = (() => {
       const hSlg = player.h2hSlg ?? null;
       const hAB  = player.h2hAB  ?? 0;
@@ -1741,34 +1742,46 @@ function useHRProjection(gameLog, seasonStats, splits, statcast, pitcher, spPitc
     const seasonHRpa = seasonHR / Math.max(1, c.seasonPA);
     const L10HR = c.L10.map(g=>Number(g.homeRuns)||0);
     const L10PA = c.L10.map(g=>Number(g.plateAppearances)||c.avgPA);
-    const l10HRpa = L10PA.reduce((a,b)=>a+b,0) > 0
-      ? L10HR.reduce((a,b)=>a+b,0) / L10PA.reduce((a,b)=>a+b,0) : seasonHRpa;
-    const hrRate = l10HRpa * 0.50 + seasonHRpa * 0.40 + seasonHRpa * 0.9 * 0.10;
-    // Pitcher ERA as HR proxy — bounded; ERA ≠ HR tendency but is the best available signal
+    const l10TotalPA = L10PA.reduce((a,b)=>a+b,0);
+    // Only use L10 HR rate if enough PA — HRs are rare, small samples are very noisy
+    const l10HRpa = l10TotalPA >= 25
+      ? L10HR.reduce((a,b)=>a+b,0) / l10TotalPA : seasonHRpa;
+    // 35% L10 (noisy), 55% season (most reliable), 10% league avg (regression anchor)
+    const LG_HRPA = 0.034;
+    const hrRate = l10HRpa * 0.35 + seasonHRpa * 0.55 + LG_HRPA * 0.10;
+    // Base Poisson probability from blended rate
+    const baseLambda = Math.max(0, hrRate * c.avgPA);
+    const pHR_base   = 1 - Math.exp(-baseLambda);
+    // Additive pHR shifts — same approach as dashboard to prevent multiplicative compounding.
+    // Barrel/evo shifts are halved vs raw output because seasonHRpa already reflects
+    // the player's actual contact quality; these are marginal adjustments only.
     const pitcherHRAdj = Math.max(-0.12, Math.min(0.15, (c.pitcherERA - LG.era) * 0.04));
-    // Handedness SLG split tightened to ±20% — prevents extreme compounding
-    const hrHandFactor = c.splitSLG && c.seasonSLG > 0
-      ? Math.max(0.80, Math.min(1.20, c.splitSLG / c.seasonSLG)) : 1.0;
-    const parkHR = c.park?.hr || 1.0;
-    // All factors multiplicative but adjRate capped at 0.12 HR/PA (realistic ceiling)
-    const adjRate = Math.min(0.12, Math.max(0.001,
-      hrRate * c.powerEdge * c.evoFactor * (1 + pitcherHRAdj) * hrHandFactor * parkHR
+    const pitcherShift = Math.max(-0.03, Math.min(0.03, pitcherHRAdj * 0.75));
+    const parkHR       = c.park?.hr || 1.0;
+    const parkShift    = Math.max(-0.06, Math.min(0.07, (parkHR - 1.0) * 0.35));
+    const barrelShift  = Math.max(-0.03, Math.min(0.05, (c.barrelPct - LG.barrel) / 200));
+    const evoShift     = c.exitVelo != null ? Math.max(-0.02, Math.min(0.03, (c.exitVelo - 88.5) / 300)) : 0;
+    const splitShift   = c.splitSLG && c.seasonSLG > 0
+      ? Math.max(-0.04, Math.min(0.05, (c.splitSLG / c.seasonSLG - 1.0) * 0.15)) : 0;
+    const adjustedPHR = Math.min(0.30, Math.max(0.005,
+      pHR_base + barrelShift + evoShift + parkShift + splitShift + pitcherShift
     ));
-    const lambda  = adjRate * c.avgPA;
-    const pHR     = 1 - Math.exp(-lambda);
+    // Back-calculate lambda so Poisson chart is consistent with adjustedPHR
+    const lambda = Math.max(0.001, -Math.log(1 - adjustedPHR));
     return {
-      projected: Math.round(lambda*100)/100,
-      pHR: Math.round(pHR*1000)/10,
-      lower80: 0, upper80: Math.round(lambda*2*10)/10,
-      stdDev: Math.round(Math.sqrt(lambda)*10)/10,
+      projected: Math.round(lambda * 100) / 100,
+      pHR: Math.round(adjustedPHR * 1000) / 10,
+      lower80: 0, upper80: Math.round(lambda * 2 * 10) / 10,
+      stdDev: Math.round(Math.sqrt(lambda) * 10) / 10,
       isBernoulli: true,
       factorImpacts: [
-        { label:'L10 HR rate',           impact:Math.round((l10HRpa-seasonHRpa)*c.avgPA*100)/100, dir:l10HRpa>seasonHRpa?'↑':'↓' },
-        { label:'Barrel% power edge',    impact:Math.round((c.powerEdge-1)*lambda*100)/100,       dir:c.powerEdge>=1?'↑':'↓', note:!statcast?.barrelPct?'no Statcast':null },
-        { label:'Exit velocity',         impact:Math.round((c.evoFactor-1)*lambda*100)/100,       dir:c.evoFactor>=1?'↑':'↓', note:c.exitVelo==null?'no Statcast':null },
-        { label:'Pitcher HR tendency',   impact:Math.round(pitcherHRAdj*lambda*100)/100,          dir:pitcherHRAdj>=0?'↑':'↓' },
-        { label:`${spPitcherHand||'?'}HP SLG split`, impact:Math.round((hrHandFactor-1)*lambda*100)/100, dir:hrHandFactor>=1?'↑':'↓', note:!c.splitSLG?'no split data':null },
-        { label:'Park HR factor',        impact:Math.round((parkHR-1)*lambda*100)/100,            dir:parkHR>=1?'↑':'↓', note:!c.park?'no data':null },
+        { label:'Season HR rate',            impact:Math.round((seasonHRpa - LG_HRPA) * c.avgPA * 100)/100, dir:seasonHRpa >= LG_HRPA?'↑':'↓' },
+        { label:'L10 HR trend',              impact:Math.round((l10HRpa - seasonHRpa) * 0.35 * c.avgPA * 100)/100, dir:l10HRpa >= seasonHRpa?'↑':'↓' },
+        { label:'Barrel% power',             impact:Math.round(barrelShift * 100)/100, dir:barrelShift >= 0?'↑':'↓', note:!statcast?.barrelPct?'no Statcast':null },
+        { label:'Exit velocity',             impact:Math.round(evoShift * 100)/100, dir:evoShift >= 0?'↑':'↓', note:c.exitVelo == null?'no Statcast':null },
+        { label:'Pitcher HR tendency',       impact:Math.round(pitcherShift * 100)/100, dir:pitcherShift >= 0?'↑':'↓' },
+        { label:`${spPitcherHand||'?'}HP SLG split`, impact:Math.round(splitShift * 100)/100, dir:splitShift >= 0?'↑':'↓', note:!c.splitSLG?'no split data':null },
+        { label:'Park HR factor',            impact:Math.round(parkShift * 100)/100, dir:parkShift >= 0?'↑':'↓', note:!c.park?'no data':null },
       ],
     };
   }, [gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev]);

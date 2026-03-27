@@ -135,9 +135,10 @@ function computeProjectionScore(player, category) {
     const avgPAs  = Math.max(3.0, Math.min(5.0, gp > 0 ? pa_safe / gp : 4.0));
     const lambda  = Math.max(0, effectiveHR * avgPAs);
     const pHR     = 1 - Math.exp(-lambda);
-    // Contact quality (additive pHR shifts — prevents multiplicative compounding)
-    const barrelShift    = barrelPct != null ? Math.max(-0.04, Math.min(0.08, (barrelPct - 8.2) / 100)) : 0;
-    const evoShift       = (player.exitVelo ?? null) != null ? Math.max(-0.03, Math.min(0.05, (player.exitVelo - 88.5) / 200)) : 0;
+    // Contact quality (additive pHR shifts — prevents multiplicative compounding).
+    // Barrel/evo halved vs raw output because seasonHRpa already reflects actual production.
+    const barrelShift    = barrelPct != null ? Math.max(-0.03, Math.min(0.05, (barrelPct - 8.2) / 200)) : 0;
+    const evoShift       = (player.exitVelo ?? null) != null ? Math.max(-0.02, Math.min(0.03, (player.exitVelo - 88.5) / 300)) : 0;
     // Situational (park loaded at build time; splits/H2H not available in dashboard)
     const parkShift      = (player.parkHR ?? null) != null ? Math.max(-0.06, Math.min(0.07, (player.parkHR - 1.0) * 0.35)) : 0;
     const pitcherHRShift = Math.max(-0.03, Math.min(0.03, pitcherMod * 0.003));
