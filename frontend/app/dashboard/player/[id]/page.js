@@ -156,10 +156,10 @@ function computeProjectionScore(player, category) {
       return Math.max(-0.03, Math.min(0.04, (hSlg / slg - 1.0) * 0.12 * Math.min(0.5, hAB / 60)));
     })();
     const pitcherHRShift = Math.max(-0.03, Math.min(0.03, pitcherMod * 0.003));
-    const adjustedPHR = Math.min(0.36, Math.max(0.005,
+    const adjustedPHR = Math.min(0.30, Math.max(0.005,
       pHR + barrelShift + evoShift + parkShift + splitShift + h2hShift + pitcherHRShift
     ));
-    // Center at league avg pHR (0.127) → 50; max adjustedPHR (0.36) → ~91; hard cap 92
+    // Center at league avg pHR (0.127) → 50; max (0.30, elite tier) → ~80; keeps HR below hits
     base = 50 + (adjustedPHR - 0.127) * 175;
   } else if (category === 'runs') {
     const rComp   = Math.max(-15, Math.min(25, (r   / gp - 0.45) * 55));
@@ -2405,7 +2405,7 @@ export default function PlayerDetailPage() {
     // Poisson chart. Career H2H is the only factor not yet in useHRProjection.
     if (modelCat === 'hr' && hrProj?.pHR != null) {
       // Cap raw pHR at 36% — above that the model is overclaiming
-      const pHR = Math.min(0.36, hrProj.pHR / 100);
+      const pHR = Math.min(0.30, hrProj.pHR / 100);
       const h2hMatch = h2hData?.careerMatchup;
       const h2hAB    = h2hMatch ? (parseInt(h2hMatch.atBats)  || 0) : 0;
       const h2hSLG   = h2hMatch ? (parseFloat(h2hMatch.slg)   || null) : null;
@@ -2416,7 +2416,7 @@ export default function PlayerDetailPage() {
           (h2hSLG / seasonSLG - 1.0) * 0.12 * Math.min(0.5, h2hAB / 60)
         ));
       }
-      const adjustedPHR = Math.min(0.36, Math.max(0.005, pHR + h2hShift));
+      const adjustedPHR = Math.min(0.30, Math.max(0.005, pHR + h2hShift));
       const base = 50 + (adjustedPHR - 0.127) * 175;
       const ab   = parseInt(st.atBats) || 0;
       const conf = Math.min(1.0, Math.max(0.5, (ab - 150) / 300 + 0.5));
