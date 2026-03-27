@@ -1806,8 +1806,9 @@ function useHRProjection(gameLog, seasonStats, splits, statcast, pitcher, spPitc
     // Additive pHR shifts — same approach as dashboard to prevent multiplicative compounding.
     // Barrel/evo shifts are halved vs raw output because seasonHRpa already reflects
     // the player's actual contact quality; these are marginal adjustments only.
-    const pitcherHRAdj = Math.max(-0.12, Math.min(0.15, (c.pitcherERA - LG.era) * 0.04));
-    const pitcherShift = Math.max(-0.03, Math.min(0.03, pitcherHRAdj * 0.75));
+    // Pitcher HR shift — same coefficient as dashboard (0.0075/ERA unit) so base
+    // scores align; only splits and H2H should cause the two views to differ.
+    const pitcherShift = Math.max(-0.03, Math.min(0.03, (c.pitcherERA - LG.era) * 0.0075));
     const parkHR       = c.park?.hr || 1.0;
     const parkShift    = Math.max(-0.06, Math.min(0.07, (parkHR - 1.0) * 0.35));
     const barrelShift  = Math.max(-0.03, Math.min(0.05, (c.barrelPct - LG.barrel) / 200));
