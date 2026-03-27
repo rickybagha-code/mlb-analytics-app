@@ -201,7 +201,11 @@ function computeProjectionScore(player, category) {
       : 0;
     base = 38 + rbiComp + slgComp + hrComp + xwobaBonus + pitcherMod + splitSLGbonus;
   }
-  const adjusted = 50 + (base - 50) * confidence;
+  // HR is exempt from confidence dampening: pHR already has a league-average anchor
+  // + talent-prior blending, so a second pull toward 50 double-penalises early-season
+  // elite power hitters.
+  const effectiveConf = category === 'hr' ? 1.0 : confidence;
+  const adjusted = 50 + (base - 50) * effectiveConf;
   return Math.round(Math.max(5, Math.min(99, adjusted + recencyBoost)));
 }
 
@@ -1781,12 +1785,21 @@ function useHRProjection(gameLog, seasonStats, splits, statcast, pitcher, spPitc
     const L10HR = c.L10.map(g=>Number(g.homeRuns)||0);
     const L10PA = c.L10.map(g=>Number(g.plateAppearances)||c.avgPA);
     const l10TotalPA = L10PA.reduce((a,b)=>a+b,0);
-    // Only use L10 HR rate if enough PA — HRs are rare, small samples are very noisy
-    const l10HRpa = l10TotalPA >= 25
-      ? L10HR.reduce((a,b)=>a+b,0) / l10TotalPA : seasonHRpa;
+    const l10HRpa_raw = l10TotalPA >= 25
+      ? L10HR.reduce((a,b)=>a+b,0) / l10TotalPA : null;
     // 35% L10 (noisy), 55% season (most reliable), 10% league avg (regression anchor)
     const LG_HRPA = 0.034;
-    const hrRate = l10HRpa * 0.35 + seasonHRpa * 0.55 + LG_HRPA * 0.10;
+    // Small-sample correction: barrel% is stable across seasons and is the best
+    // predictor of true HR talent when current-season PA is low (e.g. early season).
+    // Calibration: LG avg barrel% 8.2% → LG avg 0.034 HR/PA; elite 18% → ~0.075 HR/PA.
+    const talentHRpa = c.barrelPct != null
+      ? Math.max(LG_HRPA * 0.6, Math.min(0.085, c.barrelPct * (LG_HRPA / 8.2)))
+      : LG_HRPA;
+    // sampleWeight: 0 at season start → 1 at 200 PA (roughly mid-May)
+    const sampleWeight   = Math.min(1.0, c.seasonPA / 200);
+    const effectiveHRpa  = sampleWeight * seasonHRpa + (1 - sampleWeight) * talentHRpa;
+    const l10HRpa        = l10HRpa_raw ?? effectiveHRpa;
+    const hrRate = l10HRpa * 0.35 + effectiveHRpa * 0.55 + LG_HRPA * 0.10;
     // Base Poisson probability from blended rate
     const baseLambda = Math.max(0, hrRate * c.avgPA);
     const pHR_base   = 1 - Math.exp(-baseLambda);
@@ -2506,10 +2519,9 @@ export default function PlayerDetailPage() {
       }
       const adjustedPHR = Math.min(0.30, Math.max(0.005, pHR + h2hShift));
       const base = 50 + (adjustedPHR - 0.127) * 175;
-      const ab   = parseInt(st.atBats) || 0;
-      const conf = Math.min(1.0, Math.max(0.5, (ab - 150) / 300 + 0.5));
-      const adj  = 50 + (base - 50) * conf;
-      return Math.round(Math.max(5, Math.min(92, adj)));
+      // No conf dampening — pHR already has a 10% LG anchor + talent-prior blending
+      // for early-season stability. A second pull toward 50 double-penalises small samples.
+      return Math.round(Math.max(5, Math.min(92, base)));
     }
 
     return computeProjectionScore({

@@ -135,9 +135,18 @@ function computeProjectionScore(player, category) {
     const pa_safe     = Math.max(1, pa);
     const seasonHRpa  = hr / pa_safe;
     const l10HRrate   = player.l10HRrate ?? null;
+    // Small-sample correction: barrel% is a stable multi-season predictor of true HR talent.
+    // When seasonPA is low (early season), blend in a barrel-based talent prior so elite
+    // power hitters like Yordan Alvarez aren't scored as league-average.
+    const LG_HRPA    = 0.034;
+    const talentHRpa = barrelPct != null
+      ? Math.max(LG_HRPA * 0.6, Math.min(0.085, barrelPct * (LG_HRPA / 8.2)))
+      : LG_HRPA;
+    const sampleWeight    = Math.min(1.0, pa_safe / 200);
+    const effectiveSeasonHRpa = sampleWeight * seasonHRpa + (1 - sampleWeight) * talentHRpa;
     const effectiveHR = l10HRrate != null
-      ? l10HRrate * 0.50 + seasonHRpa * 0.40 + 0.034 * 0.10
-      : seasonHRpa;
+      ? l10HRrate * 0.35 + effectiveSeasonHRpa * 0.55 + LG_HRPA * 0.10
+      : effectiveSeasonHRpa;
     const avgPAs  = Math.max(3.0, Math.min(5.0, gp > 0 ? pa_safe / gp : 4.0));
     const lambda  = Math.max(0, effectiveHR * avgPAs);
     const pHR     = 1 - Math.exp(-lambda);
@@ -161,10 +170,11 @@ function computeProjectionScore(player, category) {
     base = 40 + rComp + obpComp + hardBonus + pitcherMod;
 
   } else if (category === 'rbi') {
-    const rbiComp = Math.max(-15, Math.min(35, (rbi / gp - 0.45) * 70));
-    const slgComp = Math.max(0,   Math.min(15, (slg - 0.400) / 0.200 * 15));
-    const hrComp  = Math.max(0,   Math.min(10, (hrRate / 0.06) * 10));
-    base = 38 + rbiComp + slgComp + hrComp + pitcherMod;
+    const rbiComp    = Math.max(-15, Math.min(35, (rbi / gp - 0.45) * 70));
+    const slgComp    = Math.max(0,   Math.min(15, (slg - 0.400) / 0.200 * 15));
+    const hrComp     = Math.max(0,   Math.min(10, (hrRate / 0.06) * 10));
+    const xwobaBonus = xwoba != null ? Math.max(0, Math.min(8, (xwoba - 0.315) / 0.100 * 8)) : 0;
+    base = 38 + rbiComp + slgComp + hrComp + xwobaBonus + pitcherMod;
 
   } else if (category === 'sb') {
     const sbRate  = player.stolenBases != null && gp > 0 ? player.stolenBases / gp : 0;
@@ -172,8 +182,11 @@ function computeProjectionScore(player, category) {
     base = 15 + sbComp + pitcherMod * 0.3;
   }
 
-  // Shrink score toward 50 for thin sample sizes
-  const adjusted = 50 + (base - 50) * confidence;
+  // Shrink score toward 50 for thin sample sizes.
+  // HR is exempt: pHR already has a league-average anchor + talent-prior blending,
+  // so a second confidence pull would double-penalise early-season elite power hitters.
+  const effectiveConf = category === 'hr' ? 1.0 : confidence;
+  const adjusted = 50 + (base - 50) * effectiveConf;
   return Math.round(Math.max(5, Math.min(99, adjusted + recencyBoost)));
 }
 
