@@ -190,6 +190,77 @@ function computeProjectionScore(player, category) {
   return Math.round(Math.max(5, Math.min(99, adjusted + recencyBoost)));
 }
 
+// ─── Season stat blending (2026 + 2025) ──────────────────────────────────────
+// Blends current-season and prior-season stats proportionally to sample size.
+// w = min(1, pa_2026/200) — 0% 2026 at season start, 100% at ~200 PA (mid-May).
+// Uses effective denominators (weighted avg of both years) so counting stats
+// produce correct per-game/per-PA rates and the confidence calc sees a realistic AB.
+function blendBatterStats(st26, st25) {
+  if (!st25 && !st26) return null;
+  const extract = st => ({
+    avg: parseFloat(st.avg)||0, obp: parseFloat(st.obp)||0, slg: parseFloat(st.slg)||0,
+    babip: parseFloat(st.babip)||0,
+    gamesPlayed: Math.max(1, parseInt(st.gamesPlayed)||1),
+    plateAppearances: parseInt(st.plateAppearances)||0,
+    atBats: parseInt(st.atBats)||0,
+    homeRuns: parseInt(st.homeRuns)||0, rbi: parseInt(st.rbi)||0,
+    runs: parseInt(st.runs)||0, stolenBases: parseInt(st.stolenBases)||0,
+    baseOnBalls: parseInt(st.baseOnBalls)||0, strikeOuts: parseInt(st.strikeOuts)||0,
+    hits: parseInt(st.hits)||0, doubles: parseInt(st.doubles)||0,
+    triples: parseInt(st.triples)||0,
+  });
+  if (!st25) return extract(st26);
+  if (!st26 || (parseInt(st26.plateAppearances)||0) === 0) return extract(st25);
+
+  const pa26 = Math.max(1, parseInt(st26.plateAppearances)||0);
+  const gp26 = Math.max(1, parseInt(st26.gamesPlayed)||1);
+  const ab26 = Math.max(1, parseInt(st26.atBats)||Math.round(pa26*0.86));
+  const pa25 = Math.max(1, parseInt(st25.plateAppearances)||1);
+  const gp25 = Math.max(1, parseInt(st25.gamesPlayed)||1);
+  const ab25 = Math.max(1, parseInt(st25.atBats)||Math.round(pa25*0.86));
+
+  const w = Math.min(1.0, pa26 / 200);
+  const b = (v26, v25) => w * v26 + (1 - w) * v25;
+
+  // Effective denominators — weighted avg of both years' sample sizes.
+  // Eliminates rounding errors when gp26 is tiny and keeps confidence near 1.0.
+  const eff_gp = Math.max(1, Math.round(b(gp26, gp25)));
+  const eff_pa = Math.max(1, Math.round(b(pa26, pa25)));
+  const eff_ab = Math.max(1, Math.round(b(ab26, ab25)));
+
+  // Blend per-game rates
+  const hr_pg  = b((parseInt(st26.homeRuns)||0)/gp26,    (parseInt(st25.homeRuns)||0)/gp25);
+  const rbi_pg = b((parseInt(st26.rbi)||0)/gp26,         (parseInt(st25.rbi)||0)/gp25);
+  const r_pg   = b((parseInt(st26.runs)||0)/gp26,        (parseInt(st25.runs)||0)/gp25);
+  const sb_pg  = b((parseInt(st26.stolenBases)||0)/gp26, (parseInt(st25.stolenBases)||0)/gp25);
+  // Blend per-PA rates
+  const bb_ppa = b((parseInt(st26.baseOnBalls)||0)/pa26, (parseInt(st25.baseOnBalls)||0)/pa25);
+  const k_ppa  = b((parseInt(st26.strikeOuts)||0)/pa26,  (parseInt(st25.strikeOuts)||0)/pa25);
+  // Blend per-AB rates
+  const h_pab  = b((parseInt(st26.hits)||0)/ab26,    (parseInt(st25.hits)||0)/ab25);
+  const d_pab  = b((parseInt(st26.doubles)||0)/ab26, (parseInt(st25.doubles)||0)/ab25);
+  const t_pab  = b((parseInt(st26.triples)||0)/ab26, (parseInt(st25.triples)||0)/ab25);
+
+  return {
+    avg: b(parseFloat(st26.avg)||0, parseFloat(st25.avg)||0),
+    obp: b(parseFloat(st26.obp)||0, parseFloat(st25.obp)||0),
+    slg: b(parseFloat(st26.slg)||0, parseFloat(st25.slg)||0),
+    babip: b(parseFloat(st26.babip)||0, parseFloat(st25.babip)||0),
+    gamesPlayed:      eff_gp,
+    plateAppearances: eff_pa,
+    atBats:           eff_ab,
+    homeRuns:    Math.round(hr_pg  * eff_gp),
+    rbi:         Math.round(rbi_pg * eff_gp),
+    runs:        Math.round(r_pg   * eff_gp),
+    stolenBases: Math.round(sb_pg  * eff_gp),
+    baseOnBalls: Math.round(bb_ppa * eff_pa),
+    strikeOuts:  Math.round(k_ppa  * eff_pa),
+    hits:        Math.round(h_pab  * eff_ab),
+    doubles:     Math.round(d_pab  * eff_ab),
+    triples:     Math.round(t_pab  * eff_ab),
+  };
+}
+
 // ─── Poisson CDF ─────────────────────────────────────────────────────────────
 function poissonCDF(k, lambda) {
   if (lambda <= 0) return 1;
@@ -843,53 +914,29 @@ export default function DashboardPage() {
         roster = roster.filter(p => seenIds.has(p.id) ? false : seenIds.add(p.id));
         if (!roster.length) return;
 
-        // Batch season batting stats — 2026 primary, 2025 fallback for thin samples
+        // Batch season batting stats — fetch both 2026 and 2025 in parallel, blend all players
         const ids = roster.map(p=>p.id).join(',');
         const statsMap = {};
-        const extractBatter = st => ({
-          avg:              parseFloat(st.avg)             || 0,
-          slg:              parseFloat(st.slg)             || 0,
-          obp:              parseFloat(st.obp)             || 0,
-          homeRuns:         parseInt(st.homeRuns)           || 0,
-          atBats:           parseInt(st.atBats)             || 0,
-          gamesPlayed:      parseInt(st.gamesPlayed)        || 1,
-          runs:             parseInt(st.runs)               || 0,
-          rbi:              parseInt(st.rbi)                || 0,
-          hits:             parseInt(st.hits)               || 0,
-          doubles:          parseInt(st.doubles)            || 0,
-          triples:          parseInt(st.triples)            || 0,
-          baseOnBalls:      parseInt(st.baseOnBalls)        || 0,
-          strikeOuts:       parseInt(st.strikeOuts)         || 0,
-          plateAppearances: parseInt(st.plateAppearances)   || 0,
-          babip:            parseFloat(st.babip)            || 0,
-          stolenBases:      parseInt(st.stolenBases)        || 0,
-        });
-        const thin26 = []; // player IDs with < 50 AB in current season
+        const raw26 = {}, raw25 = {};
         try {
-          const sr = await fetch(`${MLB_API}/people?personIds=${ids}&hydrate=stats(group=hitting,type=season,season=${SEASON})`);
-          const sd = await sr.json();
-          for (const p of (sd.people||[])) {
+          const [sr26, sr25] = await Promise.all([
+            fetch(`${MLB_API}/people?personIds=${ids}&hydrate=stats(group=hitting,type=season,season=${SEASON})`),
+            fetch(`${MLB_API}/people?personIds=${ids}&hydrate=stats(group=hitting,type=season,season=2025)`),
+          ]);
+          if (!sr26.ok) return;
+          const [sd26, sd25] = await Promise.all([sr26.json(), sr25.ok ? sr25.json() : Promise.resolve({people:[]})]);
+          for (const p of (sd26.people||[])) {
             const st = p.stats?.find(s=>s.group?.displayName==='hitting')?.splits?.[0]?.stat;
-            const ab = parseInt(st?.atBats) || 0;
-            if (st && ab >= 50) {
-              statsMap[p.id] = extractBatter(st);
-            } else {
-              thin26.push(p.id); // needs 2025 fallback
-            }
+            if (st) raw26[p.id] = st;
+          }
+          for (const p of (sd25.people||[])) {
+            const st = p.stats?.find(s=>s.group?.displayName==='hitting')?.splits?.[0]?.stat;
+            if (st) raw25[p.id] = st;
           }
         } catch { return; }
-        // 2025 fallback for players not yet reaching 50 AB in 2026
-        if (thin26.length > 0) {
-          try {
-            const sr25 = await fetch(`${MLB_API}/people?personIds=${thin26.join(',')}&hydrate=stats(group=hitting,type=season,season=2025)`);
-            const sd25 = await sr25.json();
-            for (const p of (sd25.people||[])) {
-              const st = p.stats?.find(s=>s.group?.displayName==='hitting')?.splits?.[0]?.stat;
-              if (st && (parseInt(st.atBats)||0) >= 150) {
-                statsMap[p.id] = extractBatter(st);
-              }
-            }
-          } catch {}
+        for (const p of roster) {
+          const blended = blendBatterStats(raw26[p.id], raw25[p.id]);
+          if (blended) statsMap[p.id] = blended;
         }
 
         // Build game context for this team

@@ -1724,6 +1724,69 @@ function buildHittingCtx(gameLog, seasonStats, splits, statcast, pitcher, spPitc
   };
 }
 
+// ─── Season stat blending (2026 + 2025) ──────────────────────────────────────
+// Same logic as dashboard — blends both seasons proportionally to 2026 sample size.
+function blendBatterStats(st26, st25) {
+  if (!st25 && !st26) return null;
+  const extract = st => ({
+    avg: parseFloat(st.avg)||0, obp: parseFloat(st.obp)||0, slg: parseFloat(st.slg)||0,
+    babip: parseFloat(st.babip)||0,
+    gamesPlayed: Math.max(1, parseInt(st.gamesPlayed)||1),
+    plateAppearances: parseInt(st.plateAppearances)||0,
+    atBats: parseInt(st.atBats)||0,
+    homeRuns: parseInt(st.homeRuns)||0, rbi: parseInt(st.rbi)||0,
+    runs: parseInt(st.runs)||0, stolenBases: parseInt(st.stolenBases)||0,
+    baseOnBalls: parseInt(st.baseOnBalls)||0, strikeOuts: parseInt(st.strikeOuts)||0,
+    hits: parseInt(st.hits)||0, doubles: parseInt(st.doubles)||0,
+    triples: parseInt(st.triples)||0,
+  });
+  if (!st25) return extract(st26);
+  if (!st26 || (parseInt(st26.plateAppearances)||0) === 0) return extract(st25);
+
+  const pa26 = Math.max(1, parseInt(st26.plateAppearances)||0);
+  const gp26 = Math.max(1, parseInt(st26.gamesPlayed)||1);
+  const ab26 = Math.max(1, parseInt(st26.atBats)||Math.round(pa26*0.86));
+  const pa25 = Math.max(1, parseInt(st25.plateAppearances)||1);
+  const gp25 = Math.max(1, parseInt(st25.gamesPlayed)||1);
+  const ab25 = Math.max(1, parseInt(st25.atBats)||Math.round(pa25*0.86));
+
+  const w = Math.min(1.0, pa26 / 200);
+  const b = (v26, v25) => w * v26 + (1 - w) * v25;
+
+  const eff_gp = Math.max(1, Math.round(b(gp26, gp25)));
+  const eff_pa = Math.max(1, Math.round(b(pa26, pa25)));
+  const eff_ab = Math.max(1, Math.round(b(ab26, ab25)));
+
+  const hr_pg  = b((parseInt(st26.homeRuns)||0)/gp26,    (parseInt(st25.homeRuns)||0)/gp25);
+  const rbi_pg = b((parseInt(st26.rbi)||0)/gp26,         (parseInt(st25.rbi)||0)/gp25);
+  const r_pg   = b((parseInt(st26.runs)||0)/gp26,        (parseInt(st25.runs)||0)/gp25);
+  const sb_pg  = b((parseInt(st26.stolenBases)||0)/gp26, (parseInt(st25.stolenBases)||0)/gp25);
+  const bb_ppa = b((parseInt(st26.baseOnBalls)||0)/pa26, (parseInt(st25.baseOnBalls)||0)/pa25);
+  const k_ppa  = b((parseInt(st26.strikeOuts)||0)/pa26,  (parseInt(st25.strikeOuts)||0)/pa25);
+  const h_pab  = b((parseInt(st26.hits)||0)/ab26,    (parseInt(st25.hits)||0)/ab25);
+  const d_pab  = b((parseInt(st26.doubles)||0)/ab26, (parseInt(st25.doubles)||0)/ab25);
+  const t_pab  = b((parseInt(st26.triples)||0)/ab26, (parseInt(st25.triples)||0)/ab25);
+
+  return {
+    avg: b(parseFloat(st26.avg)||0, parseFloat(st25.avg)||0),
+    obp: b(parseFloat(st26.obp)||0, parseFloat(st25.obp)||0),
+    slg: b(parseFloat(st26.slg)||0, parseFloat(st25.slg)||0),
+    babip: b(parseFloat(st26.babip)||0, parseFloat(st25.babip)||0),
+    gamesPlayed:      eff_gp,
+    plateAppearances: eff_pa,
+    atBats:           eff_ab,
+    homeRuns:    Math.round(hr_pg  * eff_gp),
+    rbi:         Math.round(rbi_pg * eff_gp),
+    runs:        Math.round(r_pg   * eff_gp),
+    stolenBases: Math.round(sb_pg  * eff_gp),
+    baseOnBalls: Math.round(bb_ppa * eff_pa),
+    strikeOuts:  Math.round(k_ppa  * eff_pa),
+    hits:        Math.round(h_pab  * eff_ab),
+    doubles:     Math.round(d_pab  * eff_ab),
+    triples:     Math.round(t_pab  * eff_ab),
+  };
+}
+
 function l10StdDev(vals, fallback) {
   if (vals.length < 2) return fallback;
   const mean = vals.reduce((a,b)=>a+b,0)/vals.length;
@@ -2375,15 +2438,21 @@ export default function PlayerDetailPage() {
 
       } else {
         // ── Batter loading path ───────────────────────────────────────────
-        // Phase 1: game log — current season primary, 2025 fallback if no games yet
+        // Phase 1: game log — 2026 primary, pad with 2025 tail when < 10 games played.
+        // Keeps L5/L10 meaningful early in the season without discarding 2026 recency.
         const glRes = await fetch(`${API_URL}/player/${id}/gamelog?season=${SEASON}`);
         if (glRes.ok) {
           const d = await glRes.json();
           let games = d.games || [];
-          if (games.length < 3) {
+          if (games.length < 10) {
             try {
               const gl25 = await fetch(`${API_URL}/player/${id}/gamelog?season=2025`);
-              if (gl25.ok) { const d25 = await gl25.json(); games = d25.games || games; }
+              if (gl25.ok) {
+                const d25 = await gl25.json();
+                const g25 = d25.games || [];
+                const needed = Math.max(0, 10 - games.length);
+                games = [...g25.slice(-needed), ...games]; // 2025 tail + 2026 recent
+              }
             } catch {}
           }
           setGameLog(games);
@@ -2400,7 +2469,7 @@ export default function PlayerDetailPage() {
           spPitcherId ? fetch(`${API_URL}/career-matchup/batter/${id}/pitcher/${spPitcherId}`) : Promise.resolve(null),
         ]);
 
-        // Player info + season stats — use 2025 if < 50 AB in 2026
+        // Player info + season stats — blend 2026 and 2025 proportionally to sample size
         if (mlbRes.status === 'fulfilled' && mlbRes.value?.ok) {
           const d = await mlbRes.value.json();
           const p = d.people?.[0];
@@ -2413,15 +2482,13 @@ export default function PlayerDetailPage() {
               batSide:    p.batSide?.code || '',
             });
             const st26 = p.stats?.find(s => s.group?.displayName === 'hitting')?.splits?.[0]?.stat;
-            const ab26 = parseInt(st26?.atBats) || 0;
-            if (st26 && ab26 >= 50) {
-              setSeasonStats(st26);
-            } else if (mlbRes25.status === 'fulfilled' && mlbRes25.value?.ok) {
+            let st25 = null;
+            if (mlbRes25.status === 'fulfilled' && mlbRes25.value?.ok) {
               const d25 = await mlbRes25.value.json();
-              const st25 = d25.people?.[0]?.stats?.find(s => s.group?.displayName === 'hitting')?.splits?.[0]?.stat;
-              if (st25) setSeasonStats(st25);
-              else if (st26) setSeasonStats(st26);
+              st25 = d25.people?.[0]?.stats?.find(s => s.group?.displayName === 'hitting')?.splits?.[0]?.stat || null;
             }
+            const blended = blendBatterStats(st26, st25);
+            if (blended) setSeasonStats(blended);
           }
         }
 
