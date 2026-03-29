@@ -157,11 +157,10 @@ function computeProjectionScore(player, category) {
     // Situational (park loaded at build time; splits/H2H not available in dashboard)
     const parkShift      = (player.parkHR ?? null) != null ? Math.max(-0.06, Math.min(0.07, (player.parkHR - 1.0) * 0.35)) : 0;
     const pitcherHRShift = Math.max(-0.03, Math.min(0.03, pitcherMod * 0.003));
-    const adjustedPHR    = Math.min(0.24, Math.max(0.005,
+    const adjustedPHR    = Math.min(0.30, Math.max(0.005,
       pHR + barrelShift + evoShift + parkShift + pitcherHRShift
     ));
-    // Center at league avg (0.127) → 50; max (0.24) → ~70 from base alone;
-    // H2H + splits on player card can push elite matchups to ~78–80.
+    // Center at league avg (0.127) → 50; max (0.30, elite tier) → ~80; keeps HR below hits for any hitter
     base = 50 + (adjustedPHR - 0.127) * 175;
 
   } else if (category === 'runs') {
