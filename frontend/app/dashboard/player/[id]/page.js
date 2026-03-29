@@ -176,10 +176,11 @@ function computeProjectionScore(player, category) {
       return hrRateShift + slgShift;
     })();
     const pitcherHRShift = Math.max(-0.03, Math.min(0.03, pitcherMod * 0.003));
-    const adjustedPHR = Math.min(0.30, Math.max(0.005,
+    const adjustedPHR = Math.min(0.24, Math.max(0.005,
       pHR + barrelShift + evoShift + parkShift + splitShift + h2hShift + pitcherHRShift
     ));
-    // Center at league avg pHR (0.127) → 50; max (0.30, elite tier) → ~80; keeps HR below hits
+    // Center at league avg pHR (0.127) → 50; cap (0.24) → ~70 from base alone;
+    // H2H + splits can push elite matchups to ~78–80.
     base = 50 + (adjustedPHR - 0.127) * 175;
   } else if (category === 'runs') {
     const rComp      = Math.max(-15, Math.min(25, (r / gp - 0.45) * 55));
@@ -1878,7 +1879,7 @@ function useHRProjection(gameLog, seasonStats, splits, statcast, pitcher, spPitc
     const evoShift     = c.exitVelo != null ? Math.max(-0.02, Math.min(0.03, (c.exitVelo - 88.5) / 300)) : 0;
     const splitShift   = c.splitSLG && c.seasonSLG > 0
       ? Math.max(-0.04, Math.min(0.05, (c.splitSLG / c.seasonSLG - 1.0) * 0.15)) : 0;
-    const adjustedPHR = Math.min(0.30, Math.max(0.005,
+    const adjustedPHR = Math.min(0.24, Math.max(0.005,
       pHR_base + barrelShift + evoShift + parkShift + splitShift + pitcherShift
     ));
     // Back-calculate lambda so Poisson chart is consistent with adjustedPHR
@@ -2560,7 +2561,7 @@ export default function PlayerDetailPage() {
     // Poisson chart. Career H2H is the only factor not yet in useHRProjection.
     if (modelCat === 'hr' && hrProj?.pHR != null) {
       // Cap raw pHR at 36% — above that the model is overclaiming
-      const pHR = Math.min(0.30, hrProj.pHR / 100);
+      const pHR = Math.min(0.24, hrProj.pHR / 100);
       const h2hMatch  = h2hData?.careerMatchup;
       const h2hAB     = h2hMatch ? (parseInt(h2hMatch.atBats)   || 0) : 0;
       const h2hHR     = h2hMatch ? (parseInt(h2hMatch.homeRuns) || 0) : 0;
@@ -2585,7 +2586,7 @@ export default function PlayerDetailPage() {
           : 0;
         h2hShift = hrRateShift + slgShift;
       }
-      const adjustedPHR = Math.min(0.30, Math.max(0.005, pHR + h2hShift));
+      const adjustedPHR = Math.min(0.24, Math.max(0.005, pHR + h2hShift));
       const base = 50 + (adjustedPHR - 0.127) * 175;
       // No conf dampening — pHR already has a 10% LG anchor + talent-prior blending
       // for early-season stability. A second pull toward 50 double-penalises small samples.
