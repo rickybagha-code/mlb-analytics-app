@@ -9,7 +9,7 @@ const MLB_API  = 'https://statsapi.mlb.com/api/v1';
 
 // ─── Season gate — switch to 2026 only once the regular season is underway ───
 // Change OPENING_DAY to the actual first game date when known.
-const OPENING_DAY = new Date('2026-05-01');
+const OPENING_DAY = new Date('2026-03-24');
 const SEASON      = new Date() >= OPENING_DAY ? '2026' : '2025';
 
 // ─── Opponent K rate per 9-inning game (2024 MLB actuals) — mirrors player page ─

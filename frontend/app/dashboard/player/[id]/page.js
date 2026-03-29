@@ -9,7 +9,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 const MLB_API  = 'https://statsapi.mlb.com/api/v1';
 
 // ─── Season gate — use 2025 until the regular season starts ──────────────────
-const OPENING_DAY = new Date('2026-05-01');
+const OPENING_DAY = new Date('2026-03-24');
 const SEASON      = new Date() >= OPENING_DAY ? '2026' : '2025';
 
 // ─── Opponent K rate per 9-inning game (2024 MLB actuals) ────────────────────
