@@ -36,6 +36,37 @@ const PARK_HR = {
 const ABBREV_MAP = { TB:'TBR', KC:'KCR', SD:'SDP', SF:'SFG', WSH:'WSN', MIA:'MIA' };
 function normDashAbbrev(abbr) { return ABBREV_MAP[abbr] || abbr || ''; }
 
+// ─── Venue coordinates (mirrors player page) ──────────────────────────────
+const VENUE_COORDS = {
+  NYY:{ lat:40.829, lon:-73.926 }, BOS:{ lat:42.347, lon:-71.097 }, BAL:{ lat:39.284, lon:-76.622 },
+  TBR:{ lat:27.768, lon:-82.654 }, TOR:{ lat:43.641, lon:-79.389 }, CLE:{ lat:41.496, lon:-81.685 },
+  DET:{ lat:42.339, lon:-83.049 }, CWS:{ lat:41.830, lon:-87.634 }, KCR:{ lat:39.051, lon:-94.480 },
+  MIN:{ lat:44.982, lon:-93.278 }, HOU:{ lat:29.757, lon:-95.355 }, LAA:{ lat:33.800, lon:-117.883 },
+  OAK:{ lat:37.752, lon:-122.201 }, SEA:{ lat:47.591, lon:-122.333 }, TEX:{ lat:32.748, lon:-97.083 },
+  ATL:{ lat:33.891, lon:-84.468 }, MIA:{ lat:25.778, lon:-80.220 }, NYM:{ lat:40.758, lon:-73.846 },
+  PHI:{ lat:39.906, lon:-75.167 }, WSN:{ lat:38.873, lon:-77.008 }, CHC:{ lat:41.948, lon:-87.656 },
+  CIN:{ lat:39.097, lon:-84.507 }, MIL:{ lat:43.028, lon:-87.971 }, PIT:{ lat:40.447, lon:-80.006 },
+  STL:{ lat:38.623, lon:-90.193 }, ARI:{ lat:33.446, lon:-112.067 }, COL:{ lat:39.756, lon:-104.994 },
+  LAD:{ lat:34.074, lon:-118.240 }, SDP:{ lat:32.707, lon:-117.157 }, SFG:{ lat:37.779, lon:-122.389 },
+};
+
+function calcWeatherAdj(weather) {
+  if (!weather) return { adjustment: 0 };
+  const temp      = Number(weather.temp ?? 21);
+  const windSpeed = Number(weather.windSpeed ?? 0);
+  const windDir   = Number(weather.windDir ?? 0);
+  let adj = 0;
+  if (temp >= 29)      adj += 4;
+  else if (temp >= 24) adj += 2;
+  else if (temp <= 13) adj -= 3;
+  if (windSpeed >= 10) {
+    if      (windDir >= 225 && windDir <= 315) adj += 4;
+    else if (windDir >= 45  && windDir <= 135) adj -= 4;
+    else                                       adj += 1;
+  }
+  return { adjustment: adj };
+}
+
 // ─── LocalStorage Cache ───────────────────────────────────────────────────────
 function getCached(key, ttlMs) {
   try {
@@ -90,26 +121,36 @@ function computeProjectionScore(player, category) {
   // xwOBA is 65% weight as it removes luck on balls in play
   const effectiveWOBA = xwoba != null ? wOBA * 0.35 + xwoba * 0.65 : wOBA;
 
-  // Sample confidence: 0.5 at 150 AB → 1.0 at 450+ AB
-  const confidence = Math.min(1.0, Math.max(0.5, (ab - 150) / 300 + 0.5));
+  // Sample confidence: steeper curve — 0.3 at 30 AB → 1.0 at 380+ AB
+  const pa_safe    = Math.max(1, pa);
+  const confidence = Math.min(1.0, Math.max(0.4, (ab - 30) / 350 + 0.4));
 
   // Pitcher difficulty — positive = batter-friendly (high ERA), negative = tough ace
   const era = player.matchup?.pitcher?.era;
   const pitcherMod = era != null ? Math.max(-10, Math.min(10, (era - 4.50) * 2.5)) : 0;
 
-  // Recency boost — hit streak / L10 avg used for hitting/runs/rbi/sb.
+  // ── Weather adjustment (applied to all categories) ─────────────────────────
+  const wx = calcWeatherAdj(player.weather);
+  const weatherBonus = wx.adjustment; // ±0–8 score points
+
+  // ── Platoon splits vs opposing pitcher hand ────────────────────────────────
+  const splitAVG = player.splitAVG ?? null;
+  const splitSLG = player.splitSLG ?? null;
+  const splitOBP = player.splitOBP ?? null;
+
+  // Recency boost — reduced weight; weather + platoon carry more signal.
   // HR uses l10HRrate directly in the base formula (hit streaks don't predict HRs).
   let recencyBoost = 0;
   const { streak, l10Avg } = player;
   if (category !== 'hr') {
     if (streak != null) {
-      if      (streak >= 8) recencyBoost += 12;
-      else if (streak >= 5) recencyBoost += 8;
-      else if (streak >= 3) recencyBoost += 4;
-      else if (streak === 0) recencyBoost -= 5;
+      if      (streak >= 8) recencyBoost += 8;
+      else if (streak >= 5) recencyBoost += 5;
+      else if (streak >= 3) recencyBoost += 3;
+      else if (streak === 0) recencyBoost -= 4;
     }
     if (l10Avg != null && avg > 0) {
-      recencyBoost += Math.max(-8, Math.min(8, ((l10Avg - avg) / avg) * 25));
+      recencyBoost += Math.max(-6, Math.min(6, ((l10Avg - avg) / avg) * 18));
     }
   }
 
@@ -121,73 +162,79 @@ function computeProjectionScore(player, category) {
       ? (bb*0.690 + singles*0.888 + dbl*1.271 + tri*1.616 + hr*1.300) / pa
       : (avg * 0.88 + obp * 0.12);
     const effectiveHitWOBA = xwoba != null ? hitWOBA * 0.35 + xwoba * 0.65 : hitWOBA;
-    const wComp     = (effectiveHitWOBA - 0.302) * 250;  // league avg contactWOBA ≈ 0.302
-    const kPenalty  = Math.max(0, (kPct - 0.20) * 50);
-    const bbBonus   = Math.max(0, (bbPct - 0.08) * 25);
-    const hardBonus = hardHitPct != null ? Math.max(0, Math.min(8, (hardHitPct - 40) / 18 * 8)) : 0;
-    const splitBonus = (player.splitAVG != null && avg > 0)
-      ? Math.max(-10, Math.min(12, (player.splitAVG - avg) / avg * 40))
-      : 0;
-    base = 53 + wComp - kPenalty + bbBonus + hardBonus + pitcherMod + splitBonus;
+    const wComp      = (effectiveHitWOBA - 0.302) * 250;
+    const kPenalty   = Math.max(0, (kPct - 0.20) * 50);
+    const bbBonus    = Math.max(0, (bbPct - 0.08) * 25);
+    const hardBonus  = hardHitPct != null ? Math.max(0, Math.min(8, (hardHitPct - 40) / 18 * 8)) : 0;
+    const splitBonus = splitAVG != null && avg > 0
+      ? Math.max(-10, Math.min(12, (splitAVG - avg) / avg * 40)) : 0;
+    base = 53 + wComp - kPenalty + bbBonus + hardBonus + pitcherMod + splitBonus + weatherBonus;
 
   } else if (category === 'hr') {
-    // Poisson base: blends L10 HR rate (loaded async) with season rate
-    const pa_safe     = Math.max(1, pa);
-    const seasonHRpa  = hr / pa_safe;
-    const l10HRrate   = player.l10HRrate ?? null;
-    // Small-sample correction: barrel% is a stable multi-season predictor of true HR talent.
-    // When seasonPA is low (early season), blend in a barrel-based talent prior so elite
-    // power hitters like Yordan Alvarez aren't scored as league-average.
+    const seasonHRpa = hr / pa_safe;
+    const l10HRrate  = player.l10HRrate ?? null;
     const LG_HRPA    = 0.034;
     const talentHRpa = barrelPct != null
       ? Math.max(LG_HRPA * 0.6, Math.min(0.085, barrelPct * (LG_HRPA / 8.2)))
       : LG_HRPA;
-    const sampleWeight    = Math.min(1.0, pa_safe / 200);
+    const sampleWeight        = Math.min(1.0, pa_safe / 200);
     const effectiveSeasonHRpa = sampleWeight * seasonHRpa + (1 - sampleWeight) * talentHRpa;
+    const hrSampleWeight = Math.min(1.0, (player.pa26Raw ?? pa_safe) / 400);
+    const l10Weight      = 0.35 * hrSampleWeight;
+    const seasonHRWeight = 0.55 + (0.35 - l10Weight);
     const effectiveHR = l10HRrate != null
-      ? l10HRrate * 0.35 + effectiveSeasonHRpa * 0.55 + LG_HRPA * 0.10
+      ? l10HRrate * l10Weight + effectiveSeasonHRpa * seasonHRWeight + LG_HRPA * 0.10
       : effectiveSeasonHRpa;
-    const avgPAs  = Math.max(3.0, Math.min(5.0, gp > 0 ? pa_safe / gp : 4.0));
-    const lambda  = Math.max(0, effectiveHR * avgPAs);
-    const pHR     = 1 - Math.exp(-lambda);
-    // Contact quality (additive pHR shifts — prevents multiplicative compounding).
-    // Barrel/evo halved vs raw output because seasonHRpa already reflects actual production.
+    const avgPAs = Math.max(3.0, Math.min(5.0, gp > 0 ? pa_safe / gp : 4.0));
+    const lambda = Math.max(0, effectiveHR * avgPAs);
+    const pHR    = 1 - Math.exp(-lambda);
     const barrelShift    = barrelPct != null ? Math.max(-0.03, Math.min(0.05, (barrelPct - 8.2) / 200)) : 0;
     const evoShift       = (player.exitVelo ?? null) != null ? Math.max(-0.02, Math.min(0.03, (player.exitVelo - 88.5) / 300)) : 0;
-    // Situational (park loaded at build time; splits/H2H not available in dashboard)
     const parkShift      = (player.parkHR ?? null) != null ? Math.max(-0.06, Math.min(0.07, (player.parkHR - 1.0) * 0.35)) : 0;
     const pitcherHRShift = Math.max(-0.03, Math.min(0.03, pitcherMod * 0.003));
-    const adjustedPHR    = Math.min(0.30, Math.max(0.005,
-      pHR + barrelShift + evoShift + parkShift + pitcherHRShift
+    // Platoon shift on pHR (SLG-based)
+    const platoonShift = splitSLG != null && slg > 0
+      ? Math.max(-0.04, Math.min(0.05, (splitSLG / slg - 1.0) * 0.15)) : 0;
+    // pHR ceiling aligned with player card (0.30); weather added as direct score pts below
+    const adjustedPHR = Math.min(0.30, Math.max(0.005,
+      pHR + barrelShift + evoShift + parkShift + pitcherHRShift + platoonShift
     ));
-    // Center at league avg (0.127) → 50; max (0.30, elite tier) → ~80; keeps HR below hits for any hitter
-    base = 50 + (adjustedPHR - 0.127) * 175;
+    // Center at league avg (0.127) → 50; scale 175 matches player card; weather added after
+    base = 50 + (adjustedPHR - 0.127) * 175 + weatherBonus;
 
   } else if (category === 'runs') {
-    const rComp   = Math.max(-15, Math.min(30, (r   / gp - 0.45) * 65));
-    const obpComp = Math.max(0,   Math.min(15, (obp - 0.300) / 0.120 * 15));
-    const hardBonus = hardHitPct != null ? Math.max(0, Math.min(5, (hardHitPct - 40) / 18 * 5)) : 0;
-    base = 40 + rComp + obpComp + hardBonus + pitcherMod;
+    const rComp         = Math.max(-15, Math.min(25, (r / gp - 0.45) * 55));
+    const obpComp       = Math.max(0,   Math.min(15, (obp - 0.317) / 0.100 * 12));
+    const hardBonus     = hardHitPct != null ? Math.max(0, Math.min(5, (hardHitPct - 40) / 18 * 5)) : 0;
+    const splitOBPbonus = splitOBP != null && obp > 0
+      ? Math.max(-8, Math.min(10, (splitOBP - obp) / obp * 30)) : 0;
+    base = 40 + rComp + obpComp + hardBonus + pitcherMod + splitOBPbonus + weatherBonus;
 
   } else if (category === 'rbi') {
-    const rbiComp    = Math.max(-15, Math.min(35, (rbi / gp - 0.45) * 70));
-    const slgComp    = Math.max(0,   Math.min(15, (slg - 0.400) / 0.200 * 15));
-    const hrComp     = Math.max(0,   Math.min(10, (hrRate / 0.06) * 10));
-    const xwobaBonus = xwoba != null ? Math.max(0, Math.min(8, (xwoba - 0.315) / 0.100 * 8)) : 0;
-    base = 38 + rbiComp + slgComp + hrComp + xwobaBonus + pitcherMod;
+    const rbiComp       = Math.max(-15, Math.min(35, (rbi / gp - 0.45) * 70));
+    const slgComp       = Math.max(0,   Math.min(15, (slg - 0.400) / 0.200 * 15));
+    const hrComp        = Math.max(0,   Math.min(10, (hrRate / 0.06) * 10));
+    const xwobaBonus    = xwoba != null ? Math.max(0, Math.min(8, (xwoba - 0.315) / 0.100 * 8)) : 0;
+    const splitSLGbonus = splitSLG != null && slg > 0
+      ? Math.max(-8, Math.min(10, (splitSLG - slg) / slg * 30)) : 0;
+    base = 38 + rbiComp + slgComp + hrComp + xwobaBonus + pitcherMod + splitSLGbonus + weatherBonus;
 
   } else if (category === 'sb') {
-    const sbRate  = player.stolenBases != null && gp > 0 ? player.stolenBases / gp : 0;
-    const sbComp  = Math.min(55, sbRate * 220);
+    const sbRate = player.stolenBases != null && gp > 0 ? player.stolenBases / gp : 0;
+    const sbComp = Math.min(55, sbRate * 220);
     base = 15 + sbComp + pitcherMod * 0.3;
   }
 
   // Shrink score toward 50 for thin sample sizes.
-  // HR is exempt: pHR already has a league-average anchor + talent-prior blending,
-  // so a second confidence pull would double-penalise early-season elite power hitters.
-  const effectiveConf = category === 'hr' ? 1.0 : confidence;
+  // HR uses PA (not AB) for confidence since pHR is PA-based; softer floor (0.6) than other models
+  // to avoid double-penalising early-season power hitters who already have a league-avg anchor.
+  const effectiveConf = category === 'hr'
+    ? Math.min(1.0, Math.max(0.6, (pa_safe - 50) / 300 + 0.6))
+    : confidence;
   const adjusted = 50 + (base - 50) * effectiveConf;
-  return Math.round(Math.max(5, Math.min(99, adjusted + recencyBoost)));
+  const recencyCap  = ab < 30 ? 4 : ab < 100 ? 7 : 12;
+  const safeRecency = Math.max(-recencyCap, Math.min(recencyCap, recencyBoost));
+  return Math.round(Math.max(5, Math.min(99, adjusted + safeRecency)));
 }
 
 // ─── Season stat blending (2026 + 2025) ──────────────────────────────────────
@@ -228,8 +275,13 @@ function blendBatterStats(st26, st25) {
   const eff_pa = Math.max(1, Math.round(b(pa26, pa25)));
   const eff_ab = Math.max(1, Math.round(b(ab26, ab25)));
 
+  // HR uses a slower blend weight (pa/400) — HR rate is the most volatile stat early in the
+  // season, so we trust 2025 production longer than other counting stats.
+  const w_hr = Math.min(1.0, pa26 / 400);
+  const bHR  = (v26, v25) => w_hr * v26 + (1 - w_hr) * v25;
+
   // Blend per-game rates
-  const hr_pg  = b((parseInt(st26.homeRuns)||0)/gp26,    (parseInt(st25.homeRuns)||0)/gp25);
+  const hr_pg  = bHR((parseInt(st26.homeRuns)||0)/gp26,  (parseInt(st25.homeRuns)||0)/gp25);
   const rbi_pg = b((parseInt(st26.rbi)||0)/gp26,         (parseInt(st25.rbi)||0)/gp25);
   const r_pg   = b((parseInt(st26.runs)||0)/gp26,        (parseInt(st25.runs)||0)/gp25);
   const sb_pg  = b((parseInt(st26.stolenBases)||0)/gp26, (parseInt(st25.stolenBases)||0)/gp25);
@@ -258,6 +310,7 @@ function blendBatterStats(st26, st25) {
     hits:        Math.round(h_pab  * eff_ab),
     doubles:     Math.round(d_pab  * eff_ab),
     triples:     Math.round(t_pab  * eff_ab),
+    _pa26: pa26,
   };
 }
 
@@ -269,27 +322,54 @@ function poissonCDF(k, lambda) {
   return Math.min(1, sum);
 }
 
+// ─── Park K factors (strikeout rate vs league avg per park) ──────────────────
+// Includes both MLB API abbreviations (TB, KC, WSH, SD, SF) and BR codes (TBR etc.)
+const PARK_K = {
+  NYY:0.99, BOS:0.97, BAL:0.98, TBR:1.02, TB:1.02, TOR:1.00,
+  CLE:1.01, DET:1.03, CWS:1.00, CHW:1.00, KCR:0.99, KC:0.99, MIN:1.01,
+  HOU:1.00, LAA:1.01, OAK:1.04, SEA:1.04, TEX:0.97,
+  ATL:0.99, MIA:1.06, NYM:1.03, PHI:0.98, WSN:0.99, WSH:0.99,
+  CHC:0.98, CIN:0.96, MIL:1.01, PIT:1.02, STL:1.00,
+  ARI:0.97, AZ:0.97, COL:0.94, LAD:1.03, SDP:1.05, SD:1.05, SFG:1.04, SF:1.04,
+};
+
 // ─── K Projection (pure fn mirroring player-page useKProjection hook) ────────
 // starts: [{strikeOuts, inningsPitched, date}, ...] — last N regular starts
-function computeKProjection(starts, k9, oppTeamAbbrev) {
+// pitcherSavant: { whiffPct, kPct } from Baseball Savant (optional)
+// homeAbbrev: home team abbreviation for park K factor (optional)
+function computeKProjection(starts, k9, oppTeamAbbrev, pitcherSavant, homeAbbrev) {
   if (!starts?.length) return null;
-  const last5  = starts.slice(-5);
-  const last10 = starts.slice(-10);
-  const l5Ks   = last5.map(s => s.strikeOuts);
-  const l5K    = l5Ks.reduce((a, b) => a + b, 0) / l5Ks.length;
-  const l5IP   = last5.map(s => parseFloat(s.inningsPitched) || 0);
+  const last5   = starts.slice(-5);
+  const l5Ks    = last5.map(s => s.strikeOuts);
+  const l5K     = l5Ks.reduce((a, b) => a + b, 0) / l5Ks.length;
+  const l5IP    = last5.map(s => parseFloat(s.inningsPitched) || 0);
   const avgL5IP = Math.max(1, l5IP.reduce((a, b) => a + b, 0) / l5IP.length);
   const seasonK = k9 != null ? k9 / 9 * avgL5IP : null;
   const leagueK = 5.5;
   const raw = l5K * 0.60 + (seasonK ?? leagueK) * 0.30 + leagueK * 0.10;
-  const oppKRate   = TEAM_K_RATES[oppTeamAbbrev] || LG_K_RATE;
-  const oppKFactor = oppKRate / LG_K_RATE;
+
+  // ── Savant SwStr% (whiff rate) signal — strongest K predictor ──
+  // whiff_percent = swinging strikes / swings, LG avg ~24%
+  // Each 1% above avg ≈ +0.14 Ks/start; capped at ±1.2/+1.5
+  const LG_WHIFF = 24.0;
+  const whiffShift = pitcherSavant?.whiffPct != null
+    ? Math.max(-1.2, Math.min(1.5, (pitcherSavant.whiffPct - LG_WHIFF) * 0.14))
+    : 0;
+  // K% secondary signal — smaller weight to avoid double-counting with SwStr%
+  const LG_K_PCT = 22.0;
+  const kPctShift = pitcherSavant?.kPct != null
+    ? Math.max(-0.5, Math.min(0.8, (pitcherSavant.kPct - LG_K_PCT) * 0.04))
+    : 0;
+
+  const oppKRate    = TEAM_K_RATES[oppTeamAbbrev] || LG_K_RATE;
+  const oppKFactor  = oppKRate / LG_K_RATE;
+  const parkKFactor = homeAbbrev ? (PARK_K[homeAbbrev] ?? 1.0) : 1.0;
   const last = starts[starts.length - 1];
   const daysRest = last?.date
     ? Math.floor((Date.now() - new Date(last.date).getTime()) / 86400000)
     : null;
   const restFactor = daysRest != null ? (daysRest < 4 ? 0.95 : daysRest >= 6 ? 1.02 : 1.0) : 1.0;
-  return Math.round(raw * restFactor * oppKFactor * 10) / 10;
+  return Math.round((raw + whiffShift + kPctShift) * restFactor * oppKFactor * parkKFactor * 10) / 10;
 }
 
 // ─── Score from K projection (same formula as pitcherScoreFromKProj on player page)
@@ -495,12 +575,12 @@ function SkeletonCard() {
 
 // ─── Score tooltip text by category ─────────────────────────────────────────
 const SCORE_TOOLTIP = {
-  hitting:  'ProprStats Model Score — likelihood of recording a hit today',
-  hr:       'ProprStats HR Score — likelihood of hitting a home run today',
-  runs:     'ProprStats Model Score — likelihood of scoring a run today',
-  rbi:      'ProprStats Model Score — likelihood of driving in a run today',
-  sb:       'ProprStats Model Score — likelihood of stealing a base today',
-  pitching: 'ProprStats K Score — likelihood of exceeding the strikeout line today',
+  hitting:  'EdgeScore — likelihood of recording a hit today',
+  hr:       'EdgeScore — likelihood of hitting a home run today',
+  runs:     'EdgeScore — likelihood of scoring a run today',
+  rbi:      'EdgeScore — likelihood of recording an RBI today',
+  sb:       'EdgeScore — likelihood of stealing a base today',
+  pitching: 'EdgeScore — projected strikeout edge vs book line',
 };
 
 // ─── Auto Board Player Card ───────────────────────────────────────────────────
@@ -601,13 +681,13 @@ function ManualPlayerCard({ player, category, win, todayGames, onRemove }) {
       <div className="absolute top-2 left-2 text-xs font-bold text-blue-500/60 bg-blue-500/10 px-1.5 py-0.5 rounded">pinned</div>
       <button onClick={() => onRemove(player.playerId)} className="absolute top-2 right-2 text-gray-700 hover:text-red-400 transition-colors text-xs" title="Remove">✕</button>
 
-      <div className="flex items-center gap-3 mb-3 pt-4">
+      <Link href={`/dashboard/player/${player.playerId}?cat=${category}`} className="flex items-center gap-3 mb-3 pt-4 group">
         {player.loading
           ? <div className="rounded-full bg-gray-800 animate-pulse flex-shrink-0" style={{width:56,height:56}}/>
           : <PlayerHeadshot playerId={player.playerId} name={player.fullName} size={56}/>
         }
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold text-white truncate">{player.fullName}</p>
+          <p className="text-sm font-bold text-white truncate group-hover:text-blue-400 transition-colors">{player.fullName}</p>
           <p className="text-xs text-gray-500">{player.primaryPosition} · {player.teamName}</p>
           {matchupTxt
             ? <p className="text-xs text-blue-400 mt-0.5 truncate">{matchupTxt}</p>
@@ -615,7 +695,7 @@ function ManualPlayerCard({ player, category, win, todayGames, onRemove }) {
           }
         </div>
         <ScoreRing score={projection} size={48} />
-      </div>
+      </Link>
 
       {propLabel && (
         <div className="mb-3">
@@ -667,12 +747,36 @@ function ManualPlayerCard({ player, category, win, todayGames, onRemove }) {
 
 // ─── Categories ───────────────────────────────────────────────────────────────
 const CATEGORIES = [
-  { id:'hitting',  label:'Hits'          },
-  { id:'runs',     label:'Runs'          },
-  { id:'rbi',      label:'RBI'           },
-  { id:'hr',       label:'Home Runs'     },
-  { id:'sb',       label:'Stolen Bases'  },
-  { id:'pitching', label:'Pitching'      },
+  { id:'hitting',  label:'Hits',         icon:(
+    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 3l14 9-14 9V3z"/>
+    </svg>
+  )},
+  { id:'runs',     label:'Runs',         icon:(
+    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/>
+    </svg>
+  )},
+  { id:'rbi',      label:'RBI',          icon:(
+    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/>
+    </svg>
+  )},
+  { id:'hr',       label:'Home Runs',    icon:(
+    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+    </svg>
+  )},
+  { id:'sb',       label:'Stolen Bases', icon:(
+    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+    </svg>
+  )},
+  { id:'pitching', label:'Pitching',     icon:(
+    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10"/><path d="M12 8c-2.5 0-4 1.5-4 4s1.5 4 4 4 4-1.5 4-4"/>
+    </svg>
+  )},
 ];
 
 // Maps dashboard category → player page cat param
@@ -680,12 +784,8 @@ const CAT_TO_PLAYER_TAB = { hitting:'hits', hr:'hr', runs:'runs', rbi:'rbi', sb:
 
 // ─── Main Dashboard Page ──────────────────────────────────────────────────────
 export default function DashboardPage() {
-  // ── Free tier plan check ──────────────────────────────────────────────────
-  const [isPro, setIsPro] = useState(false);
-  useEffect(() => {
-    const plan = localStorage.getItem('proprstats_plan');
-    setIsPro(plan === 'pro' || plan === 'yearly');
-  }, []);
+  // ── Free tier plan check (disabled for beta) ─────────────────────────────
+  const [isPro, setIsPro] = useState(true);
 
   // ── Category ──────────────────────────────────────────────────────────────
   const [category, setCategory] = useState('hitting');
@@ -695,6 +795,7 @@ export default function DashboardPage() {
   const [boardLoading,  setBoardLoading]  = useState(true);
   const [boardError,    setBoardError]    = useState(null);
   const [todayGames,    setTodayGames]    = useState([]);
+  const [gameWeatherMap, setGameWeatherMap] = useState({});
 
   // ── PrizePicks lines (keyed by player name) ────────────────────────────────
   const [ppLinesByName,  setPpLinesByName]  = useState(null);
@@ -713,7 +814,7 @@ export default function DashboardPage() {
     return [...boardPlayers]
       .filter(p => (p.scores?.[category] ?? 0) > 0)
       .sort((a, b) => (b.scores?.[category] ?? 0) - (a.scores?.[category] ?? 0))
-      .slice(0, 20);
+      .slice(0, 25);
   }, [boardPlayers, category]);
 
   // ── Filtered board (team/player selection) ────────────────────────────────
@@ -740,7 +841,7 @@ export default function DashboardPage() {
   useEffect(() => {
     async function fetchPP() {
       try {
-        const res = await fetch(`/pp-lines.json`, { signal: AbortSignal.timeout(10000) });
+        const res = await fetch(`/api/prizepicks`, { signal: AbortSignal.timeout(10000) });
         if (!res.ok) return;
         const data = await res.json();
         if (data.lines) setPpLinesByName(data.lines);
@@ -750,7 +851,7 @@ export default function DashboardPage() {
   }, []);
 
   // Re-score pitchers once PP lines arrive — OR once the board loads (whichever is later).
-  // /pp-lines.json is a static file (~100ms) but the board takes 5-10s to build,
+  // /api/prizepicks is live (fetches latest from GitHub) but the board takes 5-10s to build,
   // so we depend on boardPlayers.length to catch the case where PP loads first.
   useEffect(() => {
     if (!ppLinesByName || !boardPlayers.length) return;
@@ -786,7 +887,10 @@ export default function DashboardPage() {
     setBoardPlayers([]); // clear stale data before rebuild
 
     try {
-      const today = new Date().toISOString().split('T')[0];
+      // Use local date — toISOString() returns UTC which rolls over to tomorrow
+      // for users in US time zones after ~7–8pm ET.
+      const _now  = new Date();
+      const today = `${_now.getFullYear()}-${String(_now.getMonth()+1).padStart(2,'0')}-${String(_now.getDate()).padStart(2,'0')}`;
 
       // 1. Today's games
       const gRes  = await fetch(`${API_URL}/games/probables?date=${today}`);
@@ -954,7 +1058,9 @@ export default function DashboardPage() {
           if (!stats) continue;
           const homeAbbrevPark = isHome ? normDashAbbrev(team.abbreviation) : normDashAbbrev(oppAbbrev);
           const parkHR         = PARK_HR[homeAbbrevPark] ?? null;
-          const playerWithCtx  = { ...stats, matchup:{ isHome, oppAbbrev, pitcher }, parkHR };
+          const pitcherHand    = pitcher?.hand ?? null;
+          const gameHomeTeamId = game?.homeTeamId ?? null;
+          const playerWithCtx  = { ...stats, matchup:{ isHome, oppAbbrev, pitcher }, parkHR, pitcherHand };
           allPlayers.push({
             playerId:    rp.id,
             fullName:    rp.fullName,
@@ -964,6 +1070,8 @@ export default function DashboardPage() {
             teamAbbrev:  team.abbreviation,
             ...stats,
             parkHR,
+            pitcherHand,
+            gameHomeTeamId,
             matchup:     { isHome, oppAbbrev, pitcher },
             scores: {
               hitting:  computeProjectionScore(playerWithCtx, 'hitting'),
@@ -983,8 +1091,10 @@ export default function DashboardPage() {
         const myPitcherId = isHome ? game?.homeProbablePitcherId : game?.awayProbablePitcherId;
         const myPitcher   = pitcherMap[myPitcherId];
         if (myPitcher && myPitcherId) {
-          const oppAbbrevP = teamMap[oppId]?.abbreviation ?? '';
-          const kProj = computeKProjection(myPitcher.starts, myPitcher.k9, oppAbbrevP);
+          const oppAbbrevP  = teamMap[oppId]?.abbreviation ?? '';
+          const homeAbbrevP = isHome ? team.abbreviation : oppAbbrevP;
+          // pitcherSavant starts null — filled in by fetchPitcherStatcastData enrichment
+          const kProj = computeKProjection(myPitcher.starts, myPitcher.k9, oppAbbrevP, null, homeAbbrevP);
           const pitchingScore = pitcherKScore(kProj) ?? scorePitcher(myPitcher);
           allPlayers.push({
             playerId:      myPitcherId,
@@ -993,6 +1103,7 @@ export default function DashboardPage() {
             teamId,
             teamName:      team.name,
             teamAbbrev:    team.abbreviation,
+            homeAbbrev:    homeAbbrevP,
             era:           myPitcher.era,
             whip:          myPitcher.whip,
             k9:            myPitcher.k9,
@@ -1015,17 +1126,21 @@ export default function DashboardPage() {
       setBoardLoading(false);
 
       // 6. Enrichment phase — run in parallel (non-blocking)
+      // topIds: top 40 per category — wider net covers rank shifts after Statcast/streak enrichment
       const topIds = new Set();
       for (const cat of ['hitting','hr','runs','rbi','sb']) {
         [...dedupedPlayers]
           .filter(p=>p.scores[cat]>0)
           .sort((a,b)=>b.scores[cat]-a.scores[cat])
-          .slice(0,20)
+          .slice(0,40)
           .forEach(p=>topIds.add(p.playerId));
       }
       // Statcast loads fast (1 request), streaks load progressively (batched)
       fetchStatcastData();
+      fetchPitcherStatcastData();
       fetchStreaks([...topIds]);
+      fetchWeatherData(games, teamMap);
+      fetchPlatoonSplits([...topIds]);
 
     } catch (err) {
       setBoardError(err.message || 'Failed to load today\'s board');
@@ -1056,9 +1171,12 @@ export default function DashboardPage() {
           const l10PA = last10.reduce((a, g) => a + (Number(g.plateAppearances)|| 0), 0);
           const l10HRrate = l10PA >= 20 ? l10HR / l10PA : null;
 
+          // Total 2026 PA from game log — used to scale L10 HR weight (Option A)
+          const pa26Raw = games.reduce((a, g) => a + (Number(g.plateAppearances) || 0), 0);
+
           setBoardPlayers(prev => prev.map(p => {
             if (p.playerId !== pid) return p;
-            const updated = { ...p, streak, l10Avg, l10HRrate, streakLoading: false };
+            const updated = { ...p, streak, l10Avg, l10HRrate, pa26Raw, streakLoading: false };
             // Re-score all batting categories now that recency data is available
             const newScores = { ...p.scores };
             for (const cat of ['hitting', 'hr', 'runs', 'rbi', 'sb']) {
@@ -1073,6 +1191,92 @@ export default function DashboardPage() {
         }
       }));
     }
+  }
+
+  async function fetchWeatherData(games, teamMap) {
+    try {
+      const homeTeamVenues = {};
+      for (const g of games) {
+        if (!g.homeTeamId) continue;
+        const abbrev = normDashAbbrev(teamMap[g.homeTeamId]?.abbreviation || '');
+        const coords = VENUE_COORDS[abbrev];
+        if (coords) homeTeamVenues[g.homeTeamId] = { lat: coords.lat, lon: coords.lon };
+      }
+      const entries = Object.entries(homeTeamVenues);
+      if (!entries.length) return;
+      const results = await Promise.allSettled(
+        entries.map(([homeTeamId, { lat, lon }]) =>
+          fetch(
+            `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,wind_speed_10m,wind_direction_10m&timezone=auto`,
+            { signal: AbortSignal.timeout(6000) }
+          )
+            .then(r => r.json())
+            .then(d => [homeTeamId, {
+              temp:      d.current?.temperature_2m     ?? 21,
+              windSpeed: d.current?.wind_speed_10m      ?? 0,
+              windDir:   d.current?.wind_direction_10m  ?? 0,
+            }])
+        )
+      );
+      const wxMap = {};
+      for (const r of results) {
+        if (r.status === 'fulfilled') {
+          const [id, wx] = r.value;
+          wxMap[id] = wx;
+        }
+      }
+      if (!Object.keys(wxMap).length) return;
+      setGameWeatherMap(wxMap);
+      setBoardPlayers(prev => prev.map(p => {
+        if (!p.gameHomeTeamId) return p;
+        const weather = wxMap[p.gameHomeTeamId];
+        if (!weather) return p;
+        const updated = { ...p, weather };
+        const newScores = { ...p.scores };
+        for (const cat of ['hitting', 'hr', 'runs', 'rbi', 'sb']) {
+          if (newScores[cat] > 0) newScores[cat] = computeProjectionScore(updated, cat);
+        }
+        return { ...updated, scores: newScores };
+      }));
+    } catch {}
+  }
+
+  async function fetchPlatoonSplits(playerIds) {
+    if (!playerIds.length) return;
+    try {
+      const ids = playerIds.join(',');
+      const r = await fetch(
+        `${MLB_API}/people?personIds=${ids}&hydrate=stats(group=%5Bhitting%5D,type=%5BvsPlayer,statSplits%5D,sitCodes=%5Bvl,vr%5D,season=${SEASON})`
+      );
+      if (!r.ok) return;
+      const d = await r.json();
+      const splitsMap = {};
+      for (const p of (d.people || [])) {
+        const stats = p.stats || [];
+        let splitData = [];
+        for (const sg of stats) {
+          if (sg.splits?.length) { splitData = sg.splits; break; }
+        }
+        const vsLeft  = splitData.find(s => s.split?.code === 'vl');
+        const vsRight = splitData.find(s => s.split?.code === 'vr');
+        splitsMap[p.id] = {
+          vsLeft:  vsLeft?.stat  ? { avg: parseFloat(vsLeft.stat.avg)||null,  obp: parseFloat(vsLeft.stat.obp)||null,  slg: parseFloat(vsLeft.stat.slg)||null  } : null,
+          vsRight: vsRight?.stat ? { avg: parseFloat(vsRight.stat.avg)||null, obp: parseFloat(vsRight.stat.obp)||null, slg: parseFloat(vsRight.stat.slg)||null } : null,
+        };
+      }
+      setBoardPlayers(prev => prev.map(p => {
+        const sp = splitsMap[p.playerId];
+        if (!sp) return p;
+        const rel = p.pitcherHand === 'L' ? sp.vsLeft : sp.vsRight;
+        if (!rel) return p;
+        const updated = { ...p, splitAVG: rel.avg, splitSLG: rel.slg, splitOBP: rel.obp };
+        const newScores = { ...p.scores };
+        for (const cat of ['hitting', 'hr', 'runs', 'rbi', 'sb']) {
+          if (newScores[cat] > 0) newScores[cat] = computeProjectionScore(updated, cat);
+        }
+        return { ...updated, scores: newScores };
+      }));
+    } catch {}
   }
 
   async function fetchStatcastData() {
@@ -1091,6 +1295,32 @@ export default function DashboardPage() {
           }
         }
         return { ...updated, scores: newScores };
+      }));
+    } catch {}
+  }
+
+  async function fetchPitcherStatcastData() {
+    try {
+      const r = await fetch(`${API_URL}/statcast/pitchers?season=2025`);
+      if (!r.ok) return;
+      const map = await r.json();
+      setBoardPlayers(prev => prev.map(p => {
+        if (p.position !== 'SP') return p;
+        const sc = map[p.playerId];
+        if (!sc) return p;
+        // Re-compute K projection with real Savant data
+        const kProj = computeKProjection(
+          p.pitcherStarts, p.k9,
+          p.matchup?.oppAbbrev ?? '',
+          sc,
+          p.homeAbbrev ?? ''
+        );
+        const newPitchingScore = pitcherKScore(kProj) ?? p.scores.pitching;
+        return {
+          ...p,
+          pitcherSavant: sc,
+          scores: { ...p.scores, pitching: newPitchingScore },
+        };
       }));
     } catch {}
   }
@@ -1137,6 +1367,17 @@ export default function DashboardPage() {
     fetchRoster();
   }, [selectedTeamId]);
 
+  // ── Platoon fetch for dropdown-selected player ────────────────────────────
+  // If a player is chosen from the roster dropdown but wasn't in the initial
+  // topIds enrichment (low pre-enrichment score), fetch their splits on demand.
+  useEffect(() => {
+    if (!selectedPlayerId) return;
+    const pid = Number(selectedPlayerId);
+    const player = boardPlayers.find(p => p.playerId === pid);
+    if (!player || player.splitAVG != null) return; // already has splits
+    fetchPlatoonSplits([pid]);
+  }, [selectedPlayerId, boardPlayers]);
+
   // ── Add / remove manual player ────────────────────────────────────────────
   async function addPlayer() {
     if (!selectedPlayerId) return;
@@ -1171,37 +1412,79 @@ export default function DashboardPage() {
       <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
 
         {/* ── Header ──────────────────────────────────────────────────────── */}
-        <div className="mb-6 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
-          <div>
-            <h1 className="text-3xl font-black text-white">Today&apos;s Top Props</h1>
-            <p className="mt-1 text-gray-400 text-sm">
-              {boardLoading
-                ? 'Loading today\'s slate…'
-                : boardError
-                  ? boardError
-                  : `${currentBoard.length} plays ranked by ProprStats model · ${new Date().toLocaleDateString('en-US', { weekday:'long', month:'short', day:'numeric' })}`
-              }
-            </p>
+        <div className="relative mb-8 rounded-2xl border border-gray-700/30 bg-gray-900/40 backdrop-blur-sm px-6 py-5 overflow-hidden">
+          {/* Subtle glow */}
+          <div className="absolute -top-10 -right-10 w-48 h-48 bg-blue-600/6 rounded-full blur-3xl pointer-events-none"/>
+          <div className="absolute -bottom-8 -left-8 w-32 h-32 bg-indigo-600/4 rounded-full blur-2xl pointer-events-none"/>
+
+          <div className="relative flex items-start justify-between gap-4">
+            {/* Left — icon + title */}
+            <div className="flex items-start gap-4">
+              <div className="mt-0.5 flex-shrink-0 inline-flex h-12 w-12 items-center justify-center rounded-xl bg-blue-600/15 border border-blue-500/25">
+                <svg className="w-7 h-7 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>
+                </svg>
+              </div>
+              <div>
+                <div className="mb-1.5 inline-flex items-center gap-1.5 rounded-full border border-blue-500/20 bg-blue-500/10 px-2.5 py-0.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse"/>
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-blue-400">
+                    {new Date().toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric' })}
+                  </span>
+                </div>
+                <h1 className="text-2xl font-black text-white tracking-tight">Today&apos;s Top Props</h1>
+                <p className="mt-1 text-sm text-gray-400">
+                  {boardLoading
+                    ? <span className="flex items-center gap-1.5"><span className="inline-block h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse"/>Loading today&apos;s slate…</span>
+                    : boardError
+                      ? <span className="text-red-400">{boardError}</span>
+                      : <span>Top <span className="text-white font-semibold">{currentBoard.length}</span> plays ranked by ProprStats model — select a category below</span>
+                  }
+                </p>
+              </div>
+            </div>
+
+            {/* Right — stats + refresh pinned to top */}
+            {!boardLoading && !boardError && boardPlayers.length > 0 && (
+              <div className="hidden sm:flex items-center gap-2 flex-shrink-0">
+                <div className="text-center px-3 py-1.5 rounded-lg bg-gray-800/50 border border-gray-700/40">
+                  <p className="text-xs font-black text-white">{boardPlayers.filter(p=>p.position!=='SP').length}</p>
+                  <p className="text-[10px] text-gray-500 uppercase tracking-wide">Batters</p>
+                </div>
+                <div className="text-center px-3 py-1.5 rounded-lg bg-gray-800/50 border border-gray-700/40">
+                  <p className="text-xs font-black text-white">{boardPlayers.filter(p=>p.position==='SP').length}</p>
+                  <p className="text-[10px] text-gray-500 uppercase tracking-wide">Pitchers</p>
+                </div>
+                <button onClick={loadDailyBoard} className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-blue-400 transition-colors border border-gray-700/50 hover:border-blue-500/40 rounded-lg px-3 py-1.5 bg-gray-800/40 hover:bg-blue-500/5">
+                  <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.07-4.14"/>
+                  </svg>
+                  Refresh
+                </button>
+              </div>
+            )}
           </div>
-          {!boardLoading && !boardError && boardPlayers.length > 0 && (
-            <button onClick={loadDailyBoard} className="text-xs text-gray-500 hover:text-blue-400 transition-colors border border-gray-800 hover:border-blue-500/30 rounded-lg px-3 py-1.5 flex-shrink-0">
-              ↻ Refresh
-            </button>
-          )}
         </div>
 
         {/* ── Category + Filter Controls ───────────────────────────────────── */}
         <div className="flex flex-wrap items-center gap-2 mb-6">
-          {CATEGORIES.map(cat => (
-            <button key={cat.id} onClick={() => setCategory(cat.id)}
-              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-                category === cat.id
-                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
-                  : 'bg-gray-900 border border-gray-800 text-gray-400 hover:text-white hover:border-gray-600'
-              }`}>
-              {cat.label}
-            </button>
-          ))}
+          {CATEGORIES.map(cat => {
+            const active = category === cat.id;
+            return (
+              <button key={cat.id} onClick={() => setCategory(cat.id)}
+                className={`relative inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 ${
+                  active
+                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30 scale-[1.03]'
+                    : 'bg-gray-900 border border-gray-800 text-gray-400 hover:text-white hover:border-gray-600 hover:bg-gray-800/80'
+                }`}>
+                {active && (
+                  <span className="absolute inset-0 rounded-xl bg-gradient-to-br from-blue-500/30 to-transparent pointer-events-none"/>
+                )}
+                <span className={active ? 'text-blue-200' : 'text-gray-500'}>{cat.icon}</span>
+                {cat.label}
+              </button>
+            );
+          })}
           <div className="flex items-center gap-2 ml-auto flex-wrap">
             <select value={selectedTeamId} onChange={e=>{setSelectedTeamId(e.target.value);setSelectedPlayerId('');}} disabled={teamsLoading}
               className="rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-xs font-bold text-gray-300 outline-none focus:border-blue-500 cursor-pointer disabled:opacity-50">
@@ -1265,7 +1548,7 @@ export default function DashboardPage() {
               </div>
             )}
             {(() => {
-              const FREE_LIMIT = 4;
+              const FREE_LIMIT = 5;
               const visiblePlayers = isPro ? filteredBoard : filteredBoard.slice(0, FREE_LIMIT);
               const lockedPlayers  = isPro ? [] : filteredBoard.slice(FREE_LIMIT);
               const gridCls = `grid gap-3 mb-2 ${selectedPlayerId ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'}`;

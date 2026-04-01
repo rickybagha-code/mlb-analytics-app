@@ -348,29 +348,41 @@ function ScoreRing({ score, size=56 }) {
 // ─── Bar Chart ────────────────────────────────────────────────────────────────
 function GameLogChart({ games, field, line, win }) {
   const slice = games.slice(-win);
-  if (!slice.length) return (
-    <div className="flex items-center justify-center h-40 text-gray-600 text-sm">No game log data available.</div>
-  );
 
-  const vals    = slice.map(g => Number(g[field]) || 0);
-  const maxVal  = Math.max(1, Math.ceil(line) + 1, ...vals);
-  const overCnt = vals.filter(v => v > line).length;
+  // Always render exactly `win` slots so the chart stays a fixed size regardless of data.
+  // Pad with nulls on the LEFT so real games align to the right (most recent on the right).
+  const padded = Array.from({ length: win }, (_, i) => {
+    const dataIdx = i - (win - slice.length);
+    return dataIdx >= 0 ? slice[dataIdx] : null;
+  });
 
+  const hasData = slice.length > 0;
+  const vals    = padded.map(g => g != null ? (Number(g[field]) || 0) : null);
+  const realVals = vals.filter(v => v != null);
+  const overCnt  = realVals.filter(v => v > line).length;
+  const maxVal   = Math.max(1, Math.ceil(line) + 1, ...realVals);
+
+  // Fixed width — never changes regardless of how many games are available
   const BAR_W = 54, BAR_GAP = 10;
-  const VW = slice.length * (BAR_W + BAR_GAP) + BAR_GAP;
+  const VW = win * (BAR_W + BAR_GAP) + BAR_GAP;
   const H = 210, PT = 28, PB = 44, CH = H - PT - PB;
 
-  const yOf = v => PT + CH * (1 - Math.min(v, maxVal) / maxVal);
-  const lineY = yOf(line);
+  const yOf    = v => PT + CH * (1 - Math.min(v, maxVal) / maxVal);
+  const lineY  = yOf(line);
+  const floorY = PT + CH; // y-coordinate of the baseline
 
   return (
     <div>
       {/* Legend row */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-4">
-          <span className={`text-sm font-black tabular-nums ${overCnt/slice.length >= 0.6 ? 'text-emerald-400' : overCnt/slice.length >= 0.4 ? 'text-yellow-400' : 'text-red-400'}`}>
-            {overCnt}/{slice.length} OVER
-          </span>
+          {hasData ? (
+            <span className={`text-sm font-black tabular-nums ${overCnt/slice.length >= 0.6 ? 'text-emerald-400' : overCnt/slice.length >= 0.4 ? 'text-yellow-400' : 'text-red-400'}`}>
+              {overCnt}/{slice.length} OVER
+            </span>
+          ) : (
+            <span className="text-sm font-bold text-gray-600">No games yet</span>
+          )}
           <div className="flex items-center gap-3 text-xs text-gray-500">
             <span className="flex items-center gap-1"><span className="w-3 h-2.5 rounded-sm bg-emerald-500/80 inline-block"/>Over</span>
             <span className="flex items-center gap-1"><span className="w-3 h-2.5 rounded-sm bg-red-500/80 inline-block"/>Under</span>
@@ -396,15 +408,26 @@ function GameLogChart({ games, field, line, win }) {
           {/* Vegas line */}
           <line x1={0} y1={lineY} x2={VW} y2={lineY} stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="5 3" opacity="0.9"/>
 
-          {/* Bars */}
-          {slice.map((game, i) => {
-            const val  = vals[i];
-            const isOver = val > line;
+          {/* Bars — real games and ghost placeholders */}
+          {padded.map((game, i) => {
             const barX = i * (BAR_W + BAR_GAP) + BAR_GAP;
-            const barH = Math.max(3, (val / maxVal) * CH);
-            const barY = yOf(val);
-            const lblY = barY > PT + 18 ? barY - 6 : barY + 16;
-            const opp  = (game.opponent || '').split(' ').at(-1);
+
+            if (game === null) {
+              // Ghost placeholder — no game data for this slot
+              return (
+                <g key={i} opacity="0.18">
+                  <rect x={barX} y={floorY - 3} width={BAR_W} height={3} rx={2} fill="#374151"/>
+                  <text x={barX + BAR_W/2} y={H-PB+15} textAnchor="middle" fill="#374151" fontSize="10">—</text>
+                </g>
+              );
+            }
+
+            const val    = vals[i];
+            const isOver = val > line;
+            const barH   = Math.max(3, (val / maxVal) * CH);
+            const barY   = yOf(val);
+            const lblY   = barY > PT + 18 ? barY - 6 : barY + 16;
+            const opp    = (game.opponent || '').split(' ').at(-1);
 
             return (
               <g key={i}>
@@ -427,6 +450,13 @@ function GameLogChart({ games, field, line, win }) {
               </g>
             );
           })}
+
+          {/* "Early season — limited data" label when fewer than 4 real games */}
+          {slice.length < 4 && hasData && (
+            <text x={VW/2} y={PT + CH/2} textAnchor="middle" fill="#374151" fontSize="11" fontStyle="italic">
+              {slice.length} game{slice.length !== 1 ? 's' : ''} played — more data coming
+            </text>
+          )}
         </svg>
       </div>
     </div>
@@ -665,24 +695,37 @@ function PitcherGameLogChart({ starts, catId, line, win }) {
   const cat = PITCHER_CHART_CATS.find(c => c.id === catId) || PITCHER_CHART_CATS[0];
   const processed = starts.map(s => ({ ...s, _outs: Math.round(parseFloat(s.inningsPitched || '0') * 3) }));
   const slice = processed.slice(-win);
-  if (!slice.length) return (
-    <div className="flex items-center justify-center h-40 text-gray-600 text-sm">No start data available.</div>
-  );
-  const vals    = slice.map(g => Number(g[cat.field]) || 0);
-  const maxVal  = Math.max(1, Math.ceil(line) + 2, ...vals);
-  const goodCnt = vals.filter(v => cat.higherIsBetter ? v > line : v <= line).length;
+
+  // Always render exactly `win` slots — pad with nulls on the left
+  const padded = Array.from({ length: win }, (_, i) => {
+    const dataIdx = i - (win - slice.length);
+    return dataIdx >= 0 ? slice[dataIdx] : null;
+  });
+
+  const hasData = slice.length > 0;
+  const vals    = padded.map(g => g != null ? (Number(g[cat.field]) || 0) : null);
+  const realVals = vals.filter(v => v != null);
+  const goodCnt  = realVals.filter(v => cat.higherIsBetter ? v > line : v <= line).length;
+  const maxVal   = Math.max(1, Math.ceil(line) + 2, ...realVals);
+
   const BAR_W = 54, BAR_GAP = 10;
-  const VW = slice.length * (BAR_W + BAR_GAP) + BAR_GAP;
+  const VW = win * (BAR_W + BAR_GAP) + BAR_GAP;
   const H = 210, PT = 28, PB = 48, CH = H - PT - PB;
-  const yOf  = v => PT + CH * (1 - Math.min(v, maxVal) / maxVal);
-  const lineY = yOf(line);
+  const yOf    = v => PT + CH * (1 - Math.min(v, maxVal) / maxVal);
+  const lineY  = yOf(line);
+  const floorY = PT + CH;
+
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-4">
-          <span className={`text-sm font-black tabular-nums ${goodCnt/slice.length >= 0.6 ? 'text-emerald-400' : goodCnt/slice.length >= 0.4 ? 'text-yellow-400' : 'text-red-400'}`}>
-            {goodCnt}/{slice.length} {cat.higherIsBetter ? 'OVER' : 'UNDER'}
-          </span>
+          {hasData ? (
+            <span className={`text-sm font-black tabular-nums ${goodCnt/slice.length >= 0.6 ? 'text-emerald-400' : goodCnt/slice.length >= 0.4 ? 'text-yellow-400' : 'text-red-400'}`}>
+              {goodCnt}/{slice.length} {cat.higherIsBetter ? 'OVER' : 'UNDER'}
+            </span>
+          ) : (
+            <span className="text-sm font-bold text-gray-600">No starts yet</span>
+          )}
           <div className="flex items-center gap-3 text-xs text-gray-500">
             <span className="flex items-center gap-1"><span className="w-3 h-2.5 rounded-sm bg-emerald-500/80 inline-block"/>{cat.higherIsBetter ? 'Over' : 'Under'}</span>
             <span className="flex items-center gap-1"><span className="w-3 h-2.5 rounded-sm bg-red-500/80 inline-block"/>{cat.higherIsBetter ? 'Under' : 'Over'}</span>
@@ -703,14 +746,24 @@ function PitcherGameLogChart({ starts, catId, line, win }) {
             );
           })}
           <line x1={0} y1={lineY} x2={VW} y2={lineY} stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="5 3" opacity="0.9"/>
-          {slice.map((game, i) => {
-            const val   = vals[i];
+          {padded.map((game, i) => {
+            const barX = i * (BAR_W + BAR_GAP) + BAR_GAP;
+
+            if (game === null) {
+              return (
+                <g key={i} opacity="0.18">
+                  <rect x={barX} y={floorY - 3} width={BAR_W} height={3} rx={2} fill="#374151"/>
+                  <text x={barX+BAR_W/2} y={H-PB+14} textAnchor="middle" fill="#374151" fontSize="10">—</text>
+                </g>
+              );
+            }
+
+            const val    = vals[i];
             const isGood = cat.higherIsBetter ? val > line : val <= line;
-            const barX  = i * (BAR_W + BAR_GAP) + BAR_GAP;
-            const barH  = Math.max(3, (val / maxVal) * CH);
-            const barY  = yOf(val);
-            const lblY  = barY > PT + 18 ? barY - 6 : barY + 16;
-            const opp   = (game.opponent || '').split(' ').at(-1);
+            const barH   = Math.max(3, (val / maxVal) * CH);
+            const barY   = yOf(val);
+            const lblY   = barY > PT + 18 ? barY - 6 : barY + 16;
+            const opp    = (game.opponent || '').split(' ').at(-1);
             const resClr = game.isWin ? '#34d399' : game.isLoss ? '#f87171' : '#6b7280';
             const resLbl = game.isWin ? 'W' : game.isLoss ? 'L' : 'ND';
             return (
@@ -727,6 +780,11 @@ function PitcherGameLogChart({ starts, catId, line, win }) {
               </g>
             );
           })}
+          {slice.length < 4 && hasData && (
+            <text x={VW/2} y={PT + CH/2} textAnchor="middle" fill="#374151" fontSize="11" fontStyle="italic">
+              {slice.length} start{slice.length !== 1 ? 's' : ''} played — more data coming
+            </text>
+          )}
         </svg>
       </div>
     </div>
@@ -740,7 +798,7 @@ function H2HMatchupCard({ data, loading, pitcherId, pitcherName, pitcherHand }) 
       <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
         <div className="flex items-center gap-2 mb-3">
           <span className="text-base">⚔️</span>
-          <h3 className="text-sm font-bold text-white">Career Head-to-Head</h3>
+          <h3 className="text-sm font-bold text-white">MatchupFile™</h3>
         </div>
         <p className="text-sm text-gray-600 italic">No probable pitcher found for today.</p>
       </div>
@@ -752,7 +810,7 @@ function H2HMatchupCard({ data, loading, pitcherId, pitcherName, pitcherHand }) 
       <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
         <div className="flex items-center gap-2 mb-4">
           <span className="text-base">⚔️</span>
-          <h3 className="text-sm font-bold text-white">Career Head-to-Head</h3>
+          <h3 className="text-sm font-bold text-white">MatchupFile™</h3>
         </div>
         <div className="space-y-3">
           <Skeleton className="h-16 w-full rounded-lg"/>
@@ -798,7 +856,7 @@ function H2HMatchupCard({ data, loading, pitcherId, pitcherName, pitcherHand }) 
       <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-2">
           <span className="text-base">⚔️</span>
-          <h3 className="text-sm font-bold text-white">Career Head-to-Head</h3>
+          <h3 className="text-sm font-bold text-white">MatchupFile™</h3>
         </div>
         {hasData && (
           <span className="text-xs text-gray-500 bg-gray-800 px-2.5 py-1 rounded-full tabular-nums">
@@ -905,7 +963,7 @@ class ProjectionErrorBoundary extends React.Component {
   }
 }
 
-function useKProjection(pitcherStarts, seasonStats, oppTeamAbbrev) {
+function useKProjection(pitcherStarts, seasonStats, oppTeamAbbrev, pitcherSavant) {
   return useMemo(() => {
     if (!pitcherStarts?.length) return null;
     const last5  = pitcherStarts.slice(-5);
@@ -917,7 +975,17 @@ function useKProjection(pitcherStarts, seasonStats, oppTeamAbbrev) {
     const k9 = parseFloat(seasonStats?.strikeoutsPer9Inn) || null;
     const seasonK = k9 != null ? k9 / 9 * avgL5IP : null;
     const leagueK = 5.5;
-    const projected = l5K * 0.60 + (seasonK ?? leagueK) * 0.30 + leagueK * 0.10;
+    const raw = l5K * 0.60 + (seasonK ?? leagueK) * 0.30 + leagueK * 0.10;
+    // Savant additive shifts
+    const LG_WHIFF = 24.0;
+    const whiffShift = pitcherSavant?.whiffPct != null
+      ? Math.max(-1.2, Math.min(1.5, (pitcherSavant.whiffPct - LG_WHIFF) * 0.14))
+      : 0;
+    const LG_K_PCT = 22.0;
+    const kPctShift = pitcherSavant?.kPct != null
+      ? Math.max(-0.5, Math.min(0.8, (pitcherSavant.kPct - LG_K_PCT) * 0.04))
+      : 0;
+    const projected = raw + whiffShift + kPctShift;
     const kVals = last10.map(s => s.strikeOuts);
     const kMean = kVals.reduce((a,b)=>a+b,0) / kVals.length;
     const kVar  = kVals.length > 1 ? kVals.reduce((a,v)=>a+(v-kMean)**2,0)/(kVals.length-1) : 4;
@@ -934,11 +1002,14 @@ function useKProjection(pitcherStarts, seasonStats, oppTeamAbbrev) {
     const outLower = Math.max(0, Math.round((avgL5IP - 1.2) * 3));
     const outUpper = Math.round((avgL5IP + 1.2) * 3);
     const confidence = pitcherStarts.length >= 10 ? 'High' : pitcherStarts.length >= 5 ? 'Medium' : 'Low';
+    const savantNote = pitcherSavant
+      ? `WhiffRate ${pitcherSavant.whiffPct != null ? pitcherSavant.whiffPct.toFixed(1)+'%' : 'n/a'} · K% ${pitcherSavant.kPct != null ? pitcherSavant.kPct.toFixed(1)+'%' : 'n/a'}`
+      : null;
     const factorImpacts = [
       { label:'L5 K avg',         impact: Math.round((l5K - leagueK) * 0.60 * 10)/10,                      dir: l5K > leagueK ? '↑' : l5K < leagueK ? '↓' : '—' },
       { label:'Season K/start',   impact: seasonK != null ? Math.round((seasonK - leagueK)*0.30*10)/10 : 0, dir: (seasonK??leagueK) > leagueK ? '↑' : '↓', note: seasonK == null ? 'using L5 only' : null },
       { label:'Opp team K rate',  impact: Math.round((oppKFactor-1)*projected*10)/10, dir: oppKFactor>1?'↑':'↓', note: !oppTeamAbbrev?'opp unknown':null },
-      { label:'SwStr% edge',      impact: 0, dir:'—', note:'Savant — coming soon' },
+      { label:'SwStr% / K%',      impact: Math.round((whiffShift + kPctShift) * 10)/10, dir: (whiffShift+kPctShift)>0?'↑':(whiffShift+kPctShift)<0?'↓':'—', note: savantNote ?? 'Savant — no data' },
       { label:'Rest adj',         impact: Math.round((restFactor - 1) * projected * 10)/10, dir: restFactor > 1 ? '↑' : restFactor < 1 ? '↓' : '—' },
     ];
     return {
@@ -948,7 +1019,7 @@ function useKProjection(pitcherStarts, seasonStats, oppTeamAbbrev) {
       confidence, restFactor, daysRest, l5Ks, l5IPValues: l5IP,
       factorImpacts, hasSeasStats: seasonK != null, oppKFactor, oppKRate,
     };
-  }, [pitcherStarts, seasonStats, oppTeamAbbrev]);
+  }, [pitcherStarts, seasonStats, oppTeamAbbrev, pitcherSavant]);
 }
 
 function PoissonBarChart({ lambda, bookLine }) {
@@ -1000,14 +1071,14 @@ function EVGaugeSVG({ evPct }) {
         <path d={`M ${sx} ${sy} A ${R} ${R} 0 ${sweepDeg>180?1:0} 1 ${ex} ${ey}`} fill="none" stroke={col} strokeWidth={sw} strokeLinecap="round"/>
       )}
       <text x={cx} y={cy-6} textAnchor="middle" fontSize="22" fontWeight="900" fill={col} fontFamily="monospace">{lbl}</text>
-      <text x={cx} y={cy+12} textAnchor="middle" fontSize="9" fill="#6b7280">EV%</text>
+      <text x={cx} y={cy+12} textAnchor="middle" fontSize="9" fill="#6b7280">LineCheck</text>
       <text x={cx-R-2} y={cy+26} textAnchor="end"   fontSize="8" fill="#374151">-15%</text>
       <text x={cx+R+2} y={cy+26} textAnchor="start" fontSize="8" fill="#374151">+15%</text>
     </svg>
   );
 }
 
-function ProjectionEVCard({ pitcherStarts, seasonStats, oppTeamAbbrev, prizePicksLine }) {
+function ProjectionEVCard({ pitcherStarts, seasonStats, oppTeamAbbrev, prizePicksLine, pitcherSavant }) {
   const [bookLine,  setBookLine]  = useState('');
   const [overOdds,  setOverOdds]  = useState('-115');
   const [underOdds, setUnderOdds] = useState('-115');
@@ -1027,7 +1098,7 @@ function ProjectionEVCard({ pitcherStarts, seasonStats, oppTeamAbbrev, prizePick
     return () => clearTimeout(t);
   }, [bookLine]);
 
-  const proj   = useKProjection(pitcherStarts, seasonStats, oppTeamAbbrev);
+  const proj   = useKProjection(pitcherStarts, seasonStats, oppTeamAbbrev, pitcherSavant);
   const line   = parseFloat(debLine) || null;
   const oOdds  = parseInt(overOdds)  || -115;
   const uOdds  = parseInt(underOdds) || -115;
@@ -1064,7 +1135,7 @@ function ProjectionEVCard({ pitcherStarts, seasonStats, oppTeamAbbrev, prizePick
         <div className="flex items-center gap-3">
           <span className="text-lg">🎰</span>
           <div>
-            <h3 className="text-sm font-black text-white">Projection & EV%</h3>
+            <h3 className="text-sm font-black text-white">LineCheck™ — Projection & Edge</h3>
             <p className="text-xs text-gray-600">Strikeout prop model · ProprStats</p>
           </div>
         </div>
@@ -1094,7 +1165,7 @@ function ProjectionEVCard({ pitcherStarts, seasonStats, oppTeamAbbrev, prizePick
           <div className={`text-xl font-black tabular-nums ${evBadge ? '' : 'text-gray-600'}`}>
             {evResult ? `${evResult.evOver>=0?'+':''}${evResult.evOver.toFixed(1)}%` : '—'}
           </div>
-          <div className="text-xs text-gray-600 mt-0.5">EV Signal</div>
+          <div className="text-xs text-gray-600 mt-0.5">LineCheck</div>
         </div>
       </div>
 
@@ -1102,14 +1173,14 @@ function ProjectionEVCard({ pitcherStarts, seasonStats, oppTeamAbbrev, prizePick
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mb-5">
         {/* Col 1 — Poisson distribution */}
         <div>
-          <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">K Distribution (Poisson)</p>
+          <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">K Distribution (ProbMap)</p>
           <PoissonBarChart lambda={proj.projected} bookLine={line || (proj.projected + 0.5)}/>
           {!line && <p className="text-xs text-gray-700 italic mt-1 text-center">Enter a book line for probabilities</p>}
         </div>
 
         {/* Col 2 — EV gauge */}
         <div className="flex flex-col items-center">
-          <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">EV% Gauge</p>
+          <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">LineCheck™ Gauge</p>
           <EVGaugeSVG evPct={evResult?.evOver ?? 0}/>
           {evResult ? (
             <div className="flex gap-2 mt-2 flex-wrap justify-center">
@@ -1121,10 +1192,10 @@ function ProjectionEVCard({ pitcherStarts, seasonStats, oppTeamAbbrev, prizePick
               </span>
             </div>
           ) : (
-            <p className="text-xs text-gray-700 italic mt-3 text-center">Enter line & odds for EV%</p>
+            <p className="text-xs text-gray-700 italic mt-3 text-center">Enter line & odds for LineCheck</p>
           )}
           <p className="text-xs text-gray-700 mt-3 text-center leading-relaxed px-2">
-            EV% measures edge vs book. <span className="text-emerald-700">EV &gt; 5% = strong value.</span>
+            LineCheck measures edge vs book. <span className="text-emerald-700">LineCheck &gt; 5% = strong value.</span>
           </p>
         </div>
 
@@ -1156,7 +1227,7 @@ function ProjectionEVCard({ pitcherStarts, seasonStats, oppTeamAbbrev, prizePick
 
       {/* Odds input row */}
       <div className="rounded-lg border border-gray-800 bg-gray-900/60 px-4 py-3 mb-4">
-        <p className="text-xs text-gray-600 mb-2">Enter sportsbook odds for accurate EV%:</p>
+        <p className="text-xs text-gray-600 mb-2">Enter sportsbook odds for accurate LineCheck:</p>
         <div className="flex flex-wrap items-center gap-3">
           {[
             { label:'Over line', val:bookLine,  set:setBookLine,  step:'0.5', ph:'5.5'  },
@@ -1351,32 +1422,38 @@ function BaseballDiamondCard({ spTeamAbbrev, spOppAbbrev, spIsHome, activeCat, w
   const valCls = v => v >= 1.03 ? 'text-emerald-400' : v <= 0.97 ? 'text-red-400' : 'text-gray-400';
   const valBg  = v => v >= 1.03 ? 'bg-emerald-500/15 border-emerald-500/30' : v <= 0.97 ? 'bg-red-500/10 border-red-500/25' : 'bg-gray-800/50 border-gray-700/50';
 
-  // SVG field layout — HP at bottom center, outfield arc at top
-  const W = 300, H = 260;
-  const HP = { x:150, y:248 };
-  const B1 = { x:218, y:172 };
-  const B2 = { x:150, y: 96 };
-  const B3 = { x: 82, y:172 };
-  const PM = { x:150, y:160 };
-  // Foul poles (where the foul lines meet the outfield wall)
-  const LFP = { x:10,  y:108 };
-  const RFP = { x:290, y:108 };
-  const CF  = { x:150, y: 18 };
+  // SVG field layout — larger H for more presence
+  const W = 300, H = 278;
+  const HP  = { x:150, y:264 };
+  const B1  = { x:222, y:182 };
+  const B2  = { x:150, y:100 };
+  const B3  = { x: 78, y:182 };
+  const PM  = { x:150, y:168 };
+  const LFP = { x:10,  y:110 };
+  const RFP = { x:290, y:110 };
+  const CF  = { x:150, y: 14 };
 
   // Wind
   const windAdj  = wx.adjustment;
   const hasWind  = weather && (wx.windSpeed ?? 0) >= 8;
   const windClr  = windAdj > 0 ? '#34d399' : windAdj < 0 ? '#f87171' : '#9ca3af';
-  const windLbl  = windAdj > 0 ? `${Math.round(wx.windSpeed)}mph — Blowing Out ↑` :
-                   windAdj < 0 ? `${Math.round(wx.windSpeed)}mph — Blowing In ↓` :
-                                 `${Math.round(wx.windSpeed)}mph Crosswind`;
+  const windLabel = windAdj > 0 ? 'Blowing Out' : windAdj < 0 ? 'Blowing In' : 'Crosswind';
+
+  // Compass — larger for pop
+  const CS = 96, CCX = 48, CCY = 48, CR = 34;
+  const arrowToDir = wx.windDir != null ? (wx.windDir + 180) % 360 : null;
+  const aRad  = arrowToDir != null ? (arrowToDir - 90) * Math.PI / 180 : 0;
+  const tipX  = CCX + (CR - 2) * Math.cos(aRad);
+  const tipY  = CCY + (CR - 2) * Math.sin(aRad);
+  const tailX = CCX - CR * 0.52 * Math.cos(aRad);
+  const tailY = CCY - CR * 0.52 * Math.sin(aRad);
 
   const catVal = activeCat === 'hits' ? park?.hits : activeCat === 'hr' ? park?.hr :
                  activeCat === 'runs' ? park?.runs : activeCat === 'sb' ? park?.runs : null;
 
   return (
     <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
-      <div className="flex items-center gap-2 mb-3">
+      <div className="flex items-center gap-2 mb-4">
         <span className="text-base">🏟️</span>
         <h3 className="text-sm font-bold text-white">Park & Conditions</h3>
         {park && <span className="ml-auto text-xs text-gray-500 truncate max-w-[160px]">{park.name}</span>}
@@ -1386,202 +1463,218 @@ function BaseballDiamondCard({ spTeamAbbrev, spOppAbbrev, spIsHome, activeCat, w
         <p className="text-xs text-gray-600 italic">Park data unavailable — team not identified.</p>
       ) : (
         <>
-          {/* ── Stadium SVG ─────────────────────────────────────────────── */}
-          <div className="mb-3 rounded-lg overflow-hidden bg-gray-950/60">
-            <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%', maxHeight:230}} xmlns="http://www.w3.org/2000/svg">
+          {/* ── Stadium SVG ── */}
+          <div className="mb-4 rounded-lg overflow-hidden" style={{background:'#060e07'}}>
+            <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%'}} xmlns="http://www.w3.org/2000/svg">
 
-              {/* ── Grass background (fair territory) ── */}
+              {/* Fair territory — visible green */}
               <path d={`M ${HP.x},${HP.y} L ${LFP.x},${LFP.y} Q ${CF.x},${CF.y} ${RFP.x},${RFP.y} Z`}
-                fill="#14532d"/>
+                fill="#0d2b10"/>
 
-              {/* ── Warning track (thick arc stroke inside outfield wall) ── */}
+              {/* Warning track */}
               <path d={`M ${LFP.x},${LFP.y} Q ${CF.x},${CF.y} ${RFP.x},${RFP.y}`}
-                fill="none" stroke="#92400e" strokeWidth="20" opacity="0.75"/>
-              {/* Inner edge of warning track (grass covers it) */}
-              <path d={`M 30,116 Q ${CF.x},38 270,116`}
-                fill="none" stroke="#166534" strokeWidth="4"/>
+                fill="none" stroke="#2d1c08" strokeWidth="14"/>
 
-              {/* ── Foul lines ── */}
-              <line x1={HP.x} y1={HP.y} x2={LFP.x} y2={LFP.y} stroke="#ca8a04" strokeWidth="1.5" opacity="0.8"/>
-              <line x1={HP.x} y1={HP.y} x2={RFP.x} y2={RFP.y} stroke="#ca8a04" strokeWidth="1.5" opacity="0.8"/>
-
-              {/* ── Outfield wall (top boundary arc) ── */}
+              {/* Outfield wall — visible gray-blue */}
               <path d={`M ${LFP.x},${LFP.y} Q ${CF.x},${CF.y} ${RFP.x},${RFP.y}`}
-                fill="none" stroke="#374151" strokeWidth="5"/>
+                fill="none" stroke="#4b5563" strokeWidth="2.5"/>
+              {/* Wall inner highlight */}
               <path d={`M ${LFP.x},${LFP.y} Q ${CF.x},${CF.y} ${RFP.x},${RFP.y}`}
-                fill="none" stroke="#6b7280" strokeWidth="1.5" opacity="0.5"/>
+                fill="none" stroke="#6b7280" strokeWidth="0.75" opacity="0.5"/>
 
-              {/* ── Infield dirt circle ── */}
-              <circle cx={W/2} cy={175} r="78" fill="#92400e" opacity="0.38"/>
+              {/* Foul lines — more visible */}
+              <line x1={HP.x} y1={HP.y} x2={LFP.x} y2={LFP.y} stroke="#64748b" strokeWidth="1.5"/>
+              <line x1={HP.x} y1={HP.y} x2={RFP.x} y2={RFP.y} stroke="#64748b" strokeWidth="1.5"/>
 
-              {/* ── Infield grass diamond ── */}
+              {/* Infield dirt circle — visible brown */}
+              <circle cx={W/2} cy={PM.y+22} r="76" fill="#2a1a08" opacity="0.75"/>
+
+              {/* Infield grass diamond */}
               <polygon
                 points={`${HP.x},${HP.y} ${B1.x},${B1.y} ${B2.x},${B2.y} ${B3.x},${B3.y}`}
-                fill="#166534" opacity="0.85"/>
+                fill="#0e2e12" opacity="0.9"/>
 
-              {/* ── Basepaths (dirt strips between bags) ── */}
-              <line x1={HP.x} y1={HP.y} x2={B1.x} y2={B1.y} stroke="#92400e" strokeWidth="6" opacity="0.5"/>
-              <line x1={B1.x} y1={B1.y} x2={B2.x} y2={B2.y} stroke="#92400e" strokeWidth="6" opacity="0.5"/>
-              <line x1={B2.x} y1={B2.y} x2={B3.x} y2={B3.y} stroke="#92400e" strokeWidth="6" opacity="0.5"/>
-              <line x1={B3.x} y1={B3.y} x2={HP.x} y2={HP.y} stroke="#92400e" strokeWidth="6" opacity="0.5"/>
+              {/* Basepaths — visible brown lines */}
+              <line x1={HP.x} y1={HP.y} x2={B1.x} y2={B1.y} stroke="#3d2a10" strokeWidth="6"/>
+              <line x1={B1.x} y1={B1.y} x2={B2.x} y2={B2.y} stroke="#3d2a10" strokeWidth="6"/>
+              <line x1={B2.x} y1={B2.y} x2={B3.x} y2={B3.y} stroke="#3d2a10" strokeWidth="6"/>
+              <line x1={B3.x} y1={B3.y} x2={HP.x} y2={HP.y} stroke="#3d2a10" strokeWidth="6"/>
 
-              {/* ── Pitcher's mound ── */}
-              <circle cx={PM.x} cy={PM.y} r="11" fill="#a16207" opacity="0.85"/>
-              <circle cx={PM.x} cy={PM.y} r="5"  fill="#ca8a04" opacity="0.6"/>
-
-              {/* ── Wind arrow (centered in outfield, prominent) ── */}
-              {hasWind && (
-                <g>
-                  <defs>
-                    <marker id="windHead" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto">
-                      <path d={windAdj >= 0 ? 'M1,9 L5,1 L9,9 Z' : 'M1,1 L5,9 L9,1 Z'} fill={windClr}/>
-                    </marker>
-                  </defs>
-                  <line
-                    x1={W/2} y1={windAdj >= 0 ? 182 : 68}
-                    x2={W/2} y2={windAdj >= 0 ? 78  : 178}
-                    stroke={windClr} strokeWidth="4.5" strokeDasharray="7 4"
-                    markerEnd="url(#windHead)" opacity="0.95"/>
-                  {/* Wind label pill */}
-                  <rect x={W/2-52} y={windAdj >= 0 ? 51 : 180} width="104" height="20" rx="5" fill="#0f172a" fillOpacity="0.95"/>
-                  <text x={W/2} y={windAdj >= 0 ? 64 : 193}
-                    textAnchor="middle" fill={windClr} fontSize="9.5" fontWeight="800">
-                    {windLbl}
-                  </text>
-                </g>
-              )}
+              {/* Pitcher's mound */}
+              <circle cx={PM.x} cy={PM.y} r="11" fill="#3d2a10"/>
+              <circle cx={PM.x} cy={PM.y} r="5"  fill="#5c3d18"/>
 
               {/* ── Park factor labels ── */}
-              {/* HR — deep center (top center) */}
-              {park && (
-                <g>
-                  <rect x={W/2-28} y={hasWind && windAdj < 0 ? 43 : 18} width="56" height="24" rx="5" fill="#0f172a" fillOpacity="0.95"/>
-                  <text x={W/2} y={hasWind && windAdj < 0 ? 31 : 30.5} textAnchor="middle" fontSize="10" fontWeight="800"
-                    fill={park.hr >= 1.03 ? '#34d399' : park.hr <= 0.97 ? '#f87171' : '#9ca3af'}>
-                    HR {pctStr(park.hr)}
-                  </text>
-                </g>
-              )}
+              {/* HR — center field */}
+              <g>
+                <rect x={W/2-32} y="6" width="64" height="32" rx="5" fill="#0d1117" fillOpacity="0.96"/>
+                <text x={W/2} y="18" textAnchor="middle" fontSize="8" fill="#4b5563" fontWeight="600" letterSpacing="0.5">HR</text>
+                <text x={W/2} y="33" textAnchor="middle" fontSize="13" fontWeight="800"
+                  fill={park.hr >= 1.03 ? '#34d399' : park.hr <= 0.97 ? '#f87171' : '#6b7280'}>
+                  {pctStr(park.hr)}
+                </text>
+              </g>
 
               {/* Hits — left field */}
-              {park && (
-                <g>
-                  <rect x="10" y="72" width="54" height="24" rx="4" fill="#0f172a" fillOpacity="0.95"/>
-                  <text x="37" y="82" textAnchor="middle" fontSize="9" fontWeight="700"
-                    fill={park.hits >= 1.03 ? '#34d399' : park.hits <= 0.97 ? '#f87171' : '#9ca3af'}>
-                    H {pctStr(park.hits)}
-                  </text>
-                  <text x="37" y="92" textAnchor="middle" fontSize="7.5" fill="#6b7280">Hits</text>
-                </g>
-              )}
+              <g>
+                <rect x="6" y="62" width="62" height="32" rx="4" fill="#0d1117" fillOpacity="0.96"/>
+                <text x="37" y="74" textAnchor="middle" fontSize="8" fill="#4b5563" fontWeight="600" letterSpacing="0.5">HITS</text>
+                <text x="37" y="89" textAnchor="middle" fontSize="13" fontWeight="800"
+                  fill={park.hits >= 1.03 ? '#34d399' : park.hits <= 0.97 ? '#f87171' : '#6b7280'}>
+                  {pctStr(park.hits)}
+                </text>
+              </g>
 
               {/* Runs — right field */}
-              {park && (
-                <g>
-                  <rect x={W-64} y="72" width="54" height="24" rx="4" fill="#0f172a" fillOpacity="0.95"/>
-                  <text x={W-37} y="82" textAnchor="middle" fontSize="9" fontWeight="700"
-                    fill={park.runs >= 1.03 ? '#34d399' : park.runs <= 0.97 ? '#f87171' : '#9ca3af'}>
-                    R {pctStr(park.runs)}
-                  </text>
-                  <text x={W-37} y="92" textAnchor="middle" fontSize="7.5" fill="#6b7280">Runs</text>
-                </g>
-              )}
+              <g>
+                <rect x={W-68} y="62" width="62" height="32" rx="4" fill="#0d1117" fillOpacity="0.96"/>
+                <text x={W-37} y="74" textAnchor="middle" fontSize="8" fill="#4b5563" fontWeight="600" letterSpacing="0.5">RUNS</text>
+                <text x={W-37} y="89" textAnchor="middle" fontSize="13" fontWeight="800"
+                  fill={park.runs >= 1.03 ? '#34d399' : park.runs <= 0.97 ? '#f87171' : '#6b7280'}>
+                  {pctStr(park.runs)}
+                </text>
+              </g>
 
-              {/* K — pitcher mound label (below mound) */}
-              {park && (
-                <g>
-                  <rect x={PM.x-26} y={PM.y+15} width="52" height="24" rx="4" fill="#0f172a" fillOpacity="0.95"/>
-                  <text x={PM.x} y={PM.y+26} textAnchor="middle" fontSize="9.5" fontWeight="700"
-                    fill={park.k <= 0.97 ? '#34d399' : park.k >= 1.03 ? '#f87171' : '#9ca3af'}>
-                    K {pctStr(park.k)}
-                  </text>
-                  <text x={PM.x} y={PM.y+35} textAnchor="middle" fontSize="7.5" fill="#6b7280">Strikeouts</text>
-                </g>
-              )}
-
-              {/* ── Weather badges (corners) ── */}
-              {/* Temperature — top right */}
-              {weather && wx.temp != null && (
-                <g>
-                  <rect x={W-58} y="4" width="54" height="26" rx="5" fill="#0f172a" fillOpacity="0.95"/>
-                  <text x={W-31} y="21" textAnchor="middle" fontSize="12" fontWeight="900"
-                    fill={wx.temp >= 29 ? '#fb923c' : wx.temp <= 13 ? '#60a5fa' : '#e5e7eb'}>
-                    {Math.round(wx.temp)}°C
-                  </text>
-                </g>
-              )}
-
-              {/* Wind speed + direction */}
-              {weather && wx.windSpeed > 0 && (
-                <g>
-                  <rect x="4" y="4" width="60" height="32" rx="5" fill="#0f172a" fillOpacity="0.95"/>
-                  <text x="34" y="17" textAnchor="middle" fontSize="10" fontWeight="700" fill="#9ca3af">
-                    {Math.round(wx.windSpeed)} mph
-                  </text>
-                  <text x="34" y="30" textAnchor="middle" fontSize="11" fontWeight="900"
-                    fill={hasWind ? windClr : '#9ca3af'}>
-                    {degToCompass(wx.windDir)}
-                  </text>
-                </g>
-              )}
+              {/* K — below pitcher mound */}
+              <g>
+                <rect x={PM.x-34} y={PM.y+16} width="68" height="32" rx="4" fill="#0d1117" fillOpacity="0.96"/>
+                <text x={PM.x} y={PM.y+27} textAnchor="middle" fontSize="8" fill="#4b5563" fontWeight="600" letterSpacing="0.5">STRIKEOUT</text>
+                <text x={PM.x} y={PM.y+42} textAnchor="middle" fontSize="13" fontWeight="800"
+                  fill={park.k <= 0.97 ? '#34d399' : park.k >= 1.03 ? '#f87171' : '#6b7280'}>
+                  {pctStr(park.k)}
+                </text>
+              </g>
 
               {/* ── Bases ── */}
               {[B1, B2, B3].map((b, i) => (
-                <rect key={i} x={b.x-5.5} y={b.y-5.5} width="11" height="11" rx="2"
-                  fill="white" opacity="0.95" transform={`rotate(45 ${b.x} ${b.y})`}/>
+                <rect key={i} x={b.x-6} y={b.y-6} width="12" height="12" rx="2"
+                  fill="#e2e8f0" opacity="0.95" transform={`rotate(45 ${b.x} ${b.y})`}/>
               ))}
-              {/* Home plate pentagon */}
+              {/* Home plate */}
               <polygon
                 points={`${HP.x},${HP.y-10} ${HP.x+8},${HP.y-5} ${HP.x+8},${HP.y+6} ${HP.x-8},${HP.y+6} ${HP.x-8},${HP.y-5}`}
-                fill="white" opacity="0.95"/>
+                fill="#e2e8f0" opacity="0.95"/>
             </svg>
           </div>
 
-          {/* ── Park factor pill stats ── */}
+          {/* ── Weather section ── */}
+          {weather ? (
+            <div className="mb-4 rounded-lg bg-gray-800/30 border border-gray-700/30 p-4">
+              <div className="flex items-center gap-5">
+                {/* Compass rose — larger, more prominent */}
+                {arrowToDir != null && wx.windSpeed > 0 && (
+                  <div className="flex-shrink-0 flex flex-col items-center gap-1.5">
+                    <svg width={CS} height={CS} viewBox={`0 0 ${CS} ${CS}`} xmlns="http://www.w3.org/2000/svg">
+                      <defs>
+                        <marker id="compassHead" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                          <path d="M0,0.5 L7,4 L0,7.5 Z" fill={windClr}/>
+                        </marker>
+                        {/* Glow filter for arrow */}
+                        <filter id="arrowGlow" x="-50%" y="-50%" width="200%" height="200%">
+                          <feGaussianBlur stdDeviation="2.5" result="blur"/>
+                          <feFlood floodColor={windClr} floodOpacity="0.4" result="color"/>
+                          <feComposite in="color" in2="blur" operator="in" result="glow"/>
+                          <feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>
+                        </filter>
+                      </defs>
+                      {/* Outer ring */}
+                      <circle cx={CCX} cy={CCY} r={CR+2} fill="#0d1117" stroke="#1f2937" strokeWidth="1"/>
+                      <circle cx={CCX} cy={CCY} r={CR} fill="none" stroke="#374151" strokeWidth="1.5"/>
+                      {/* 8-direction ticks — cardinals longer */}
+                      {[0,45,90,135,180,225,270,315].map(deg => {
+                        const isCard = deg % 90 === 0;
+                        const r1 = isCard ? CR - 6 : CR - 3;
+                        const r2 = CR - 0.5;
+                        const rad = (deg - 90) * Math.PI / 180;
+                        return <line key={deg}
+                          x1={CCX + r1*Math.cos(rad)} y1={CCY + r1*Math.sin(rad)}
+                          x2={CCX + r2*Math.cos(rad)} y2={CCY + r2*Math.sin(rad)}
+                          stroke={isCard ? '#6b7280' : '#374151'} strokeWidth={isCard ? 1.5 : 1}/>;
+                      })}
+                      {/* Cardinal labels — N highlighted */}
+                      <text x={CCX}   y="9"        textAnchor="middle" fontSize="9" fill="white"   fontWeight="800">N</text>
+                      <text x={CCX}   y={CS-1.5}   textAnchor="middle" fontSize="9" fill="#6b7280" fontWeight="600">S</text>
+                      <text x={CS-2}  y={CCY+3.5}  textAnchor="middle" fontSize="9" fill="#6b7280" fontWeight="600">E</text>
+                      <text x="3"     y={CCY+3.5}  textAnchor="middle" fontSize="9" fill="#6b7280" fontWeight="600">W</text>
+                      {/* Arrow glow shadow */}
+                      <line x1={tailX} y1={tailY} x2={tipX} y2={tipY}
+                        stroke={windClr} strokeWidth="5" opacity="0.2" strokeLinecap="round"/>
+                      {/* Arrow */}
+                      <line x1={tailX} y1={tailY} x2={tipX} y2={tipY}
+                        stroke={windClr} strokeWidth="2.5" markerEnd="url(#compassHead)"
+                        filter="url(#arrowGlow)" strokeLinecap="round"/>
+                      {/* Center dot */}
+                      <circle cx={CCX} cy={CCY} r="3.5" fill={windClr}/>
+                      <circle cx={CCX} cy={CCY} r="1.5" fill="#0d1117"/>
+                    </svg>
+                    <span className="text-xs font-bold text-gray-400 tracking-wide">{degToCompass(wx.windDir)}</span>
+                  </div>
+                )}
+
+                {/* Wind + temp — fills remaining space */}
+                <div className="flex-1 min-w-0">
+                  {wx.windSpeed > 0 && (
+                    <>
+                      <div className="flex items-baseline gap-2 mb-1">
+                        <span className="text-3xl font-black tabular-nums leading-none"
+                          style={{color: hasWind ? windClr : '#9ca3af'}}>
+                          {Math.round(wx.windSpeed)}
+                        </span>
+                        <span className="text-sm font-bold text-gray-500">mph</span>
+                      </div>
+                      {hasWind && (
+                        <span className={`inline-block text-xs font-bold px-2.5 py-0.5 rounded-full border mb-2 ${
+                          windAdj > 0 ? 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10'
+                                      : windAdj < 0 ? 'text-red-400 border-red-500/30 bg-red-500/10'
+                                      : 'text-gray-400 border-gray-600/30 bg-gray-700/20'}`}>
+                          {windLabel}
+                        </span>
+                      )}
+                    </>
+                  )}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {wx.temp != null && (
+                      <span className={`text-sm font-bold tabular-nums ${wx.temp >= 29 ? 'text-orange-400' : wx.temp <= 13 ? 'text-blue-400' : 'text-gray-300'}`}>
+                        {Math.round(wx.temp * 9/5 + 32)}°F
+                        <span className="text-xs font-normal text-gray-600 ml-1">/ {Math.round(wx.temp)}°C</span>
+                      </span>
+                    )}
+                    {wx.adjustment !== 0 && (
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded border ${wx.adjustment > 0 ? 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10' : 'text-red-400 border-red-500/30 bg-red-500/10'}`}>
+                        {wx.adjustment > 0 ? '+' : ''}{wx.adjustment} score adj
+                      </span>
+                    )}
+                  </div>
+                  {wx.notes?.length > 0 && (
+                    <p className="text-xs text-gray-600 mt-1">{wx.notes.join(' · ')}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="mb-4 rounded-lg bg-gray-800/30 border border-gray-700/30 p-3">
+              <p className="text-xs text-gray-700 italic">Weather loading…</p>
+            </div>
+          )}
+
+          {/* ── Park factor pills ── */}
           <div className="grid grid-cols-4 gap-2">
             {[
-              { label:'Hits',  val:park.hits, cat:'hits' },
-              { label:'HR',    val:park.hr,   cat:'hr'   },
-              { label:'Runs',  val:park.runs, cat:'runs' },
-              { label:'K',     val:park.k,    cat:'k'    },
+              { label:'Hits', val:park.hits, cat:'hits' },
+              { label:'HR',   val:park.hr,   cat:'hr'   },
+              { label:'Runs', val:park.runs, cat:'runs' },
+              { label:'K',    val:park.k,    cat:'k'    },
             ].map(r => (
-              <div key={r.label} className={`rounded-lg border p-2.5 text-center transition-colors ${r.cat===activeCat ? 'border-blue-500/40 bg-blue-500/10' : valBg(r.val)}`}>
-                <div className={`text-sm font-black tabular-nums ${r.cat===activeCat ? 'text-blue-400' : valCls(r.val)}`}>{pctStr(r.val)}</div>
+              <div key={r.label} className={`rounded-lg border p-3 text-center transition-colors ${r.cat===activeCat ? 'border-blue-500/40 bg-blue-500/10' : valBg(r.val)}`}>
+                <div className={`text-base font-black tabular-nums ${r.cat===activeCat ? 'text-blue-400' : valCls(r.val)}`}>{pctStr(r.val)}</div>
                 <div className="text-xs text-gray-600 mt-0.5">{r.label}</div>
               </div>
             ))}
           </div>
 
-          {/* ── Game conditions row ── */}
-          {weather ? (
-            <div className="mt-3 pt-3 border-t border-gray-800/60">
-              <div className="flex items-center gap-2 mb-1.5">
-                <span className="text-xs font-bold text-gray-500 uppercase tracking-wide">Game Conditions</span>
-                {wx.adjustment !== 0 && (
-                  <span className={`text-xs font-bold rounded-full px-2 py-0.5 border ${wx.adjustment > 0 ? 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10' : 'text-red-400 border-red-500/30 bg-red-500/10'}`}>
-                    {wx.adjustment > 0 ? '+' : ''}{wx.adjustment} adj
-                  </span>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-2 text-xs text-gray-400">
-                {wx.temp != null && (
-                  <span className={wx.temp >= 29 ? 'text-orange-400' : wx.temp <= 13 ? 'text-blue-400' : 'text-gray-400'}>
-                    {Math.round(wx.temp)}°C
-                  </span>
-                )}
-                {wx.windSpeed > 0 && <span>{Math.round(wx.windSpeed)} mph {degToCompass(wx.windDir)} wind</span>}
-                {wx.notes.map((n,i) => <span key={i} className="text-gray-500">· {n}</span>)}
-              </div>
-            </div>
-          ) : (
-            <div className="mt-3 pt-3 border-t border-gray-800/60">
-              <p className="text-xs text-gray-700 italic">Weather loading…</p>
-            </div>
-          )}
-
-          {/* Active cat summary line */}
+          {/* Active cat summary */}
           {catVal != null && (
-            <p className="mt-2 text-xs text-gray-500 leading-relaxed">
+            <p className="mt-3 text-xs text-gray-500 leading-relaxed">
               {park.name} {catVal >= 1.03 ? 'boosts' : catVal <= 0.97 ? 'suppresses' : 'is neutral for'}{' '}
               <span className={`font-bold ${valCls(catVal)}`}>
                 {activeCat === 'hits' ? 'hits' : activeCat === 'hr' ? 'home runs' : activeCat === 'runs' ? 'runs' : activeCat}
@@ -1757,7 +1850,12 @@ function blendBatterStats(st26, st25) {
   const eff_pa = Math.max(1, Math.round(b(pa26, pa25)));
   const eff_ab = Math.max(1, Math.round(b(ab26, ab25)));
 
-  const hr_pg  = b((parseInt(st26.homeRuns)||0)/gp26,    (parseInt(st25.homeRuns)||0)/gp25);
+  // HR uses a slower blend weight (pa/400) — HR rate is the most volatile stat early in the
+  // season, so we trust 2025 production longer than other counting stats.
+  const w_hr = Math.min(1.0, pa26 / 400);
+  const bHR  = (v26, v25) => w_hr * v26 + (1 - w_hr) * v25;
+
+  const hr_pg  = bHR((parseInt(st26.homeRuns)||0)/gp26,  (parseInt(st25.homeRuns)||0)/gp25);
   const rbi_pg = b((parseInt(st26.rbi)||0)/gp26,         (parseInt(st25.rbi)||0)/gp25);
   const r_pg   = b((parseInt(st26.runs)||0)/gp26,        (parseInt(st25.runs)||0)/gp25);
   const sb_pg  = b((parseInt(st26.stolenBases)||0)/gp26, (parseInt(st25.stolenBases)||0)/gp25);
@@ -1784,6 +1882,7 @@ function blendBatterStats(st26, st25) {
     hits:        Math.round(h_pab  * eff_ab),
     doubles:     Math.round(d_pab  * eff_ab),
     triples:     Math.round(t_pab  * eff_ab),
+    _pa26: pa26,
   };
 }
 
@@ -1862,7 +1961,13 @@ function useHRProjection(gameLog, seasonStats, splits, statcast, pitcher, spPitc
     const sampleWeight   = Math.min(1.0, c.seasonPA / 200);
     const effectiveHRpa  = sampleWeight * seasonHRpa + (1 - sampleWeight) * talentHRpa;
     const l10HRpa        = l10HRpa_raw ?? effectiveHRpa;
-    const hrRate = l10HRpa * 0.35 + effectiveHRpa * 0.55 + LG_HRPA * 0.10;
+    // hrSampleWeight scales the L10 contribution using pa/400 (2× slower than general blend)
+    // so a hot 5-game start doesn't inflate the score before we have enough PA to trust it.
+    const pa26Raw        = parseInt(seasonStats?._pa26) || 0;
+    const hrSampleWeight = Math.min(1.0, pa26Raw / 400);
+    const l10Weight      = 0.35 * hrSampleWeight;
+    const seasonHRWeight = 0.55 + (0.35 - l10Weight);
+    const hrRate = l10HRpa * l10Weight + effectiveHRpa * seasonHRWeight + LG_HRPA * 0.10;
     // Base Poisson probability from blended rate
     const baseLambda = Math.max(0, hrRate * c.avgPA);
     const pHR_base   = 1 - Math.exp(-baseLambda);
@@ -2131,7 +2236,7 @@ function HittingProjectionEVCard({ gameLog, seasonStats, splits, statcast, pitch
         <div className="flex items-center gap-3">
           <span className="text-lg">🎯</span>
           <div>
-            <h3 className="text-sm font-black text-white">Hitting Projection & EV%</h3>
+            <h3 className="text-sm font-black text-white">LineCheck™ — Projection & Edge</h3>
             <p className="text-xs text-gray-600">Multi-prop model · ProprStats</p>
           </div>
         </div>
@@ -2172,7 +2277,7 @@ function HittingProjectionEVCard({ gameLog, seasonStats, splits, statcast, pitch
               <div className={`text-xl font-black tabular-nums ${evBadge ? '' : 'text-gray-600'}`}>
                 {evResult ? `${evResult.evOver>=0?'+':''}${evResult.evOver.toFixed(1)}%` : '—'}
               </div>
-              <div className="text-xs text-gray-600 mt-0.5">EV Signal</div>
+              <div className="text-xs text-gray-600 mt-0.5">LineCheck</div>
             </div>
           </div>
 
@@ -2180,14 +2285,14 @@ function HittingProjectionEVCard({ gameLog, seasonStats, splits, statcast, pitch
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mb-5">
             {/* Poisson chart */}
             <div>
-              <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">{propUnit} Distribution (Poisson)</p>
+              <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">{propUnit} Distribution (ProbMap)</p>
               <PoissonBarChart lambda={proj.projected} bookLine={line || (proj.projected + 0.5)}/>
               {!line && <p className="text-xs text-gray-700 italic mt-1 text-center">Enter a book line for probabilities</p>}
             </div>
 
             {/* EV gauge */}
             <div className="flex flex-col items-center">
-              <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">EV% Gauge</p>
+              <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">LineCheck™ Gauge</p>
               <EVGaugeSVG evPct={evResult?.evOver ?? 0}/>
               {evResult ? (
                 <div className="flex gap-2 mt-2 flex-wrap justify-center">
@@ -2199,10 +2304,10 @@ function HittingProjectionEVCard({ gameLog, seasonStats, splits, statcast, pitch
                   </span>
                 </div>
               ) : (
-                <p className="text-xs text-gray-700 italic mt-3 text-center">Enter line & odds for EV%</p>
+                <p className="text-xs text-gray-700 italic mt-3 text-center">Enter line & odds for LineCheck</p>
               )}
               <p className="text-xs text-gray-700 mt-3 text-center leading-relaxed px-2">
-                EV% measures edge vs book. <span className="text-emerald-700">EV &gt; 5% = strong value.</span>
+                LineCheck measures edge vs book. <span className="text-emerald-700">LineCheck &gt; 5% = strong value.</span>
               </p>
             </div>
 
@@ -2234,7 +2339,7 @@ function HittingProjectionEVCard({ gameLog, seasonStats, splits, statcast, pitch
 
           {/* Odds input row */}
           <div className="rounded-lg border border-gray-800 bg-gray-900/60 px-4 py-3">
-            <p className="text-xs text-gray-600 mb-2">Enter sportsbook odds for accurate EV%:</p>
+            <p className="text-xs text-gray-600 mb-2">Enter sportsbook odds for accurate LineCheck:</p>
             <div className="flex flex-wrap items-center gap-3">
               {[
                 { label:'Book line',  val:lines[activeProp],     set:v=>setLines(p=>({...p,[activeProp]:v})),       step:'0.5', ph:'1.5'  },
@@ -2294,8 +2399,9 @@ export default function PlayerDetailPage() {
   const [chartLoading,setChartLoading]= useState(true);
 
   // ── Pitcher-specific state ─────────────────────────────────────────────
-  const [pitcherStarts, setPitcherStarts] = useState([]);
-  const [pitcherSplits, setPitcherSplits] = useState(null);
+  const [pitcherStarts,  setPitcherStarts]  = useState([]);
+  const [pitcherSplits,  setPitcherSplits]  = useState(null);
+  const [pitcherSavant,  setPitcherSavant]  = useState(null);
   const [pitcherChartCat,  setPitcherChartCat]  = useState('k');
   const [pitcherChartLine, setPitcherChartLine] = useState(4.5);
   const [pitcherChartWin,  setPitcherChartWin]  = useState(10);
@@ -2313,7 +2419,7 @@ export default function PlayerDetailPage() {
     if (!name) return;
     async function fetchPP() {
       try {
-        const res = await fetch(`/pp-lines.json`, { signal: AbortSignal.timeout(10000) });
+        const res = await fetch(`/api/prizepicks`, { signal: AbortSignal.timeout(10000) });
         if (!res.ok) return;
         const data = await res.json();
         if (!data.lines) return;
@@ -2358,18 +2464,8 @@ export default function PlayerDetailPage() {
     if (cfg) setPitcherChartLine(cfg.defaultLine);
   }, [pitcherChartCat]);
 
-  // ── Paywall check ─────────────────────────────────────────────────────────
-  useEffect(() => {
-    const plan = localStorage.getItem('proprstats_plan') || 'free';
-    if (plan !== 'pro' && plan !== 'yearly') {
-      const views = parseInt(localStorage.getItem('proprstats_player_views') || '0');
-      if (views >= 1) {
-        setShowPaywall(true);
-      } else {
-        localStorage.setItem('proprstats_player_views', String(views + 1));
-      }
-    }
-  }, []);
+  // ── Paywall check (disabled for beta) ────────────────────────────────────
+  // useEffect(() => { ... }, []);
 
   // ── Load data ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -2399,11 +2495,12 @@ export default function PlayerDetailPage() {
         }
         setChartLoading(false);
 
-        // Phase 2: season stats + splits — current season primary, 2025 fallback
-        const [mlbRes, mlbRes25, splitsRes] = await Promise.allSettled([
+        // Phase 2: season stats + splits + Savant — current season primary, 2025 fallback
+        const [mlbRes, mlbRes25, splitsRes, savantRes] = await Promise.allSettled([
           fetch(`${MLB_API}/people/${id}?hydrate=stats(group=pitching,type=season,season=${SEASON})`),
           fetch(`${MLB_API}/people/${id}?hydrate=stats(group=pitching,type=season,season=2025)`),
           fetch(`${API_URL}/pitcher/${id}/splits?season=2025`),
+          fetch(`${API_URL}/statcast/pitchers?season=2025`),
         ]);
 
         if (mlbRes.status === 'fulfilled' && mlbRes.value?.ok) {
@@ -2434,6 +2531,12 @@ export default function PlayerDetailPage() {
         if (splitsRes.status === 'fulfilled' && splitsRes.value?.ok) {
           const d = await splitsRes.value.json();
           setPitcherSplits(d.splits || null);
+        }
+
+        if (savantRes.status === 'fulfilled' && savantRes.value?.ok) {
+          const d = await savantRes.value.json();
+          const sc = d[parseInt(id)] || d[id] || null;
+          if (sc) setPitcherSavant(sc);
         }
 
       } else {
@@ -2666,7 +2769,7 @@ export default function PlayerDetailPage() {
   }, [isPitcherView, seasonStats]);
 
   // Page-level K projection (mirrors ProjectionEVCard)
-  const pageKProj = useKProjection(isPitcherView ? pitcherStarts : [], isPitcherView ? seasonStats : null, spOppAbbrev);
+  const pageKProj = useKProjection(isPitcherView ? pitcherStarts : [], isPitcherView ? seasonStats : null, spOppAbbrev, isPitcherView ? pitcherSavant : null);
   const kProjScore = useMemo(() => {
     if (!isPitcherView || !pageKProj) return null;
     return pitcherScoreFromKProj(pageKProj.projected, ppLines?.strikeouts ?? null);
@@ -2702,7 +2805,7 @@ export default function PlayerDetailPage() {
             </div>
             <h2 className="text-xl font-black text-white mb-2">You&apos;ve used your free preview</h2>
             <p className="text-sm text-gray-400 leading-relaxed mb-6">
-              Your free account includes <span className="text-white font-semibold">1 player deep-dive</span>. Upgrade for unlimited access to every player&apos;s Statcast model, EV%, and prop projections.
+              Your free account includes <span className="text-white font-semibold">1 player deep-dive</span>. Upgrade for unlimited access to every player&apos;s EdgeScore, LineCheck, and full prop projections.
             </p>
             <div className="flex flex-col gap-3 mb-5">
               <Link
@@ -2900,6 +3003,7 @@ export default function PlayerDetailPage() {
                 seasonStats={seasonStats}
                 oppTeamAbbrev={spOppAbbrev}
                 prizePicksLine={ppLines?.strikeouts ?? null}
+                pitcherSavant={pitcherSavant}
               />
             </ProjectionErrorBoundary>
 
@@ -3063,7 +3167,7 @@ export default function PlayerDetailPage() {
                 />
               </div>
 
-              <Card title="Handedness Splits" icon="✂️">
+              <Card title="PlatoonIQ™" icon="✂️">
                 {!splits ? (
                   loading
                     ? <div className="space-y-2">{[1,2,3].map(i=><Skeleton key={i} className="h-5 w-full"/>)}</div>

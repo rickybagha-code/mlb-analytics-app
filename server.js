@@ -88,6 +88,10 @@ let statcastCache = null;
 let statcastCacheTs = 0;
 const STATCAST_TTL = 6 * 60 * 60 * 1000;
 
+// Pitcher Statcast cache (same TTL)
+let pitcherStatcastCache = null;
+let pitcherStatcastCacheTs = 0;
+
 app.get('/', (req, res) => {
   res.send('home route works');
 });
@@ -893,6 +897,40 @@ app.get('/statcast/batters', async (req, res) => {
   } catch (error) {
     if (statcastCache) return res.json(statcastCache); // serve stale on error
     res.status(500).json({ error: 'Failed to fetch Statcast data', details: error.message });
+  }
+});
+
+// ─── Pitcher Statcast leaderboard (whiff rate + K%) ─────────────────────────
+// Fetches Baseball Savant's pitcher statcast leaderboard CSV.
+// Key fields: whiff_percent (swings&misses/swings, LG avg ~24%) and k_percent (K/PA, LG avg ~22%).
+// Used by the K projection model as an additive talent signal on top of recent starts.
+app.get('/statcast/pitchers', async (req, res) => {
+  const now = Date.now();
+  if (pitcherStatcastCache && now - pitcherStatcastCacheTs < STATCAST_TTL) {
+    return res.json(pitcherStatcastCache);
+  }
+  try {
+    const year = req.query.season || DEFAULT_SEASON;
+    const text = await fetchTextWithTimeout(
+      `https://baseballsavant.mlb.com/leaderboard/statcast?type=pitcher&year=${year}&position=&team=&min=10&csv=true`,
+      15000
+    );
+    const rows = parseCSV(text);
+    const result = {};
+    for (const row of rows) {
+      const pid = parseInt(row.player_id);
+      if (!pid) continue;
+      result[pid] = {
+        whiffPct: parseFloat(row.whiff_percent) || null,
+        kPct:     parseFloat(row.k_percent)     || null,
+      };
+    }
+    pitcherStatcastCache = result;
+    pitcherStatcastCacheTs = now;
+    res.json(result);
+  } catch (error) {
+    if (pitcherStatcastCache) return res.json(pitcherStatcastCache); // serve stale on error
+    res.status(500).json({ error: 'Failed to fetch pitcher Statcast data', details: error.message });
   }
 });
 

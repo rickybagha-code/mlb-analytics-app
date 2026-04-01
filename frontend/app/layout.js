@@ -8,6 +8,7 @@ const inter = Inter({
 });
 
 export const metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? 'https://proprstats.com'),
   title: {
     default: 'ProprStats — MLB Analytics App',
     template: '%s | ProprStats',
@@ -24,6 +25,7 @@ export const metadata = {
     description:
       'Statcast-powered MLB prop research. Poisson EV modeling, real-time splits, and a 0–100 model score for every player — updated daily.',
     siteName: 'ProprStats',
+    url: 'https://proprstats.com',
     type: 'website',
     images: [{ url: '/brand-logo.svg', width: 400, height: 400 }],
   },
@@ -40,6 +42,16 @@ export default function RootLayout({ children }) {
     <html lang="en" className={inter.variable}>
       <body className={`${inter.className} bg-gray-950 text-white antialiased`}>
         {children}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "WebSite",
+            "name": "ProprStats",
+            "description": "MLB prop research powered by Statcast, EdgeScore, and LineCheck.",
+            "url": "https://proprstats.com"
+          })}}
+        />
       </body>
     </html>
   );

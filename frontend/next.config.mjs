@@ -11,6 +11,16 @@ const nextConfig = {
       { protocol: 'https', hostname: 'img.mlbstatic.com' },
     ],
   },
+  async redirects() {
+    return [
+      {
+        source: '/:path*',
+        has: [{ type: 'host', value: 'mlb-analytics-app.vercel.app' }],
+        destination: 'https://proprstats.com/:path*',
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default nextConfig;

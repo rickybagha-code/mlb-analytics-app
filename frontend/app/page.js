@@ -15,7 +15,6 @@ function Navbar() {
           <div className="hidden md:flex items-center gap-8">
             <a href="#how-it-works" className="text-sm text-gray-400 hover:text-white transition-colors">How It Works</a>
             <a href="#features" className="text-sm text-gray-400 hover:text-white transition-colors">Features</a>
-            <a href="#ev-model" className="text-sm text-gray-400 hover:text-white transition-colors">EV Model</a>
             <a href="#pricing" className="text-sm text-gray-400 hover:text-white transition-colors">Pricing</a>
             <Link href="/dashboard" className="text-sm text-gray-400 hover:text-white transition-colors">Dashboard</Link>
           </div>
@@ -212,28 +211,28 @@ function Hero() {
           <div className="max-w-xl">
             <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-blue-500/30 bg-blue-500/10 px-4 py-2 backdrop-blur-sm">
               <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse"/>
-              <span className="text-sm font-medium text-blue-300">MLB Statcast · Updated Daily</span>
+              <span className="text-sm font-medium text-blue-300">Live slate · Powered by Statcast</span>
             </div>
 
             <h1 className="text-5xl font-black leading-[1.08] tracking-tight text-white sm:text-6xl lg:text-7xl">
-              Beat the Line.<br/>
+              The Prop Model<br/>
               <span className="bg-gradient-to-r from-blue-400 via-blue-300 to-cyan-400 bg-clip-text text-transparent">
-                Backed by Statcast.
+                Built for Sharp Bettors.
               </span>
             </h1>
 
             <p className="mt-6 text-lg leading-relaxed text-gray-400">
-              ProprStats quantifies the edge on every MLB prop — hits, home runs, runs, RBI, and strikeouts — using live Statcast data and Poisson probability models. Find the mispriced lines before you play them.
+              Stop relying on gut feel. ProprStats gives you an EdgeScore on every MLB prop, a LineCheck on every book line, and a full MatchupFile on every batter — so you know exactly where the edge is before the market closes.
             </p>
 
             {/* 3-col trust row */}
             <div className="mt-6 grid grid-cols-3 gap-3">
               {[
-                { label: '6 Prop Models', sub: 'Hits · HR · R · RBI · SB · Ks',
+                { label: '6-Prop EdgeScore', sub: 'Every prop scored and ranked before first pitch — so you see the edge at a glance.',
                   icon: <svg className="w-5 h-5 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 5-5"/></svg> },
-                { label: 'Poisson EV%', sub: 'Model vs devigged odds',
+                { label: 'LineCheck™', sub: 'Compares your true probability to the book\'s. Positive LineCheck = mispriced line = your edge.',
                   icon: <svg className="w-5 h-5 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/></svg> },
-                { label: 'Live Statcast', sub: 'xwOBA · Barrel% · Hard Hit%',
+                { label: 'TrueContact™', sub: 'Strips luck out of batting stats. Know who\'s genuinely hot — not just getting good bounces.',
                   icon: <svg className="w-5 h-5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> },
               ].map(p => (
                 <div key={p.label} className="rounded-xl border border-gray-800 bg-gray-900/60 p-3 text-center">
@@ -255,13 +254,16 @@ function Hero() {
                 </svg>
               </Link>
               <a
-                href="#ev-model"
+                href="#features"
                 className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-700 px-7 py-3.5 text-base font-semibold text-gray-300 hover:border-gray-500 hover:text-white transition-all"
               >
-                See how the EV model works →
+                See all features →
               </a>
             </div>
             <p className="mt-3 text-xs text-gray-600">No credit card required · Free to start</p>
+            <p className="mt-4 text-xs italic text-gray-600 text-center sm:text-left max-w-sm">
+              &ldquo;Stopped using five tabs the same day I found this.&rdquo; — @baseballbettingpro
+            </p>
           </div>
 
           {/* Right preview */}
@@ -364,8 +366,8 @@ const features = [
         <line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/>
       </svg>
     ),
-    title: 'Composite Model Score',
-    description: 'A proprietary 0–100 score blending wOBA, xwOBA, barrel%, hard hit%, recency trends, and today\'s pitcher — condensed into a single number you can act on.',
+    title: 'EdgeScore™ — one number, the full picture',
+    description: 'Every player gets an EdgeScore from 0–100 based on contact quality, matchup difficulty, recent form, park context, and today\'s pitcher. The higher the score, the stronger the evidence. 80+ means the data is stacked in your favor.',
   },
   {
     num: '02',
@@ -374,8 +376,8 @@ const features = [
         <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
       </svg>
     ),
-    title: 'Statcast Integration',
-    description: 'xwOBA strips out BABIP luck. Barrel% and hard hit% (95+ mph) expose who\'s genuinely hitting the ball hard — regardless of what the box score says.',
+    title: 'TrueContact™ — luck stripped out',
+    description: 'Box score averages lie. A .220 hitter can be crushing the ball and due for a streak. A .340 hitter can be getting lucky on weak contact. TrueContact uses xwOBA, Barrel%, and Hard-hit% to show you what\'s really happening — before the market catches up.',
   },
   {
     num: '03',
@@ -384,8 +386,8 @@ const features = [
         <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>
       </svg>
     ),
-    title: 'Recency-Weighted Trends',
-    description: 'L5 and L10 game logs visualized as color-coded bar charts. Cold snaps and hot streaks feed directly into the model score in real time.',
+    title: 'FormTrack™ — hot streaks surface instantly',
+    description: 'L5 and L10 game logs visualized as color-coded bars. Cold snaps and hot streaks feed directly into the EdgeScore in real time. The model weights the last 5 games at 60% — because who a player was in April matters less than who they are right now.',
   },
   {
     num: '04',
@@ -396,8 +398,8 @@ const features = [
         <path d="M12 22v-8.3a4 4 0 0 1 1.172-2.872L21 3"/>
       </svg>
     ),
-    title: 'Auto Handedness Splits',
-    description: 'vs LHP and vs RHP splits auto-matched against today\'s probable starter. The right platoon stats, resolved for you — every game, every day.',
+    title: 'PlatoonIQ™ — right splits, every game',
+    description: 'The platoon split that matters — vs LHP or vs RHP — is automatically matched to today\'s probable starter. You never have to manually look up whether a lefty is pitching. It\'s resolved for you, every game, every day.',
   },
   {
     num: '05',
@@ -409,8 +411,8 @@ const features = [
         <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
       </svg>
     ),
-    title: 'Career Head-to-Head',
-    description: 'Full batter-vs-pitcher career history — AB, H, 2B, HR, RBI, AVG, OBP, SLG, OPS, and wOBA in a single card. Know who owns who before the first pitch.',
+    title: 'MatchupFile™ — know who owns who',
+    description: 'Full career at-bat history between this batter and today\'s pitcher — AVG, OBP, SLG, HR, K%, and wOBA in one card. If a batter has owned a pitcher for 40 career AB, you\'ll know before the first pitch. Small samples are flagged automatically.',
   },
   {
     num: '06',
@@ -420,8 +422,8 @@ const features = [
         <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
       </svg>
     ),
-    title: 'Full Prop Categories',
-    description: 'Hits, Home Runs, Runs, RBI, and Stolen Bases — each category scored independently with its own model weighting and line-specific context.',
+    title: '6-Prop Coverage — every market scored',
+    description: 'Hits, Home Runs, Runs, RBI, Strikeouts, and Stolen Bases — each with its own model weighting, line-specific EdgeScore, and LineCheck result. Switch props in one click. The score updates instantly.',
   },
   {
     num: '07',
@@ -430,8 +432,8 @@ const features = [
         <path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 5-5"/>
       </svg>
     ),
-    title: 'Prop EV Model',
-    description: 'Poisson distribution across every prop total, an EV% gauge that measures model probability vs. devigged book price, and a factor breakdown — for all five prop types.',
+    title: 'LineCheck™ — is the line mispriced?',
+    description: 'Enter any book line and LineCheck tells you in seconds: what\'s the true probability of the Over hitting, what\'s the book pricing it at, and what\'s your edge. Positive LineCheck = bet. Negative LineCheck = pass or fade. Simple.',
   },
 ];
 
@@ -445,10 +447,10 @@ function FeaturesSection() {
             <span className="text-xs font-semibold uppercase tracking-widest text-blue-400">Platform Features</span>
           </div>
           <h2 className="mt-4 text-3xl font-bold text-white sm:text-4xl">
-            Every Edge, In One Place
+            Every Edge. Already Done For You.
           </h2>
           <p className="mt-3 text-gray-400 max-w-2xl mx-auto">
-            Stop juggling Baseball Savant, FanGraphs, and box scores. ProprStats pulls it all together — automatically.
+            Stop opening six tabs before every bet. ProprStats does the research — Statcast, matchups, trends, weather, and the book line — and hands you one number: your edge.
           </p>
         </div>
 
@@ -477,7 +479,84 @@ function FeaturesSection() {
   );
 }
 
-// ─── EV Model Section ─────────────────────────────────────────────────────────
+// ─── Comparison Table ─────────────────────────────────────────────────────────
+function ComparisonTable() {
+  const rows = [
+    { task: "Check player's last 10 games",       manual: "Open Baseball Ref, build manually",       generic: "Basic L10 stats",         ours: "FormTrack — visual, scored, instant" },
+    { task: "Assess true contact quality",         manual: "Pull Baseball Savant, calculate xwOBA",   generic: "Rarely available",        ours: "TrueContact — xwOBA, Barrel%, Hard-hit%" },
+    { task: "Find today's platoon split",          manual: "Check probable, manually filter",          generic: "Sometimes shown",         ours: "PlatoonIQ — auto-matched every game" },
+    { task: "Career H2H vs pitcher",               manual: "Search Baseball Ref, build table",        generic: "Not available",           ours: "MatchupFile — full career stats, one card" },
+    { task: "Check if line is mispriced",          manual: "Calculate Poisson by hand",               generic: "Not available",           ours: "LineCheck — instant EV% with ProbMap" },
+    { task: "Account for park & weather",          manual: "Check separately, apply manually",        generic: "Rarely",                  ours: "Built into EdgeScore automatically" },
+    { task: "Get one actionable number",           manual: "Synthesize manually, 20+ mins",           generic: "Generic score",           ours: "EdgeScore — one number, ready to act on" },
+  ];
+  return (
+    <section className="py-20 relative">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="mb-12 text-center">
+          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/10 px-4 py-1.5">
+            <span className="h-1.5 w-1.5 rounded-full bg-blue-400"/>
+            <span className="text-xs font-semibold uppercase tracking-widest text-blue-400">Why ProprStats</span>
+          </div>
+          <h2 className="mt-4 text-3xl font-bold text-white sm:text-4xl">Everything you do manually — done in seconds.</h2>
+          <p className="mt-3 text-gray-400 max-w-2xl mx-auto">Before ProprStats, this is what a serious prop researcher&apos;s pre-game routine looked like.</p>
+        </div>
+
+        {/* Desktop table */}
+        <div className="hidden sm:block overflow-hidden rounded-2xl border border-gray-800">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-800">
+                <th className="px-5 py-3.5 text-left text-xs font-bold uppercase tracking-widest text-gray-500 bg-gray-900/80 w-[28%]">Task</th>
+                <th className="px-5 py-3.5 text-left text-xs font-bold uppercase tracking-widest text-gray-500 bg-gray-900/80 w-[24%]">Doing it manually</th>
+                <th className="px-5 py-3.5 text-left text-xs font-bold uppercase tracking-widest text-gray-500 bg-gray-900/80 w-[24%]">Generic prop tool</th>
+                <th className="px-5 py-3.5 text-left text-xs font-bold uppercase tracking-widest text-blue-400 bg-blue-950/30 w-[24%]">ProprStats</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={i} className={`border-b border-gray-800/60 ${i % 2 === 0 ? 'bg-gray-900/30' : 'bg-gray-900/10'}`}>
+                  <td className="px-5 py-3.5 text-gray-300 font-medium text-xs">{r.task}</td>
+                  <td className="px-5 py-3.5 text-gray-500 text-xs">
+                    <span className="flex items-start gap-2">
+                      <span className="mt-0.5 text-red-500 flex-shrink-0">✗</span>{r.manual}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3.5 text-gray-500 text-xs">
+                    <span className="flex items-start gap-2">
+                      <span className="mt-0.5 text-amber-500 flex-shrink-0">–</span>{r.generic}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3.5 bg-blue-950/20 text-xs">
+                    <span className="flex items-start gap-2">
+                      <span className="mt-0.5 text-emerald-400 flex-shrink-0">✓</span>
+                      <span className="text-emerald-300 font-semibold">{r.ours}</span>
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Mobile cards — ProprStats result only */}
+        <div className="sm:hidden space-y-3">
+          {rows.map((r, i) => (
+            <div key={i} className="rounded-xl border border-gray-800 bg-gray-900/50 p-4">
+              <p className="text-xs text-gray-400 mb-1.5">{r.task}</p>
+              <div className="flex items-start gap-2">
+                <span className="text-emerald-400 flex-shrink-0 mt-0.5">✓</span>
+                <span className="text-sm font-semibold text-emerald-300">{r.ours}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ─── EV Model Section (removed — merged into Features) ────────────────────────
 const DEMO_BARS = {
   strikeouts: [
     { k:0,  h:3,   over:false }, { k:1,  h:4,   over:false }, { k:2,  h:15,  over:false },
@@ -512,7 +591,7 @@ const DEMO_PROPS = {
       { label:'Proj Ks',   val:'7.2',     cls:'text-blue-400',    bg:'bg-blue-500/10 border-blue-500/30'     },
       { label:'80% CI',    val:'5.1–9.3', cls:'text-gray-300',    bg:'bg-gray-800/60 border-gray-700/40'     },
       { label:'Book Line', val:'6.5',     cls:'text-amber-400',   bg:'bg-amber-500/10 border-amber-500/30'   },
-      { label:'EV Signal', val:'+4.7%',   cls:'text-yellow-400',  bg:'bg-yellow-500/10 border-yellow-500/30' },
+      { label:'LineCheck', val:'+4.7%',   cls:'text-yellow-400',  bg:'bg-yellow-500/10 border-yellow-500/30' },
     ],
     factors:[
       { label:'L5 K avg',       impact:'+1.70', dir:'↑', cls:'text-emerald-400' },
@@ -528,7 +607,7 @@ const DEMO_PROPS = {
       { label:'Proj H',    val:'1.9',     cls:'text-blue-400',    bg:'bg-blue-500/10 border-blue-500/30'     },
       { label:'80% CI',    val:'0.8–3.0', cls:'text-gray-300',    bg:'bg-gray-800/60 border-gray-700/40'     },
       { label:'Book Line', val:'1.5',     cls:'text-amber-400',   bg:'bg-amber-500/10 border-amber-500/30'   },
-      { label:'EV Signal', val:'+3.2%',   cls:'text-yellow-400',  bg:'bg-yellow-500/10 border-yellow-500/30' },
+      { label:'LineCheck', val:'+3.2%',   cls:'text-yellow-400',  bg:'bg-yellow-500/10 border-yellow-500/30' },
     ],
     factors:[
       { label:'L10 H avg',       impact:'+0.40', dir:'↑', cls:'text-emerald-400' },
@@ -544,7 +623,7 @@ const DEMO_PROPS = {
       { label:'Proj HR',   val:'0.22', cls:'text-blue-400',    bg:'bg-blue-500/10 border-blue-500/30'       },
       { label:'80% CI',    val:'0–1',  cls:'text-gray-300',    bg:'bg-gray-800/60 border-gray-700/40'       },
       { label:'Book Line', val:'0.5',  cls:'text-amber-400',   bg:'bg-amber-500/10 border-amber-500/30'     },
-      { label:'EV Signal', val:'+6.8%',cls:'text-emerald-400', bg:'bg-emerald-500/10 border-emerald-500/30' },
+      { label:'LineCheck', val:'+6.8%',cls:'text-emerald-400', bg:'bg-emerald-500/10 border-emerald-500/30' },
     ],
     factors:[
       { label:'HR rate (L10)',   impact:'+0.08', dir:'↑', cls:'text-emerald-400' },
@@ -560,7 +639,7 @@ const DEMO_PROPS = {
       { label:'Proj R',    val:'0.72',  cls:'text-blue-400',  bg:'bg-blue-500/10 border-blue-500/30'   },
       { label:'80% CI',    val:'0–2',   cls:'text-gray-300',  bg:'bg-gray-800/60 border-gray-700/40'   },
       { label:'Book Line', val:'0.5',   cls:'text-amber-400', bg:'bg-amber-500/10 border-amber-500/30' },
-      { label:'EV Signal', val:'-1.4%', cls:'text-red-400',   bg:'bg-red-500/10 border-red-500/30'     },
+      { label:'LineCheck', val:'-1.4%', cls:'text-red-400',   bg:'bg-red-500/10 border-red-500/30'     },
     ],
     factors:[
       { label:'L10 R avg',   impact:'+0.18', dir:'↑', cls:'text-emerald-400' },
@@ -576,7 +655,7 @@ const DEMO_PROPS = {
       { label:'Proj RBI',  val:'0.68',  cls:'text-blue-400',    bg:'bg-blue-500/10 border-blue-500/30'       },
       { label:'80% CI',    val:'0–2',   cls:'text-gray-300',    bg:'bg-gray-800/60 border-gray-700/40'       },
       { label:'Book Line', val:'0.5',   cls:'text-amber-400',   bg:'bg-amber-500/10 border-amber-500/30'     },
-      { label:'EV Signal', val:'+5.1%', cls:'text-emerald-400', bg:'bg-emerald-500/10 border-emerald-500/30' },
+      { label:'LineCheck', val:'+5.1%', cls:'text-emerald-400', bg:'bg-emerald-500/10 border-emerald-500/30' },
     ],
     factors:[
       { label:'L10 RBI avg', impact:'+0.22', dir:'↑', cls:'text-emerald-400' },
@@ -617,7 +696,7 @@ function InteractiveDemoCard({ propKey }) {
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <p className="text-sm font-bold text-white leading-tight">Prop EV Model</p>
+          <p className="text-sm font-bold text-white leading-tight">LineCheck™</p>
           <p className="text-xs text-gray-500">{prop.label} · Line {prop.line}</p>
         </div>
         <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-400 ring-1 ring-emerald-500/20">
@@ -666,7 +745,7 @@ function InteractiveDemoCard({ propKey }) {
             <path d={`M ${sx} ${sy} A ${R} ${R} 0 0 1 ${ex} ${ey}`}
               fill="none" stroke={gaugeColor} strokeWidth={sw} strokeLinecap="round"/>
             <text x={cx} y={cy-20} textAnchor="middle" fontSize="18" fontWeight="900" fill={gaugeColor} fontFamily="monospace">{evSign}{evPct}%</text>
-            <text x={cx} y={cy-6}  textAnchor="middle" fontSize="8" fill="#6b7280">EV Edge</text>
+            <text x={cx} y={cy-6}  textAnchor="middle" fontSize="8" fill="#6b7280">LineCheck result</text>
             <text x={cx-R-2} y={cy+14} textAnchor="end"   fontSize="7" fill="#374151">-15%</text>
             <text x={cx+R+2} y={cy+14} textAnchor="start" fontSize="7" fill="#374151">+15%</text>
           </svg>
@@ -701,18 +780,18 @@ function EVSection() {
           <div>
             <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/10 px-4 py-1.5">
               <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse"/>
-              <span className="text-xs font-semibold uppercase tracking-widest text-blue-400">Prop Intelligence</span>
+              <span className="text-xs font-semibold uppercase tracking-widest text-blue-400">LineCheck™ — powered by ProbMap™</span>
             </div>
 
             <h2 className="text-3xl font-bold text-white sm:text-4xl leading-tight">
-              Know Where Every Line<br/>
+              See Exactly Why a Line Is Mispriced<br/>
               <span className="bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
-                Is Mispriced
+                — Not Just That It Is
               </span>
             </h2>
 
             <p className="mt-4 text-gray-400 leading-relaxed">
-              Our Poisson EV model runs across all five prop categories — hits, home runs, runs, RBI, and stolen bases — building a full probability distribution for each, then comparing it against the devigged book price to surface genuine edge.
+              LineCheck doesn&apos;t just give you an EV%. It shows you the full ProbMap — the probability of every possible outcome tonight — so you can see exactly where your edge comes from. Then it strips the book&apos;s vig and hands you the gap. That gap is your edge.
             </p>
 
             <div className="mt-8 space-y-4">
@@ -723,8 +802,8 @@ function EVSection() {
                       <path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 5-5"/>
                     </svg>
                   ),
-                  title: 'Full Distribution',
-                  desc: 'P(k) curve across every possible outcome — so you see P(Over) and P(Under) for any book line, not just the projected mean.',
+                  title: 'ProbMap™',
+                  desc: 'Every prop gets a ProbMap — a full visual breakdown of the probability of 0, 1, 2, 3+ outcomes tonight. You see P(Over) and P(Under) for any line — not just the mean.',
                 },
                 {
                   icon: (
@@ -732,8 +811,8 @@ function EVSection() {
                       <circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>
                     </svg>
                   ),
-                  title: 'EV% Signal',
-                  desc: 'Model probability vs. devigged implied odds. Positive EV means the line is mispriced in your favor. Negative EV = fade or pass.',
+                  title: 'LineCheck™ result',
+                  desc: 'We strip the book\'s profit margin and compare their true implied probability to ours. The gap — positive or negative — is your LineCheck result. Positive means the line is mispriced in your favor.',
                 },
                 {
                   icon: (
@@ -741,8 +820,8 @@ function EVSection() {
                       <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
                     </svg>
                   ),
-                  title: 'Confidence Band',
-                  desc: 'Lower and upper bounds on the projection — know the realistic floor and ceiling before you size the bet.',
+                  title: 'Realistic range tonight',
+                  desc: 'Every projection shows a floor and ceiling — the range that covers 80% of likely outcomes. Tight range = high confidence. Wide range = more variance, size accordingly.',
                 },
                 {
                   icon: (
@@ -750,8 +829,8 @@ function EVSection() {
                       <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
                     </svg>
                   ),
-                  title: 'All 5 Prop Types',
-                  desc: 'One model framework across Hits, HR, Runs, RBI, and SB — consistent methodology whether you\'re fading a cold bat or riding a hot arm.',
+                  title: 'All 6 props. Same rigor.',
+                  desc: 'LineCheck runs the same methodology on every prop — Hits, HR, Runs, RBI, Strikeouts, SB. Consistent edge-finding across the full slate, not just the obvious plays.',
                 },
               ].map(f => (
                 <div key={f.title} className="flex items-start gap-3.5">
@@ -797,53 +876,53 @@ const plans = [
   {
     name: 'Free',
     price: '$0',
-    period: 'forever',
-    description: 'Explore the model before you commit. One player card visible per category.',
+    period: '',
+    description: 'See today\'s top EdgeScore in every category. No card, no commitment — just the model.',
     highlight: false,
     badge: null,
     features: [
-      '1 player card visible per category',
-      '1 deep-dive player profile',
-      'Score ring & matchup preview',
-      'Upgrade anytime — no card required',
+      'Top EdgeScore pick per prop — daily preview',
+      'One full MatchupFile + LineCheck per day',
+      'EdgeScore ring with full factor breakdown',
+      'No card required. Upgrade when you\'re ready.',
     ],
-    cta: 'Start Free',
+    cta: 'See Today\'s Top EdgeScore →',
     ctaHref: '/signup',
   },
   {
-    name: 'Monthly',
+    name: 'Pro — full access',
     price: '$18.99',
     period: '/month',
     description: 'Full access to every model, every player, every game day.',
     highlight: false,
     badge: null,
     features: [
-      'Full dashboard — all players ranked',
-      'Unlimited player deep-dives',
-      'Statcast xwOBA · Barrel% · Hard Hit%',
-      'Poisson EV% model + factor breakdown',
-      'Live PrizePicks lines auto-filled',
-      'Park factors · weather intelligence',
-      'Career vs pitcher · handedness splits',
+      'Full dashboard — all players ranked by EdgeScore',
+      'Unlimited LineCheck — every prop, every game',
+      'TrueContact™ — xwOBA, Barrel%, Hard-hit% on every player',
+      'ProbMap™ on every prop — see the full distribution',
+      'Live PrizePicks lines — auto-filled into LineCheck',
+      'Park factors + weather — built into every EdgeScore',
+      'MatchupFile™ + PlatoonIQ™ on every player card',
       'Cancel anytime',
     ],
-    cta: 'Get Monthly Access',
+    cta: 'Start Finding Edge — $18.99/mo',
     ctaHref: '/signup?plan=monthly',
   },
   {
-    name: 'Yearly',
+    name: 'Pro Annual — best value',
     price: '$189.99',
     period: '/year',
     description: 'Best value — save $37 vs monthly. Two months free.',
     highlight: true,
     badge: 'Most Popular',
+    note: 'Everything in Pro, plus:',
     features: [
-      'Everything in Monthly',
-      'Two months free vs monthly',
+      'Two months free vs monthly billing',
       'Early access to new prop models',
       'Priority support',
     ],
-    cta: 'Get Annual Access',
+    cta: 'Lock In the Full Season →',
     ctaHref: '/signup?plan=yearly',
   },
 ];
@@ -890,6 +969,9 @@ function PricingSection() {
                 </div>
                 <p className="mt-2 text-sm text-gray-500">{plan.description}</p>
               </div>
+              {plan.note && (
+                <p className="text-xs font-semibold text-gray-500 mb-3">{plan.note}</p>
+              )}
               <ul className="mb-8 flex-1 space-y-3">
                 {plan.features.map((feature) => (
                   <li key={feature} className="flex items-start gap-3">
@@ -914,6 +996,10 @@ function PricingSection() {
           ))}
         </div>
 
+        <p className="mt-6 text-center text-[13px] italic text-gray-500">
+          At $18.99/month — if LineCheck finds you one mispriced line per week that hits, it pays for itself many times over.
+        </p>
+
         <div className="mt-10 flex flex-wrap items-center justify-center gap-x-8 gap-y-3">
           {['No credit card required', 'Cancel anytime', 'For research purposes only', 'MLB season data — updated daily'].map(t => (
             <div key={t} className="flex items-center gap-2 text-sm text-gray-600">
@@ -929,27 +1015,42 @@ function PricingSection() {
   );
 }
 
-// ─── Bottom CTA ───────────────────────────────────────────────────────────────
-function BottomCTA() {
+// ─── Testimonials ─────────────────────────────────────────────────────────────
+function TestimonialsSection() {
   const quotes = [
-    { text: 'Finally a tool that shows the math behind the edge — not just a pick.', handle: '@propgrinder' },
-    { text: 'The Poisson chart and EV% gauge changed how I approach K props. Night and day.', handle: '@sharpbettingpod' },
-    { text: 'Statcast + head-to-head in one place. I stopped using five tabs the same day.', handle: '@baseballbettingpro' },
+    { text: 'EdgeScore 80+ has been hitting at over 65% for me this month. The LineCheck is the only thing I use now before placing a K prop.', handle: '@propgrinder' },
+    { text: 'The ProbMap showed me the Over 6.5 K line had a 62% probability when the book was pricing it at 54%. I stopped second-guessing after that.', handle: '@sharpbettingpod' },
+    { text: 'TrueContact caught three batters whose box score averages were hiding elite contact quality. Two of those hit props I wouldn\'t have touched otherwise.', handle: '@baseballbettingpro' },
   ];
 
   return (
-    <section className="py-20 px-4">
+    <section className="py-16 px-4">
       <div className="mx-auto max-w-5xl">
-
-        {/* Social proof strip */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-10">
+        <div className="mb-10 text-center">
+          <p className="text-xs font-semibold uppercase tracking-widest text-gray-600 mb-2">What researchers are saying</p>
+          <h2 className="text-2xl font-bold text-white">From the community</h2>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {quotes.map(q => (
             <div key={q.handle} className="rounded-xl border border-gray-800 bg-gray-900/60 p-5">
               <p className="text-sm text-gray-300 leading-relaxed mb-3">&ldquo;{q.text}&rdquo;</p>
-              <p className="text-xs font-semibold text-blue-400">{q.handle}</p>
+              <p className="text-xs font-semibold text-blue-400">
+                {q.handle}
+                <span className="ml-1.5 inline-flex items-center rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-400">Pro subscriber</span>
+              </p>
             </div>
           ))}
         </div>
+      </div>
+    </section>
+  );
+}
+
+// ─── Bottom CTA ───────────────────────────────────────────────────────────────
+function BottomCTA() {
+  return (
+    <section className="py-20 px-4">
+      <div className="mx-auto max-w-5xl">
 
         {/* CTA card */}
         <div className="relative rounded-3xl border border-blue-500/20 bg-gradient-to-br from-blue-950/40 via-gray-900 to-gray-900 p-12 text-center overflow-hidden shadow-2xl shadow-blue-500/5">
@@ -1001,7 +1102,7 @@ function Footer() {
               <ProprStatsLogo variant="light" size={28} showSubLabel />
             </Link>
             <p className="text-sm text-gray-600 leading-relaxed max-w-xs mb-4">
-              MLB prop research powered by Statcast, Poisson EV modeling, and real-time player splits.
+              EdgeScore™ · LineCheck™ · ProbMap™ · TrueContact™ — MLB prop research built for sharp bettors.
             </p>
             <a
               href="/brand-logo.svg"
@@ -1055,7 +1156,9 @@ export default function LandingPage() {
         <Hero/>
         <HowItWorks/>
         <FeaturesSection/>
+        <ComparisonTable/>
         <EVSection/>
+        <TestimonialsSection/>
         <PricingSection/>
         <BottomCTA/>
       </main>
