@@ -106,7 +106,8 @@ function computeProjectionScore(player, category) {
     ? (bb*0.690 + singles*0.888 + dbl*1.271 + tri*1.616 + hr*2.101) / pa
     : (avg * 0.88 + obp * 0.12);
   const effectiveWOBA = xwoba != null ? wOBA * 0.35 + xwoba * 0.65 : wOBA;
-  const confidence = Math.min(1.0, Math.max(0.5, (ab - 150) / 300 + 0.5));
+  const pa_safe    = Math.max(1, pa);
+  const confidence = Math.min(1.0, Math.max(0.4, (ab - 30) / 350 + 0.4));
   const era = player.matchupEra ?? null;
   const pitcherMod = era != null ? Math.max(-10, Math.min(10, (era - 4.50) * 2.5)) : 0;
   // Recency boost — hit streak / L10 avg used for hitting/runs/rbi/sb categories.
@@ -115,13 +116,13 @@ function computeProjectionScore(player, category) {
   const { streak, l10Avg } = player;
   if (category !== 'hr') {
     if (streak != null) {
-      if      (streak >= 8) recencyBoost += 12;
-      else if (streak >= 5) recencyBoost += 8;
-      else if (streak >= 3) recencyBoost += 4;
-      else if (streak === 0) recencyBoost -= 5;
+      if      (streak >= 8) recencyBoost += 8;
+      else if (streak >= 5) recencyBoost += 5;
+      else if (streak >= 3) recencyBoost += 3;
+      else if (streak === 0) recencyBoost -= 4;
     }
     if (l10Avg != null && avg > 0) {
-      recencyBoost += Math.max(-8, Math.min(8, ((l10Avg - avg) / avg) * 25));
+      recencyBoost += Math.max(-6, Math.min(6, ((l10Avg - avg) / avg) * 18));
     }
   }
   let base = 50;
@@ -143,7 +144,6 @@ function computeProjectionScore(player, category) {
   } else if (category === 'hr') {
     // Poisson base: blends L10 HR rate (if loaded) with season rate
     // This is the fallback path — on player page the badge is driven from useHRProjection
-    const pa_safe     = Math.max(1, pa);
     const seasonHRpa  = hr / pa_safe;
     const l10HRrate   = player.l10HRrate ?? null;
     const effectiveHR = l10HRrate != null
@@ -201,12 +201,15 @@ function computeProjectionScore(player, category) {
       : 0;
     base = 38 + rbiComp + slgComp + hrComp + xwobaBonus + pitcherMod + splitSLGbonus;
   }
-  // HR is exempt from confidence dampening: pHR already has a league-average anchor
-  // + talent-prior blending, so a second pull toward 50 double-penalises early-season
-  // elite power hitters.
-  const effectiveConf = category === 'hr' ? 1.0 : confidence;
+  // HR uses soft PA-based confidence (floor 0.6) rather than full exemption.
+  // Avoids double-penalising early-season power hitters while still shrinking thin-data scores.
+  const effectiveConf = category === 'hr'
+    ? Math.min(1.0, Math.max(0.6, (pa_safe - 50) / 300 + 0.6))
+    : confidence;
   const adjusted = 50 + (base - 50) * effectiveConf;
-  return Math.round(Math.max(5, Math.min(99, adjusted + recencyBoost)));
+  const recencyCap  = ab < 30 ? 4 : ab < 100 ? 7 : 12;
+  const safeRecency = Math.max(-recencyCap, Math.min(recencyCap, recencyBoost));
+  return Math.round(Math.max(5, Math.min(99, adjusted + safeRecency)));
 }
 
 function computeStreak(games) {
