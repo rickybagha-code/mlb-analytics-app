@@ -226,11 +226,9 @@ function computeProjectionScore(player, category) {
   }
 
   // Shrink score toward 50 for thin sample sizes.
-  // HR uses PA (not AB) for confidence since pHR is PA-based; softer floor (0.6) than other models
-  // to avoid double-penalising early-season power hitters who already have a league-avg anchor.
-  const effectiveConf = category === 'hr'
-    ? Math.min(1.0, Math.max(0.6, (pa_safe - 50) / 300 + 0.6))
-    : confidence;
+  // HR is exempt: pHR already has three internal shrinkage layers (sampleWeight, hrSampleWeight,
+  // 10% LG anchor) — a fourth confidence pull double-penalises early-season elite power hitters.
+  const effectiveConf = category === 'hr' ? 1.0 : confidence;
   const adjusted = 50 + (base - 50) * effectiveConf;
   const recencyCap  = ab < 30 ? 4 : ab < 100 ? 7 : 12;
   const safeRecency = Math.max(-recencyCap, Math.min(recencyCap, recencyBoost));

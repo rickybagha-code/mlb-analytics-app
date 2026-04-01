@@ -201,11 +201,10 @@ function computeProjectionScore(player, category) {
       : 0;
     base = 38 + rbiComp + slgComp + hrComp + xwobaBonus + pitcherMod + splitSLGbonus;
   }
-  // HR uses soft PA-based confidence (floor 0.6) rather than full exemption.
-  // Avoids double-penalising early-season power hitters while still shrinking thin-data scores.
-  const effectiveConf = category === 'hr'
-    ? Math.min(1.0, Math.max(0.6, (pa_safe - 50) / 300 + 0.6))
-    : confidence;
+  // Shrink score toward 50 for thin sample sizes.
+  // HR is exempt: pHR already has three internal shrinkage layers (sampleWeight, hrSampleWeight,
+  // 10% LG anchor) — a fourth confidence pull double-penalises early-season elite power hitters.
+  const effectiveConf = category === 'hr' ? 1.0 : confidence;
   const adjusted = 50 + (base - 50) * effectiveConf;
   const recencyCap  = ab < 30 ? 4 : ab < 100 ? 7 : 12;
   const safeRecency = Math.max(-recencyCap, Math.min(recencyCap, recencyBoost));
