@@ -617,9 +617,7 @@ function AutoPlayerCard({ player, category, rank }) {
         </div>
         <div className="relative group flex-shrink-0 text-center">
           <ScoreRing score={score} size={44} />
-          <p className="text-xs text-gray-500 mt-0.5 whitespace-nowrap font-semibold tracking-wide">
-            {{ hitting: 'HIT', hr: 'HR', runs: 'RUN', rbi: 'RBI', sb: 'SB', pitching: 'K' }[category] ?? category.toUpperCase()} SCORE
-          </p>
+          {isPitcher && <p className="text-xs text-gray-600 mt-0.5 whitespace-nowrap">K Score</p>}
           <div className="absolute bottom-full right-0 mb-2 w-52 bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-2 text-xs text-gray-300 leading-snug opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 shadow-xl">
             {SCORE_TOOLTIP[category] ?? 'ProprStats Model Score'}
           </div>

@@ -2896,7 +2896,7 @@ export default function PlayerDetailPage() {
                   </>
                 : <div className="text-center">
                     {modelScore != null
-                      ? <><ScoreRing score={modelScore} size={64}/><p className="text-xs text-gray-600 mt-1">Model</p></>
+                      ? <><ScoreRing score={modelScore} size={64}/><p className="text-xs text-gray-500 mt-1 font-semibold tracking-wide">{{ hits:'HIT', hr:'HR', runs:'RUN', rbi:'RBI', sb:'SB' }[cat] ?? cat.toUpperCase()} SCORE</p></>
                       : <div className="w-16 h-16 rounded-full border-2 border-gray-800 bg-gray-800/50 flex items-center justify-center"><span className="text-gray-700 text-xs">N/A</span></div>
                     }
                   </div>
