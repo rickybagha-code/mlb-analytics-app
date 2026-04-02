@@ -110,6 +110,8 @@ function computeProjectionScore(player, category) {
   const confidence = Math.min(1.0, Math.max(0.4, (ab - 30) / 350 + 0.4));
   const era = player.matchupEra ?? null;
   const pitcherMod = era != null ? Math.max(-10, Math.min(10, (era - 4.50) * 2.5)) : 0;
+  const wx = calcWeatherAdj(player.weather);
+  const weatherBonus = wx.adjustment;
   // Recency boost — hit streak / L10 avg used for hitting/runs/rbi/sb categories.
   // HR uses l10HRrate directly in the base formula (hit streaks don't predict HRs).
   let recencyBoost = 0;
@@ -140,7 +142,7 @@ function computeProjectionScore(player, category) {
     const splitBonus = (player.splitAVG != null && avg > 0)
       ? Math.max(-10, Math.min(12, (player.splitAVG - avg) / avg * 40))
       : 0;
-    base = 53 + wComp - kPenalty + bbBonus + hardBonus + pitcherMod + splitBonus;
+    base = 53 + wComp - kPenalty + bbBonus + hardBonus + pitcherMod + splitBonus + weatherBonus;
   } else if (category === 'hr') {
     // Poisson base: blends L10 HR rate (if loaded) with season rate
     // This is the fallback path — on player page the badge is driven from useHRProjection
@@ -189,7 +191,7 @@ function computeProjectionScore(player, category) {
     const splitOBPbonus = (player.splitOBP != null && obp > 0)
       ? Math.max(-8, Math.min(10, (player.splitOBP - obp) / obp * 30))
       : 0;
-    base = 40 + rComp + obpComp + hardBonus + pitcherMod + splitOBPbonus;
+    base = 40 + rComp + obpComp + hardBonus + pitcherMod + splitOBPbonus + weatherBonus;
   } else if (category === 'rbi') {
     const rbiComp    = Math.max(-15, Math.min(35, (rbi / gp - 0.45) * 70));
     const slgComp    = Math.max(0,   Math.min(15, (slg - 0.400) / 0.200 * 15));
@@ -199,7 +201,7 @@ function computeProjectionScore(player, category) {
     const splitSLGbonus = (player.splitSLG != null && slg > 0)
       ? Math.max(-8, Math.min(10, (player.splitSLG - slg) / slg * 30))
       : 0;
-    base = 38 + rbiComp + slgComp + hrComp + xwobaBonus + pitcherMod + splitSLGbonus;
+    base = 38 + rbiComp + slgComp + hrComp + xwobaBonus + pitcherMod + splitSLGbonus + weatherBonus;
   }
   // Shrink score toward 50 for thin sample sizes.
   // HR is exempt: pHR already has three internal shrinkage layers (sampleWeight, hrSampleWeight,
@@ -2413,6 +2415,9 @@ export default function PlayerDetailPage() {
 
   // ── Weather + PrizePicks state ─────────────────────────────────────────
   const [weather,       setWeather]      = useState(null);
+  // Recency signals computed from 2026-only games (not backfilled) — matches dashboard source
+  const [recencyStreak,   setRecencyStreak]   = useState(null);
+  const [recencyL10Avg,   setRecencyL10Avg]   = useState(null);
   const [ppLines,       setPpLines]      = useState(null); // { hits:1.5, hr:0.5, ... } for this player
 
   // ── Fetch PrizePicks lines for this player ────────────────────────────────
@@ -2549,6 +2554,9 @@ export default function PlayerDetailPage() {
         if (glRes.ok) {
           const d = await glRes.json();
           let games = d.games || [];
+          // Compute recency from 2026-only games BEFORE backfilling — matches dashboard source
+          setRecencyStreak(computeStreak(games));
+          setRecencyL10Avg(computeL10Avg(games));
           if (games.length < 10) {
             try {
               const gl25 = await fetch(`${API_URL}/player/${id}/gamelog?season=2025`);
@@ -2556,7 +2564,7 @@ export default function PlayerDetailPage() {
                 const d25 = await gl25.json();
                 const g25 = d25.games || [];
                 const needed = Math.max(0, 10 - games.length);
-                games = [...g25.slice(-needed), ...games]; // 2025 tail + 2026 recent
+                games = [...g25.slice(-needed), ...games]; // 2025 tail + 2026 recent (display only)
               }
             } catch {}
           }
@@ -2717,8 +2725,9 @@ export default function PlayerDetailPage() {
       hardHitPct: statcast?.hardHitPct ?? null,
       exitVelo:   statcast?.exitVelo   ?? null,
       matchupEra: pitcher?.stats?.era ? parseFloat(pitcher.stats.era) : null,
-      streak,
-      l10Avg,
+      weather,
+      streak:  recencyStreak,
+      l10Avg:  recencyL10Avg,
       splitAVG: splits && spPitcherHand
         ? parseFloat((spPitcherHand === 'L' ? splits.vsLeftHandedPitching : splits.vsRightHandedPitching)?.avg) || null
         : null,
@@ -2729,7 +2738,7 @@ export default function PlayerDetailPage() {
         ? parseFloat((spPitcherHand === 'L' ? splits.vsLeftHandedPitching : splits.vsRightHandedPitching)?.slg) || null
         : null,
     }, modelCat);
-  }, [cat, seasonStats, statcast, pitcher, streak, l10Avg, hrProj, h2hData, splits, spPitcherHand]);
+  }, [cat, seasonStats, statcast, pitcher, recencyStreak, recencyL10Avg, weather, hrProj, h2hData, splits, spPitcherHand]);
 
   // ── Relevant split (vs today's pitcher hand) ──────────────────────────────
   const relevantSplit = useMemo(() => {
