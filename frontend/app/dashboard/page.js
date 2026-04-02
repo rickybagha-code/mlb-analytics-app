@@ -168,7 +168,13 @@ function computeProjectionScore(player, category) {
     const hardBonus  = hardHitPct != null ? Math.max(0, Math.min(8, (hardHitPct - 40) / 18 * 8)) : 0;
     const splitBonus = splitAVG != null && avg > 0
       ? Math.max(-10, Math.min(12, (splitAVG - avg) / avg * 40)) : 0;
-    base = 53 + wComp - kPenalty + bbBonus + hardBonus + pitcherMod + splitBonus + weatherBonus;
+    // H2H history vs today's pitcher — sample-weighted, 15 AB minimum
+    const h2hAB  = player.h2hAB  ?? 0;
+    const h2hAVG = player.h2hAVG ?? null;
+    const h2hHitShift = h2hAVG != null && avg > 0 && h2hAB >= 15
+      ? Math.max(-8, Math.min(10, (h2hAVG / avg - 1.0) * 20 * Math.min(1.0, (h2hAB - 15) / 45)))
+      : 0;
+    base = 53 + wComp - kPenalty + bbBonus + hardBonus + pitcherMod + splitBonus + weatherBonus + h2hHitShift;
 
   } else if (category === 'hr') {
     const seasonHRpa = hr / pa_safe;

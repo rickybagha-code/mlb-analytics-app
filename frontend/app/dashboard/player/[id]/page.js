@@ -142,7 +142,13 @@ function computeProjectionScore(player, category) {
     const splitBonus = (player.splitAVG != null && avg > 0)
       ? Math.max(-10, Math.min(12, (player.splitAVG - avg) / avg * 40))
       : 0;
-    base = 53 + wComp - kPenalty + bbBonus + hardBonus + pitcherMod + splitBonus + weatherBonus;
+    // H2H history vs today's pitcher — sample-weighted, 15 AB minimum
+    const h2hAB  = player.h2hAB  ?? 0;
+    const h2hAVG = player.h2hAVG ?? null;
+    const h2hHitShift = h2hAVG != null && avg > 0 && h2hAB >= 15
+      ? Math.max(-8, Math.min(10, (h2hAVG / avg - 1.0) * 20 * Math.min(1.0, (h2hAB - 15) / 45)))
+      : 0;
+    base = 53 + wComp - kPenalty + bbBonus + hardBonus + pitcherMod + splitBonus + weatherBonus + h2hHitShift;
   } else if (category === 'hr') {
     // Poisson base: blends L10 HR rate (if loaded) with season rate
     // This is the fallback path — on player page the badge is driven from useHRProjection
@@ -2728,15 +2734,20 @@ export default function PlayerDetailPage() {
       weather,
       streak:  recencyStreak,
       l10Avg:  recencyL10Avg,
-      splitAVG: splits && spPitcherHand
-        ? parseFloat((spPitcherHand === 'L' ? splits.vsLeftHandedPitching : splits.vsRightHandedPitching)?.avg) || null
-        : null,
-      splitOBP: splits && spPitcherHand
-        ? parseFloat((spPitcherHand === 'L' ? splits.vsLeftHandedPitching : splits.vsRightHandedPitching)?.obp) || null
-        : null,
-      splitSLG: splits && spPitcherHand
-        ? parseFloat((spPitcherHand === 'L' ? splits.vsLeftHandedPitching : splits.vsRightHandedPitching)?.slg) || null
-        : null,
+      h2hAB:   h2hData?.careerMatchup ? (parseInt(h2hData.careerMatchup.atBats)  || 0)    : 0,
+      h2hAVG:  h2hData?.careerMatchup ? (parseFloat(h2hData.careerMatchup.avg)   || null) : null,
+      ...((() => {
+        // Use URL param first; fall back to fetched pitcher hand when URL is missing
+        const hand = spPitcherHand || pitcher?.hand || pitcher?.pitchHand || '';
+        const rel  = hand && splits
+          ? (hand === 'L' ? splits.vsLeftHandedPitching : splits.vsRightHandedPitching)
+          : null;
+        return {
+          splitAVG: rel ? (parseFloat(rel.avg) || null) : null,
+          splitOBP: rel ? (parseFloat(rel.obp) || null) : null,
+          splitSLG: rel ? (parseFloat(rel.slg) || null) : null,
+        };
+      })()),
     }, modelCat);
   }, [cat, seasonStats, statcast, pitcher, recencyStreak, recencyL10Avg, weather, hrProj, h2hData, splits, spPitcherHand]);
 
