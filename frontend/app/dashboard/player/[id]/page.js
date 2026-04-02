@@ -2426,6 +2426,20 @@ export default function PlayerDetailPage() {
   const [recencyL10Avg,   setRecencyL10Avg]   = useState(null);
   const [ppLines,       setPpLines]      = useState(null); // { hits:1.5, hr:0.5, ... } for this player
 
+  // ── Resolved matchup context (auto-fetched when URL params absent) ──────────
+  const [resolvedPitcherId,   setResolvedPitcherId]   = useState('');
+  const [resolvedPitcherHand, setResolvedPitcherHand] = useState('');
+  const [resolvedPitcherName, setResolvedPitcherName] = useState('');
+  const [resolvedOppAbbrev,   setResolvedOppAbbrev]   = useState('');
+  const [resolvedIsHome,      setResolvedIsHome]      = useState(false);
+
+  // Effective matchup context — URL params take priority; resolved values used when navigating directly
+  const effectivePitcherId   = spPitcherId   || resolvedPitcherId;
+  const effectivePitcherHand = spPitcherHand || resolvedPitcherHand;
+  const effectivePitcherName = spPitcherName || resolvedPitcherName;
+  const effectiveOppAbbrev   = spOppAbbrev   || resolvedOppAbbrev;
+  const effectiveIsHome      = spPitcherId   ? spIsHome : resolvedIsHome;
+
   // ── Fetch PrizePicks lines for this player ────────────────────────────────
   useEffect(() => {
     const name = playerInfo.fullName || spName;
@@ -2490,6 +2504,10 @@ export default function PlayerDetailPage() {
 
   async function loadData() {
     const isPitcherLoad = ['SP', 'RP', 'P'].includes(spPosition);
+    // Hoisted so weather fetch (after try-catch) can use resolved values
+    let activeIsHome     = spIsHome;
+    let activeTeamAbbrev = spTeamAbbrev;
+    let activeOppAbbrev  = spOppAbbrev;
     try {
       if (isPitcherLoad) {
         // ── Pitcher loading path ──────────────────────────────────────────
@@ -2578,25 +2596,30 @@ export default function PlayerDetailPage() {
         }
         setChartLoading(false);
 
-        // Phase 2: everything else in parallel — current season primary
-        const [mlbRes, mlbRes25, splitsRes, statcastRes, pitcherRes, h2hRes] = await Promise.allSettled([
+        // Phase 2a: player info + splits + statcast (not pitcher-dependent)
+        const [mlbRes, mlbRes25, splitsRes, statcastRes] = await Promise.allSettled([
           fetch(`${MLB_API}/people/${id}?hydrate=stats(group=hitting,type=season,season=${SEASON})`),
           fetch(`${MLB_API}/people/${id}?hydrate=stats(group=hitting,type=season,season=2025)`),
           fetch(`${API_URL}/player/${id}/splits?season=2025`),
           fetch(`${API_URL}/statcast/batters?season=2025`),
-          spPitcherId ? fetch(`${API_URL}/pitcher/${spPitcherId}`) : Promise.resolve(null),
-          spPitcherId ? fetch(`${API_URL}/career-matchup/batter/${id}/pitcher/${spPitcherId}`) : Promise.resolve(null),
         ]);
+
+        // Local vars for resolved matchup — URL params take priority
+        let activePitcherId   = spPitcherId;
+        let activePitcherHand = spPitcherHand;
+        let activePitcherName = spPitcherName;
+        // activeOppAbbrev, activeIsHome, activeTeamAbbrev hoisted to loadData() scope
 
         // Player info + season stats — blend 2026 and 2025 proportionally to sample size
         if (mlbRes.status === 'fulfilled' && mlbRes.value?.ok) {
           const d = await mlbRes.value.json();
           const p = d.people?.[0];
           if (p) {
+            activeTeamAbbrev = p.currentTeam?.abbreviation || spTeamAbbrev;
             setPlayerInfo({
               fullName:   p.fullName,
               teamName:   p.currentTeam?.name    || spTeamName,
-              teamAbbrev: p.currentTeam?.abbreviation || spTeamAbbrev,
+              teamAbbrev: activeTeamAbbrev,
               position:   p.primaryPosition?.abbreviation || '',
               batSide:    p.batSide?.code || '',
             });
@@ -2608,6 +2631,37 @@ export default function PlayerDetailPage() {
             }
             const blended = blendBatterStats(st26, st25);
             if (blended) setSeasonStats(blended);
+
+            // Auto-resolve today's matchup context when not navigated from dashboard
+            if (!spPitcherId && p.currentTeam?.id) {
+              try {
+                const today = new Date().toISOString().split('T')[0];
+                const schedRes = await fetch(
+                  `${API_URL}/games/probables?date=${today}&teamId=${p.currentTeam.id}`,
+                  { signal: AbortSignal.timeout(5000) }
+                );
+                if (schedRes.ok) {
+                  const schedData = await schedRes.json();
+                  const game = schedData.games?.[0];
+                  if (game) {
+                    const isHome = String(game.homeTeamId) === String(p.currentTeam.id);
+                    activePitcherId   = String(isHome ? (game.awayProbablePitcherId  || '') : (game.homeProbablePitcherId  || ''));
+                    activePitcherHand = isHome ? (game.awayProbablePitcherHand || '') : (game.homeProbablePitcherHand || '');
+                    activePitcherName = isHome ? (game.awayProbablePitcher     || '') : (game.homeProbablePitcher     || '');
+                    activeOppAbbrev   = normAbbrev(isHome ? game.awayTeamAbbrev : game.homeTeamAbbrev) || '';
+                    activeIsHome      = isHome;
+                    setResolvedPitcherId(activePitcherId);
+                    setResolvedPitcherHand(activePitcherHand);
+                    setResolvedPitcherName(activePitcherName);
+                    setResolvedOppAbbrev(activeOppAbbrev);
+                    setResolvedIsHome(activeIsHome);
+                    if (activePitcherName) {
+                      setPitcher({ id: activePitcherId, name: activePitcherName, hand: activePitcherHand });
+                    }
+                  }
+                }
+              } catch {}
+            }
           }
         }
 
@@ -2623,6 +2677,12 @@ export default function PlayerDetailPage() {
           const pid = parseInt(id);
           setStatcast(d[pid] || d[id] || null);
         }
+
+        // Phase 2b: fetch pitcher + career H2H with resolved pitcher ID
+        const [pitcherRes, h2hRes] = await Promise.allSettled([
+          activePitcherId ? fetch(`${API_URL}/pitcher/${activePitcherId}`) : Promise.resolve(null),
+          activePitcherId ? fetch(`${API_URL}/career-matchup/batter/${id}/pitcher/${activePitcherId}`) : Promise.resolve(null),
+        ]);
 
         // Pitcher
         if (pitcherRes.status === 'fulfilled' && pitcherRes.value?.ok) {
@@ -2644,7 +2704,7 @@ export default function PlayerDetailPage() {
     setLoading(false);
 
     // ── Weather fetch (non-blocking) ────────────────────────────────────
-    const rawHomeAbbrev = spIsHome ? spTeamAbbrev : (spOppAbbrev || spTeamAbbrev);
+    const rawHomeAbbrev = activeIsHome ? activeTeamAbbrev : (activeOppAbbrev || activeTeamAbbrev);
     const homeAbbrev = normAbbrev(rawHomeAbbrev);
     const coords = VENUE_COORDS[homeAbbrev];
     if (coords) {
@@ -2667,7 +2727,7 @@ export default function PlayerDetailPage() {
   const l10Avg = useMemo(() => computeL10Avg(gameLog),  [gameLog]);
 
   // ── HR projection for badge alignment ────────────────────────────────────
-  const hrProj = useHRProjection(gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev);
+  const hrProj = useHRProjection(gameLog, seasonStats, splits, statcast, pitcher, effectivePitcherHand, effectiveIsHome, playerInfo.teamAbbrev || spTeamAbbrev, effectiveOppAbbrev);
 
   // ── Derived: model score ──────────────────────────────────────────────────
   const modelScore = useMemo(() => {
@@ -2737,8 +2797,8 @@ export default function PlayerDetailPage() {
       h2hAB:   h2hData?.careerMatchup ? (parseInt(h2hData.careerMatchup.atBats)  || 0)    : 0,
       h2hAVG:  h2hData?.careerMatchup ? (parseFloat(h2hData.careerMatchup.avg)   || null) : null,
       ...((() => {
-        // Use URL param first; fall back to fetched pitcher hand when URL is missing
-        const hand = spPitcherHand || pitcher?.hand || pitcher?.pitchHand || '';
+        // Effective hand: URL param → resolved auto-fetch → fetched pitcher object
+        const hand = effectivePitcherHand || pitcher?.hand || pitcher?.pitchHand || '';
         const rel  = hand && splits
           ? (hand === 'L' ? splits.vsLeftHandedPitching : splits.vsRightHandedPitching)
           : null;
@@ -2749,13 +2809,13 @@ export default function PlayerDetailPage() {
         };
       })()),
     }, modelCat);
-  }, [cat, seasonStats, statcast, pitcher, recencyStreak, recencyL10Avg, weather, hrProj, h2hData, splits, spPitcherHand]);
+  }, [cat, seasonStats, statcast, pitcher, recencyStreak, recencyL10Avg, weather, hrProj, h2hData, splits, effectivePitcherHand]);
 
   // ── Relevant split (vs today's pitcher hand) ──────────────────────────────
   const relevantSplit = useMemo(() => {
-    if (!splits || !spPitcherHand) return null;
-    return spPitcherHand === 'L' ? splits.vsLeftHandedPitching : splits.vsRightHandedPitching;
-  }, [splits, spPitcherHand]);
+    if (!splits || !effectivePitcherHand) return null;
+    return effectivePitcherHand === 'L' ? splits.vsLeftHandedPitching : splits.vsRightHandedPitching;
+  }, [splits, effectivePitcherHand]);
 
   // ── L5 summary for current category ──────────────────────────────────────
   const l5Summary = useMemo(() => {
@@ -2791,7 +2851,7 @@ export default function PlayerDetailPage() {
   }, [isPitcherView, seasonStats]);
 
   // Page-level K projection (mirrors ProjectionEVCard)
-  const pageKProj = useKProjection(isPitcherView ? pitcherStarts : [], isPitcherView ? seasonStats : null, spOppAbbrev, isPitcherView ? pitcherSavant : null);
+  const pageKProj = useKProjection(isPitcherView ? pitcherStarts : [], isPitcherView ? seasonStats : null, effectiveOppAbbrev, isPitcherView ? pitcherSavant : null);
   const kProjScore = useMemo(() => {
     if (!isPitcherView || !pageKProj) return null;
     return pitcherScoreFromKProj(pageKProj.projected, ppLines?.strikeouts ?? null);
@@ -2884,10 +2944,10 @@ export default function PlayerDetailPage() {
                 {playerInfo.batSide && <span className="ml-2 text-gray-600">Bats {playerInfo.batSide}</span>}
                 {playerInfo.pitchHand && <span className="ml-2 text-gray-600">Throws {playerInfo.pitchHand}</span>}
               </p>
-              {(pitcher || spOppAbbrev) && (
+              {(pitcher || effectiveOppAbbrev) && (
                 <p className="text-sm text-blue-400 mt-1">
-                  {spIsHome ? 'vs' : '@'} {spOppAbbrev}
-                  {pitcher?.name && ` · ${spPitcherHand || ''}HP ${pitcher.name.split(' ').slice(-1)[0]}`}
+                  {effectiveIsHome ? 'vs' : '@'} {effectiveOppAbbrev}
+                  {pitcher?.name && ` · ${effectivePitcherHand || ''}HP ${pitcher.name.split(' ').slice(-1)[0]}`}
                   {pitcher?.stats?.era && <span className="text-gray-500 ml-1">({fmt(pitcher.stats.era,2)} ERA)</span>}
                 </p>
               )}
@@ -2959,9 +3019,9 @@ export default function PlayerDetailPage() {
             <div className="flex items-center gap-3 mb-5">
               <h2 className="text-xs font-bold text-gray-600 uppercase tracking-widest">Pitcher Dashboard · 2025</h2>
               <div className="flex-1 h-px bg-gray-800"/>
-              {spOppAbbrev && (
+              {effectiveOppAbbrev && (
                 <span className="text-xs text-blue-400 font-semibold">
-                  {spIsHome ? 'vs' : '@'} {spOppAbbrev}
+                  {effectiveIsHome ? 'vs' : '@'} {effectiveOppAbbrev}
                 </span>
               )}
             </div>
@@ -3023,7 +3083,7 @@ export default function PlayerDetailPage() {
               <ProjectionEVCard
                 pitcherStarts={pitcherStarts}
                 seasonStats={seasonStats}
-                oppTeamAbbrev={spOppAbbrev}
+                oppTeamAbbrev={effectiveOppAbbrev}
                 prizePicksLine={ppLines?.strikeouts ?? null}
                 pitcherSavant={pitcherSavant}
               />
@@ -3082,7 +3142,7 @@ export default function PlayerDetailPage() {
                 <span className="text-base">🔮</span>
                 <h3 className="text-sm font-bold text-white">Contextual Factors</h3>
               </div>
-              <PitcherContextRow starts={pitcherStarts} oppAbbrev={spOppAbbrev} isHome={spIsHome} weather={weather}/>
+              <PitcherContextRow starts={pitcherStarts} oppAbbrev={effectiveOppAbbrev} isHome={effectiveIsHome} weather={weather}/>
             </div>
 
           </>
@@ -3157,10 +3217,10 @@ export default function PlayerDetailPage() {
                 statcast={statcast}
                 pitcher={pitcher}
                 playerName={playerInfo.fullName}
-                spPitcherHand={spPitcherHand}
-                spIsHome={spIsHome}
-                spTeamAbbrev={spTeamAbbrev}
-                spOppAbbrev={spOppAbbrev}
+                spPitcherHand={effectivePitcherHand}
+                spIsHome={effectiveIsHome}
+                spTeamAbbrev={playerInfo.teamAbbrev || spTeamAbbrev}
+                spOppAbbrev={effectiveOppAbbrev}
                 activeTab={cat}
                 loading={loading || chartLoading}
                 prizePicksLines={ppLines}
@@ -3183,9 +3243,9 @@ export default function PlayerDetailPage() {
                 <H2HMatchupCard
                   data={h2hData}
                   loading={loading}
-                  pitcherId={spPitcherId}
-                  pitcherName={spPitcherName}
-                  pitcherHand={spPitcherHand}
+                  pitcherId={effectivePitcherId}
+                  pitcherName={effectivePitcherName}
+                  pitcherHand={effectivePitcherHand}
                 />
               </div>
 
@@ -3197,8 +3257,8 @@ export default function PlayerDetailPage() {
                 ) : (
                   <div className="space-y-3">
                     {[
-                      { label:'vs Left', data: splits.vsLeftHandedPitching,  relevant: spPitcherHand === 'L' },
-                      { label:'vs Right', data: splits.vsRightHandedPitching, relevant: spPitcherHand === 'R' },
+                      { label:'vs Left', data: splits.vsLeftHandedPitching,  relevant: effectivePitcherHand === 'L' },
+                      { label:'vs Right', data: splits.vsRightHandedPitching, relevant: effectivePitcherHand === 'R' },
                     ].map(({ label, data, relevant }) => (
                       <div key={label} className={`rounded-lg p-3 border ${relevant ? 'border-blue-500/30 bg-blue-500/5' : 'border-gray-800 bg-gray-800/30'}`}>
                         <div className="flex items-center justify-between mb-2">
@@ -3363,9 +3423,9 @@ export default function PlayerDetailPage() {
             {/* ── Park Factor + Lineup Position ──────────────────────────── */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
               <BaseballDiamondCard
-                spTeamAbbrev={spTeamAbbrev}
-                spOppAbbrev={spOppAbbrev}
-                spIsHome={spIsHome}
+                spTeamAbbrev={playerInfo.teamAbbrev || spTeamAbbrev}
+                spOppAbbrev={effectiveOppAbbrev}
+                spIsHome={effectiveIsHome}
                 activeCat={cat}
                 weather={weather}
               />
