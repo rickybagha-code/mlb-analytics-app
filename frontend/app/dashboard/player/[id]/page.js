@@ -124,7 +124,9 @@ function computeProjectionScore(player, category) {
       else if (streak === 0) recencyBoost -= 4;
     }
     if (l10Avg != null && avg > 0) {
-      recencyBoost += Math.max(-6, Math.min(6, ((l10Avg - avg) / avg) * 18));
+      const l10Contribution = Math.max(-6, Math.min(6, ((l10Avg - avg) / avg) * 18));
+      // Don't penalize a currently-hot player with cold early-window games
+      recencyBoost += (streak >= 3 && l10Contribution < 0) ? 0 : l10Contribution;
     }
   }
   let base = 50;
@@ -148,7 +150,8 @@ function computeProjectionScore(player, category) {
     const h2hHitShift = h2hAVG != null && avg > 0 && h2hAB >= 15
       ? Math.max(-8, Math.min(10, (h2hAVG / avg - 1.0) * 20 * Math.min(1.0, (h2hAB - 15) / 45)))
       : 0;
-    base = 53 + wComp - kPenalty + bbBonus + hardBonus + pitcherMod + splitBonus + weatherBonus + h2hHitShift;
+    // Weather scaled to 35% for hits — wind affects HR carry, not singles/doubles
+    base = 53 + wComp - kPenalty + bbBonus + hardBonus + pitcherMod + splitBonus + weatherBonus * 0.35 + h2hHitShift;
   } else if (category === 'hr') {
     // Poisson base: blends L10 HR rate (if loaded) with season rate
     // This is the fallback path — on player page the badge is driven from useHRProjection
