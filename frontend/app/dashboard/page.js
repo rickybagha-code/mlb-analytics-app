@@ -1418,6 +1418,22 @@ export default function DashboardPage() {
 
       <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
 
+        {/* ── Top-level view selector ──────────────────────────────────────── */}
+        <div className="flex items-center gap-1 mb-6 p-1 rounded-xl bg-gray-900 border border-gray-800 w-fit">
+          <button className="relative inline-flex items-center px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 bg-blue-600 text-white shadow-lg shadow-blue-500/30 scale-[1.03]">
+            <span className="absolute inset-0 rounded-lg bg-gradient-to-br from-blue-500/30 to-transparent pointer-events-none"/>
+            Props Board
+          </button>
+          <Link href="/dashboard/matchup"
+            className="inline-flex items-center px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 text-gray-400 hover:text-white">
+            Matchup Analyzer
+          </Link>
+          <Link href="/dashboard/weather"
+            className="inline-flex items-center px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 text-gray-400 hover:text-white">
+            Weather
+          </Link>
+        </div>
+
         {/* ── Header ──────────────────────────────────────────────────────── */}
         <div className="relative mb-8 rounded-2xl border border-gray-700/30 bg-gray-900/40 backdrop-blur-sm px-6 py-5 overflow-hidden">
           {/* Subtle glow */}
