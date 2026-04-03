@@ -70,10 +70,12 @@ export default function BatterPitchCard({ batter, pitcherName, pitcherPitchData,
 
   if (!batter) return null;
 
-  // Show ONLY the pitcher's top 4 pitches
-  const top4Types = (pitcherPitchData ?? []).slice(0, 4).map(p => p.type);
+  // Show pitcher's top 4 pitches as rows — fill "—" if batter hasn't faced a pitch type
+  const top4Pitches = (pitcherPitchData ?? []).slice(0, 4);
+  const top4Types   = top4Pitches.map(p => p.type);
+  const batterMap   = Object.fromEntries((batter.pitchData ?? []).map(p => [p.type, p]));
   const rows = top4Types.length
-    ? (batter.pitchData ?? []).filter(p => top4Types.includes(p.type))
+    ? top4Pitches.map(p => batterMap[p.type] ?? { type: p.type, _noData: true })
     : (batter.pitchData ?? []).slice(0, 6);
 
   const insight = rows.length
@@ -140,8 +142,8 @@ export default function BatterPitchCard({ batter, pitcherName, pitcherPitchData,
         </div>
       </div>
 
-      {/* Pitch table — only pitcher's top 4 pitches */}
-      {!batter.hasPitchData || rows.length === 0 ? (
+      {/* Pitch table — pitcher's top 4 pitches; "—" for any not in batter's data */}
+      {rows.length === 0 ? (
         <div className="p-4 text-center">
           <p className="text-sm text-gray-500">
             {batter.usingFallbackSeason ? 'Showing 2025 stats — limited 2026 data' : 'No pitch breakdown data available yet'}
@@ -154,6 +156,7 @@ export default function BatterPitchCard({ batter, pitcherName, pitcherPitchData,
               <tr className="border-b border-gray-800/60 text-gray-600 uppercase tracking-wide">
                 <th className="px-3 py-2 text-left font-bold">Type</th>
                 <th className="px-2 py-2 text-right font-bold">#</th>
+                <th className="px-2 py-2 text-right font-bold">%</th>
                 <th className="px-2 py-2 text-right font-bold">BA</th>
                 <th className="px-2 py-2 text-right font-bold">wOBA</th>
                 <th className="px-2 py-2 text-right font-bold">SLG</th>
@@ -164,11 +167,25 @@ export default function BatterPitchCard({ batter, pitcherName, pitcherPitchData,
               </tr>
             </thead>
             <tbody>
-              {rows.map(row => (
+              {rows.map((row, idx) => {
+                const isPrimary = idx < 4;
+                if (row._noData) {
+                  return (
+                    <tr key={row.type}
+                      className={`border-b border-gray-800/30 ${isPrimary ? 'border-l-2 border-l-violet-500/60' : ''}`}>
+                      <td className="px-3 py-1.5 text-left font-semibold text-gray-400">{row.type}</td>
+                      {['','','','','','','','',''].map((_, i) => (
+                        <td key={i} className="px-2 py-1.5 text-right text-xs text-gray-600">—</td>
+                      ))}
+                    </tr>
+                  );
+                }
+                return (
                 <tr key={row.type}
-                  className="border-b border-gray-800/30 hover:bg-gray-800/30 transition-colors">
+                  className={`border-b border-gray-800/30 hover:bg-gray-800/30 transition-colors ${isPrimary ? 'border-l-2 border-l-violet-500/60' : ''}`}>
                   <td className="px-3 py-1.5 text-left font-semibold text-gray-200">{row.type}</td>
                   <Td>{fmtN(row.pitches)}</Td>
+                  <Td>{row.usagePct != null ? row.usagePct.toFixed(1) + '%' : '—'}</Td>
                   <Td cls={baCls(row.ba)}>{fmt3(row.ba)}</Td>
                   <Td cls={wobaCls(row.woba)}>{fmt3(row.woba)}</Td>
                   <Td cls={slgCls(row.slg)}>{fmt3(row.slg)}</Td>
@@ -177,7 +194,8 @@ export default function BatterPitchCard({ batter, pitcherName, pitcherPitchData,
                   <Td cls={kCls(row.kPct)}>{fmtPct(row.kPct)}</Td>
                   <Td cls={kCls(row.whiffPct)}>{fmtPct(row.whiffPct)}</Td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

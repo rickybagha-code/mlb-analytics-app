@@ -253,20 +253,15 @@ export async function GET(request) {
       }
     }
 
-    // Sort by mismatch score (batter edge first, then pitcher edge)
+    // Sort descending by mismatch score — highest batter edge at rank #1
     const top20 = pairs
-      .sort((a, b) => {
-        // Prioritize extreme scores (both high batter edge and high pitcher edge are interesting)
-        const aEdge = Math.abs(a.mismatchScore - 50);
-        const bEdge = Math.abs(b.mismatchScore - 50);
-        return bEdge - aEdge;
-      })
+      .sort((a, b) => b.mismatchScore - a.mismatchScore)
       .slice(0, 20)
       .map((p, i) => ({ ...p, rank: i + 1 }));
 
     return NextResponse.json(
       { matchups: top20, date, gamesCount: games.length },
-      { headers: { 'Cache-Control': 'public, max-age=3600' } }
+      { headers: { 'Cache-Control': 'public, max-age=7200' } }
     );
   } catch (err) {
     console.error('Top20 route error:', err.message);

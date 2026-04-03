@@ -61,9 +61,10 @@ function calcWeatherAdj(weather) {
   else if (temp >= 24) { adj += 2; notes.push('Warm'); }
   else if (temp <= 13) { adj -= 3; notes.push('Cold'); }
   if (windSpeed >= 10) {
-    if      (windDir >= 225 && windDir <= 315) { adj += 4; notes.push('Wind blowing out'); }
-    else if (windDir >= 45  && windDir <= 135) { adj -= 4; notes.push('Wind blowing in');  }
-    else                                       { adj += 1; notes.push('Crosswind');         }
+    const windMagnitude = Math.min(7, Math.floor((windSpeed - 10) / 5) * 1.5 + 2.5);
+    if      (windDir >= 225 && windDir <= 315) { adj += windMagnitude; notes.push('Wind blowing out'); }
+    else if (windDir >= 45  && windDir <= 135) { adj -= windMagnitude; notes.push('Wind blowing in');  }
+    else                                       { adj += 1;             notes.push('Crosswind');         }
   }
   return { adjustment: adj, notes, temp, windSpeed, windDir };
 }
@@ -187,8 +188,19 @@ function computeProjectionScore(player, category) {
       return hrRateShift + slgShift;
     })();
     const pitcherHRShift = Math.max(-0.03, Math.min(0.03, pitcherMod * 0.003));
+    const wxWind    = player.weather ?? null;
+    const wxWindSpd = Number(wxWind?.windSpeed ?? 0);
+    const wxWindDir = Number(wxWind?.windDir ?? 0);
+    const windShift = (() => {
+      if (!wxWind || wxWindSpd < 10) return 0;
+      const isOut = wxWindDir >= 225 && wxWindDir <= 315;
+      const isIn  = wxWindDir >= 45  && wxWindDir <= 135;
+      if (!isOut && !isIn) return 0;
+      const speedFactor = Math.min(0.04, ((wxWindSpd - 10) / 5) * 0.01 + 0.01);
+      return isOut ? speedFactor : -speedFactor;
+    })();
     const adjustedPHR = Math.min(0.30, Math.max(0.005,
-      pHR + barrelShift + evoShift + parkShift + splitShift + h2hShift + pitcherHRShift
+      pHR + barrelShift + evoShift + parkShift + splitShift + h2hShift + pitcherHRShift + windShift
     ));
     // Center at league avg pHR (0.127) → 50; max (0.30, elite tier) → ~80; keeps HR below hits
     base = 50 + (adjustedPHR - 0.127) * 175;
@@ -1951,7 +1963,7 @@ function useHitsProjection(gameLog, seasonStats, splits, statcast, pitcher, spPi
   }, [gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev]);
 }
 
-function useHRProjection(gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev) {
+function useHRProjection(gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev, weather) {
   return useMemo(() => {
     if (!gameLog.length && !seasonStats) return null;
     const c = buildHittingCtx(gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev);
@@ -1996,8 +2008,18 @@ function useHRProjection(gameLog, seasonStats, splits, statcast, pitcher, spPitc
     const evoShift     = c.exitVelo != null ? Math.max(-0.02, Math.min(0.03, (c.exitVelo - 88.5) / 300)) : 0;
     const splitShift   = c.splitSLG && c.seasonSLG > 0
       ? Math.max(-0.04, Math.min(0.05, (c.splitSLG / c.seasonSLG - 1.0) * 0.15)) : 0;
+    const wxWindSpd = Number(weather?.windSpeed ?? 0);
+    const wxWindDir = Number(weather?.windDir ?? 0);
+    const windShift = (() => {
+      if (!weather || wxWindSpd < 10) return 0;
+      const isOut = wxWindDir >= 225 && wxWindDir <= 315;
+      const isIn  = wxWindDir >= 45  && wxWindDir <= 135;
+      if (!isOut && !isIn) return 0;
+      const speedFactor = Math.min(0.04, ((wxWindSpd - 10) / 5) * 0.01 + 0.01);
+      return isOut ? speedFactor : -speedFactor;
+    })();
     const adjustedPHR = Math.min(0.30, Math.max(0.005,
-      pHR_base + barrelShift + evoShift + parkShift + splitShift + pitcherShift
+      pHR_base + barrelShift + evoShift + parkShift + splitShift + pitcherShift + windShift
     ));
     // Back-calculate lambda so Poisson chart is consistent with adjustedPHR
     const lambda = Math.max(0.001, -Math.log(1 - adjustedPHR));
@@ -2015,9 +2037,10 @@ function useHRProjection(gameLog, seasonStats, splits, statcast, pitcher, spPitc
         { label:'Pitcher HR tendency',       impact:Math.round(pitcherShift * 100)/100, dir:pitcherShift >= 0?'↑':'↓' },
         { label:`${spPitcherHand||'?'}HP SLG split`, impact:Math.round(splitShift * 100)/100, dir:splitShift >= 0?'↑':'↓', note:!c.splitSLG?'no split data':null },
         { label:'Park HR factor',            impact:Math.round(parkShift * 100)/100, dir:parkShift >= 0?'↑':'↓', note:!c.park?'no data':null },
+        { label:'Wind (carry)',              impact:Math.round(windShift * 100)/100, dir:windShift >= 0?'↑':'↓', note:!weather?'no weather':null },
       ],
     };
-  }, [gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev]);
+  }, [gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev, weather]);
 }
 
 function useRunsProjection(gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev) {
@@ -2730,7 +2753,7 @@ export default function PlayerDetailPage() {
   const l10Avg = useMemo(() => computeL10Avg(gameLog),  [gameLog]);
 
   // ── HR projection for badge alignment ────────────────────────────────────
-  const hrProj = useHRProjection(gameLog, seasonStats, splits, statcast, pitcher, effectivePitcherHand, effectiveIsHome, playerInfo.teamAbbrev || spTeamAbbrev, effectiveOppAbbrev);
+  const hrProj = useHRProjection(gameLog, seasonStats, splits, statcast, pitcher, effectivePitcherHand, effectiveIsHome, playerInfo.teamAbbrev || spTeamAbbrev, effectiveOppAbbrev, weather);
 
   // ── Derived: model score ──────────────────────────────────────────────────
   const modelScore = useMemo(() => {

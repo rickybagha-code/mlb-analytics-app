@@ -5,6 +5,7 @@ import {
   generateMatchupSummary, findKVulnerability, findPrimaryThreat, verdictStyle,
   calculateMismatchScore, calculateSimplifiedMismatchScore,
 } from '../../lib/matchup';
+import { calculateEdgeScoreAdjustment } from '../../lib/matchupAdjustment';
 
 export default function MatchupSummaryCard({ pitcher, batter, h2h, loading }) {
   if (loading) {
@@ -48,6 +49,24 @@ export default function MatchupSummaryCard({ pitcher, batter, h2h, loading }) {
 
   const { text: verdictText, bg: verdictBg } = verdictStyle(mismatch.verdict);
 
+  // Compute per-prop EdgeScore adjustments using a reference base of 60
+  // (slightly above league avg — shows direction and magnitude of impact)
+  const REF_BASE = 60;
+  const primaryWobaEdge = threat?.edge ?? 0;
+  const h2hAvg = h2h?.avg ?? null;
+  const h2hAB  = h2h?.ab  ?? 0;
+  const propImpacts = ['hits', 'hr', 'runs', 'rbi', 'strikeouts'].map(prop => {
+    const adj = calculateEdgeScoreAdjustment(
+      REF_BASE,
+      mismatch.score,
+      primaryWobaEdge,
+      h2hAvg,
+      h2hAB,
+      prop
+    );
+    return { prop, pts: adj.adjustedPoints };
+  });
+
   const metricBoxCls = 'rounded-lg border border-gray-700/40 bg-gray-800/50 p-3 text-center';
 
   return (
@@ -68,7 +87,7 @@ export default function MatchupSummaryCard({ pitcher, batter, h2h, loading }) {
         </div>
 
         <div className={metricBoxCls}>
-          <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500 mb-1">Primary Threat</p>
+          <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500 mb-1">Top Pitch Edge</p>
           {threat ? (
             <>
               <p className="text-sm font-bold text-white truncate">{threat.pitch}</p>
@@ -103,10 +122,34 @@ export default function MatchupSummaryCard({ pitcher, batter, h2h, loading }) {
 
       {/* Summary paragraph */}
       {summary && (
-        <div className="rounded-lg border border-gray-700/40 bg-gray-800/30 px-4 py-3">
+        <div className="rounded-lg border border-gray-700/40 bg-gray-800/30 px-4 py-3 mb-4">
           <p className="text-xs text-gray-300 leading-relaxed">{summary}</p>
         </div>
       )}
+
+      {/* Prop impact row */}
+      <div>
+        <p className="text-[10px] font-bold uppercase tracking-widest text-gray-600 mb-2">EdgeScore Adjustment by Prop</p>
+        <div className="flex gap-2 flex-wrap">
+          {propImpacts.map(({ prop, pts }) => {
+            const isPos = pts > 0;
+            const isNeg = pts < 0;
+            const label = prop === 'strikeouts' ? "K's" : prop.charAt(0).toUpperCase() + prop.slice(1);
+            const cls = isPos ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-400'
+                       : isNeg ? 'bg-red-500/10 border-red-500/25 text-red-400'
+                       : 'bg-gray-800/50 border-gray-700/40 text-gray-500';
+            return (
+              <div key={prop} className={`flex-1 min-w-[4rem] rounded-lg border px-2 py-1.5 text-center ${cls}`}>
+                <p className="text-[9px] font-bold uppercase tracking-wide opacity-70 mb-0.5">{label}</p>
+                <p className="text-xs font-black tabular-nums">
+                  {pts > 0 ? '+' : ''}{pts !== 0 ? pts : '—'}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+        <p className="text-[10px] text-gray-700 mt-1.5">Based on mismatch score vs a 60-pt reference</p>
+      </div>
     </div>
   );
 }

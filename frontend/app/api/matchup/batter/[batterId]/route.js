@@ -13,12 +13,32 @@ const PITCH_NAMES = {
   SV:'Slurve', KC:'Knuckle-Curve', KN:'Knuckleball', EP:'Eephus',
 };
 
+function parseCSVRow(line) {
+  const fields = [];
+  let cur = '', inQuote = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      if (inQuote && line[i + 1] === '"') { cur += '"'; i++; }
+      else inQuote = !inQuote;
+    } else if (c === ',' && !inQuote) {
+      fields.push(cur.trim()); cur = '';
+    } else {
+      cur += c;
+    }
+  }
+  fields.push(cur.trim());
+  return fields;
+}
+
 function parseCSV(text) {
-  const lines = text.trim().split('\n');
+  // Strip UTF-8 BOM if present
+  const cleaned = text.replace(/^\uFEFF/, '').trim();
+  const lines = cleaned.split('\n');
   if (lines.length < 2) return [];
-  const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
-  return lines.slice(1).map(line => {
-    const vals = line.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
+  const headers = parseCSVRow(lines[0]);
+  return lines.slice(1).filter(l => l.trim()).map(line => {
+    const vals = parseCSVRow(line);
     const obj = {};
     headers.forEach((h, i) => { obj[h] = vals[i] ?? ''; });
     return obj;
@@ -27,8 +47,10 @@ function parseCSV(text) {
 
 async function fetchSavantBatterVsPitch(batterId, year, pitcherHand) {
   try {
-    const handParam = pitcherHand ? `&hfRO=&pitcher_throws=${pitcherHand}` : '';
-    const url = `https://baseballsavant.mlb.com/statcast_search/csv?hfGT=R%7C&player_type=batter&batters_lookup%5B%5D=${batterId}&group_by=pitch_type&hfSea=${year}%7C&min_pitches=1&sort_col=pitches&sort_order=desc${handParam}`;
+    // pitcherHand = 'L' or 'R' — filters stats vs left or right-handed pitchers
+    const handFilter = pitcherHand === 'L' || pitcherHand === 'R' ? `&hand=${pitcherHand}` : '';
+    // Baseball Savant pitch-arsenal-stats leaderboard — per pitch type with hitting stats for batter
+    const url = `https://baseballsavant.mlb.com/leaderboard/pitch-arsenal-stats?min=0&pitchType=&year=${year}${handFilter}&startInning=1&endInning=9&minPA=1&type=batter&stats=pa-percentages,pa-details&groupBy=name&sort=pa&sortDir=desc&playerId=${batterId}&csv=true`;
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ProprStats/1.0)' },
       signal: AbortSignal.timeout(12000),
@@ -41,16 +63,19 @@ async function fetchSavantBatterVsPitch(batterId, year, pitcherHand) {
 
     const results = [];
     for (const row of rows) {
+      // Filter to only this batter's rows
+      if (String(row.player_id).trim() !== String(batterId).trim()) continue;
       const code = (row.pitch_type || '').trim().toUpperCase();
       if (!code) continue;
-      const pitchName = PITCH_NAMES[code] || code;
-      const pitches   = parseInt(row.pitches || row.total_pitches) || 0;
+      const pitchName = (row.pitch_name || '').trim() || PITCH_NAMES[code] || code;
+      const pitches   = parseInt(row.pitches || row.pa) || 0;
       if (pitches < 5) continue;
 
       results.push({
         code,
         type:     pitchName,
         pitches,
+        usagePct: parseFloat(row.pitch_usage || row.pitch_percent) || 0,
         ba:       parseFloat(row.ba)              || 0,
         woba:     parseFloat(row.woba)            || 0,
         slg:      parseFloat(row.slg)             || 0,
@@ -61,7 +86,15 @@ async function fetchSavantBatterVsPitch(batterId, year, pitcherHand) {
       });
     }
 
-    return results.length ? results : null;
+    if (!results.length) return null;
+    // If usagePct not in CSV, derive from pitch counts
+    const hasUsage = results.some(r => r.usagePct > 0);
+    if (!hasUsage) {
+      const total = results.reduce((s, r) => s + r.pitches, 0);
+      results.forEach(r => { r.usagePct = total > 0 ? (r.pitches / total) * 100 : 0; });
+    }
+
+    return results;
   } catch {
     return null;
   }
@@ -122,7 +155,7 @@ async function fetchPlayerInfo(batterId) {
 }
 
 export async function GET(request, { params }) {
-  const { batterId } = params;
+  const { batterId } = await params;
   const { searchParams } = new URL(request.url);
   const year        = searchParams.get('season')      || '2026';
   const pitcherHand = searchParams.get('pitcherHand') || '';

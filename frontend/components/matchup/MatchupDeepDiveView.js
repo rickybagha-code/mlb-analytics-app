@@ -7,6 +7,7 @@ import PitcherPitchCard from './PitcherPitchCard';
 import BatterPitchCard from './BatterPitchCard';
 import H2HStrip from './H2HStrip';
 import MatchupSummaryCard from './MatchupSummaryCard';
+import PitchMatchupMatrix from './PitchMatchupMatrix';
 
 export default function MatchupDeepDiveView({ pitcherId, batterId }) {
   const [season,  setSeason]  = useState('2026');
@@ -19,16 +20,17 @@ export default function MatchupDeepDiveView({ pitcherId, batterId }) {
   const [errorPitcher,   setErrorPitcher]   = useState(null);
   const [errorBatter,    setErrorBatter]    = useState(null);
 
-  // Fetch pitcher data when season changes
+  // Fetch pitcher data — pass batter hand for platoon-split filtering on Savant
   useEffect(() => {
     if (!pitcherId) return;
     setLoadingPitcher(true);
     setErrorPitcher(null);
-    fetch(`/api/matchup/pitcher/${pitcherId}?season=${season}`)
+    const hand = batter?.hand ?? '';
+    fetch(`/api/matchup/pitcher/${pitcherId}?season=${season}&hand=${hand}`)
       .then(r => r.ok ? r.json() : Promise.reject(r.status))
       .then(d => { setPitcher(d); setLoadingPitcher(false); })
       .catch(e => { setErrorPitcher(`Could not load pitcher data (${e})`); setLoadingPitcher(false); });
-  }, [pitcherId, season]);
+  }, [pitcherId, season, batter?.hand]);
 
   // Fetch batter data — depends on pitcher.hand for correct platoon split
   useEffect(() => {
@@ -81,38 +83,15 @@ export default function MatchupDeepDiveView({ pitcherId, batterId }) {
       </div>
 
       <div className="space-y-4">
-        {/* Pitcher card */}
-        {errorPitcher ? (
-          <div className="rounded-xl border border-gray-800 bg-gray-900 p-6 text-center">
-            <p className="text-sm text-gray-500">{errorPitcher}</p>
-          </div>
-        ) : (
-          <PitcherPitchCard
-            pitcher={pitcher}
-            batterName={batterName}
-            batterPitchStats={batter?.pitchData ?? []}
-            batterHand={batterHand}
-            loading={loadingPitcher}
-          />
-        )}
+        {/* ── Pitch Matchup Matrix — primary visual grid ── */}
+        <PitchMatchupMatrix
+          pitcher={pitcher}
+          batter={batter}
+          loading={loadingPitcher || loadingBatter}
+        />
 
         {/* H2H strip */}
         <H2HStrip h2h={h2h} loading={loadingH2H} />
-
-        {/* Batter card */}
-        {errorBatter ? (
-          <div className="rounded-xl border border-gray-800 bg-gray-900 p-6 text-center">
-            <p className="text-sm text-gray-500">{errorBatter}</p>
-          </div>
-        ) : (
-          <BatterPitchCard
-            batter={batter}
-            pitcherName={pitcherName}
-            pitcherPitchData={pitcher?.pitchData ?? []}
-            pitcherHand={pitcherHand}
-            loading={loadingBatter}
-          />
-        )}
 
         {/* Summary card */}
         <MatchupSummaryCard
@@ -121,6 +100,37 @@ export default function MatchupDeepDiveView({ pitcherId, batterId }) {
           h2h={h2h}
           loading={loadingPitcher || loadingBatter}
         />
+
+        {/* Detail cards — pitcher then batter */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {errorPitcher ? (
+            <div className="rounded-xl border border-gray-800 bg-gray-900 p-6 text-center">
+              <p className="text-sm text-gray-500">{errorPitcher}</p>
+            </div>
+          ) : (
+            <PitcherPitchCard
+              pitcher={pitcher}
+              batterName={batterName}
+              batterPitchStats={batter?.pitchData ?? []}
+              batterHand={batterHand}
+              loading={loadingPitcher}
+            />
+          )}
+
+          {errorBatter ? (
+            <div className="rounded-xl border border-gray-800 bg-gray-900 p-6 text-center">
+              <p className="text-sm text-gray-500">{errorBatter}</p>
+            </div>
+          ) : (
+            <BatterPitchCard
+              batter={batter}
+              pitcherName={pitcherName}
+              pitcherPitchData={pitcher?.pitchData ?? []}
+              pitcherHand={pitcherHand}
+              loading={loadingBatter}
+            />
+          )}
+        </div>
       </div>
     </div>
   );

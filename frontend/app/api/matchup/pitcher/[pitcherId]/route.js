@@ -13,22 +13,44 @@ const PITCH_NAMES = {
   SV:'Slurve', KC:'Knuckle-Curve', KN:'Knuckleball', EP:'Eephus',
 };
 
+function parseCSVRow(line) {
+  const fields = [];
+  let cur = '', inQuote = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      if (inQuote && line[i + 1] === '"') { cur += '"'; i++; }
+      else inQuote = !inQuote;
+    } else if (c === ',' && !inQuote) {
+      fields.push(cur.trim()); cur = '';
+    } else {
+      cur += c;
+    }
+  }
+  fields.push(cur.trim());
+  return fields;
+}
+
 function parseCSV(text) {
-  const lines = text.trim().split('\n');
+  // Strip UTF-8 BOM if present
+  const cleaned = text.replace(/^\uFEFF/, '').trim();
+  const lines = cleaned.split('\n');
   if (lines.length < 2) return [];
-  const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
-  return lines.slice(1).map(line => {
-    const vals = line.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
+  const headers = parseCSVRow(lines[0]);
+  return lines.slice(1).filter(l => l.trim()).map(line => {
+    const vals = parseCSVRow(line);
     const obj = {};
     headers.forEach((h, i) => { obj[h] = vals[i] ?? ''; });
     return obj;
   });
 }
 
-async function fetchSavantPitchArsenal(pitcherId, year) {
+async function fetchSavantPitchArsenal(pitcherId, year, vsHand) {
   try {
-    // Baseball Savant statcast search — pitch type grouped stats for a specific pitcher
-    const url = `https://baseballsavant.mlb.com/statcast_search/csv?hfGT=R%7C&player_type=pitcher&pitchers_lookup%5B%5D=${pitcherId}&group_by=pitch_type&hfSea=${year}%7C&min_pitches=1&sort_col=pitches&sort_order=desc`;
+    // vsHand = batting hand of today's opponent ('L' or 'R') for platoon-split filtering
+    const handFilter = vsHand === 'L' || vsHand === 'R' ? `&hand=${vsHand}` : '';
+    // Baseball Savant pitch-arsenal-stats leaderboard — per pitch type with hitting stats
+    const url = `https://baseballsavant.mlb.com/leaderboard/pitch-arsenal-stats?min=0&pitchType=&year=${year}${handFilter}&startInning=1&endInning=9&minPA=1&type=pitcher&stats=pa-percentages,pa-details&groupBy=name&sort=pa&sortDir=desc&playerId=${pitcherId}&csv=true`;
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ProprStats/1.0)' },
       signal: AbortSignal.timeout(12000),
@@ -41,13 +63,15 @@ async function fetchSavantPitchArsenal(pitcherId, year) {
 
     const results = [];
     for (const row of rows) {
+      // Filter to only this pitcher's rows
+      if (String(row.player_id).trim() !== String(pitcherId).trim()) continue;
       const code = (row.pitch_type || '').trim().toUpperCase();
       if (!code) continue;
-      const pitchName = PITCH_NAMES[code] || code;
-      const pitches   = parseInt(row.pitches || row.total_pitches) || 0;
+      // pitch_name from CSV preferred; fall back to PITCH_NAMES map
+      const pitchName = (row.pitch_name || '').trim() || PITCH_NAMES[code] || code;
+      const pitches   = parseInt(row.pitches || row.pa) || 0;
       if (pitches < 5) continue;
 
-      // Total pitches across all rows for usage %
       results.push({
         code,
         type:      pitchName,
@@ -59,13 +83,17 @@ async function fetchSavantPitchArsenal(pitcherId, year) {
         hr:        parseInt(row.home_run || row.hr) || 0,
         kPct:      parseFloat(row.k_percent)     || 0,
         whiffPct:  parseFloat(row.whiff_percent) || 0,
-        usagePct:  0, // calculated after
+        usagePct:  parseFloat(row.pitch_usage || row.pitch_percent) || 0,
       });
     }
 
     if (!results.length) return null;
-    const totalPitches = results.reduce((s, r) => s + r.pitches, 0);
-    results.forEach(r => { r.usagePct = totalPitches > 0 ? (r.pitches / totalPitches) * 100 : 0; });
+    // If usagePct not in CSV, derive from pitch counts
+    const hasUsage = results.some(r => r.usagePct > 0);
+    if (!hasUsage) {
+      const totalPitches = results.reduce((s, r) => s + r.pitches, 0);
+      results.forEach(r => { r.usagePct = totalPitches > 0 ? (r.pitches / totalPitches) * 100 : 0; });
+    }
     return results.sort((a, b) => b.usagePct - a.usagePct);
   } catch {
     return null;
@@ -116,16 +144,18 @@ async function fetchPlayerInfo(pitcherId) {
 }
 
 export async function GET(request, { params }) {
-  const { pitcherId } = params;
+  const { pitcherId } = await params;
   const { searchParams } = new URL(request.url);
-  const year  = searchParams.get('season') || '2026';
+  const year    = searchParams.get('season') || '2026';
+  // 'hand' = batting hand of the opposing batter (for platoon split filtering)
+  const vsHand  = searchParams.get('hand') || '';
 
   if (!pitcherId) {
     return NextResponse.json({ error: 'Missing pitcherId' }, { status: 400 });
   }
 
   const [savantData, seasonStats, playerInfo] = await Promise.all([
-    fetchSavantPitchArsenal(pitcherId, year),
+    fetchSavantPitchArsenal(pitcherId, year, vsHand),
     fetchMLBSeasonStats(pitcherId, year),
     fetchPlayerInfo(pitcherId),
   ]);
@@ -134,7 +164,7 @@ export async function GET(request, { params }) {
   let pitchData = savantData;
   let usingFallbackSeason = false;
   if (!pitchData && year !== '2025') {
-    pitchData = await fetchSavantPitchArsenal(pitcherId, '2025');
+    pitchData = await fetchSavantPitchArsenal(pitcherId, '2025', vsHand);
     if (pitchData) usingFallbackSeason = true;
   }
 

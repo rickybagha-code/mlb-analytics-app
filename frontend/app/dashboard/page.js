@@ -60,8 +60,9 @@ function calcWeatherAdj(weather) {
   else if (temp >= 24) adj += 2;
   else if (temp <= 13) adj -= 3;
   if (windSpeed >= 10) {
-    if      (windDir >= 225 && windDir <= 315) adj += 4;
-    else if (windDir >= 45  && windDir <= 135) adj -= 4;
+    const windMagnitude = Math.min(7, Math.floor((windSpeed - 10) / 5) * 1.5 + 2.5);
+    if      (windDir >= 225 && windDir <= 315) adj += windMagnitude;
+    else if (windDir >= 45  && windDir <= 135) adj -= windMagnitude;
     else                                       adj += 1;
   }
   return { adjustment: adj };
@@ -205,11 +206,22 @@ function computeProjectionScore(player, category) {
     const platoonShift = splitSLG != null && slg > 0
       ? Math.max(-0.04, Math.min(0.05, (splitSLG / slg - 1.0) * 0.15)) : 0;
     // pHR ceiling aligned with player card (0.30); weather added as direct score pts below
+    const wxWind    = player.weather ?? null;
+    const wxWindSpd = Number(wxWind?.windSpeed ?? 0);
+    const wxWindDir = Number(wxWind?.windDir ?? 0);
+    const windShift = (() => {
+      if (!wxWind || wxWindSpd < 10) return 0;
+      const isOut = wxWindDir >= 225 && wxWindDir <= 315;
+      const isIn  = wxWindDir >= 45  && wxWindDir <= 135;
+      if (!isOut && !isIn) return 0;
+      const speedFactor = Math.min(0.04, ((wxWindSpd - 10) / 5) * 0.01 + 0.01);
+      return isOut ? speedFactor : -speedFactor;
+    })();
     const adjustedPHR = Math.min(0.30, Math.max(0.005,
-      pHR + barrelShift + evoShift + parkShift + pitcherHRShift + platoonShift
+      pHR + barrelShift + evoShift + parkShift + pitcherHRShift + platoonShift + windShift
     ));
-    // Center at league avg (0.127) → 50; scale 175 matches player card; weather added after
-    base = 50 + (adjustedPHR - 0.127) * 175 + weatherBonus;
+    // Center at league avg (0.127) → 50; scale 175 matches player card
+    base = 50 + (adjustedPHR - 0.127) * 175;
 
   } else if (category === 'runs') {
     const rComp         = Math.max(-15, Math.min(25, (r / gp - 0.45) * 55));
