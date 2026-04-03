@@ -7,7 +7,6 @@ import PitcherPitchCard from './PitcherPitchCard';
 import BatterPitchCard from './BatterPitchCard';
 import H2HStrip from './H2HStrip';
 import MatchupSummaryCard from './MatchupSummaryCard';
-import PitchMatchupMatrix from './PitchMatchupMatrix';
 
 export default function MatchupDeepDiveView({ pitcherId, batterId }) {
   const [season,  setSeason]  = useState('2026');
@@ -83,25 +82,7 @@ export default function MatchupDeepDiveView({ pitcherId, batterId }) {
       </div>
 
       <div className="space-y-4">
-        {/* ── Pitch Matchup Matrix — primary visual grid ── */}
-        <PitchMatchupMatrix
-          pitcher={pitcher}
-          batter={batter}
-          loading={loadingPitcher || loadingBatter}
-        />
-
-        {/* H2H strip */}
-        <H2HStrip h2h={h2h} loading={loadingH2H} />
-
-        {/* Summary card */}
-        <MatchupSummaryCard
-          pitcher={pitcher}
-          batter={batter}
-          h2h={h2h}
-          loading={loadingPitcher || loadingBatter}
-        />
-
-        {/* Detail cards — pitcher then batter */}
+        {/* ── Pitch breakdown matrix — pitcher left, batter right ── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {errorPitcher ? (
             <div className="rounded-xl border border-gray-800 bg-gray-900 p-6 text-center">
@@ -131,6 +112,17 @@ export default function MatchupDeepDiveView({ pitcherId, batterId }) {
             />
           )}
         </div>
+
+        {/* H2H strip */}
+        <H2HStrip h2h={h2h} loading={loadingH2H} />
+
+        {/* Summary card */}
+        <MatchupSummaryCard
+          pitcher={pitcher}
+          batter={batter}
+          h2h={h2h}
+          loading={loadingPitcher || loadingBatter}
+        />
       </div>
     </div>
   );

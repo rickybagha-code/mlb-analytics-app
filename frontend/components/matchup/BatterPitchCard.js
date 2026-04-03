@@ -1,81 +1,75 @@
 'use client';
 
-import { generateBatterInsight, LEAGUE_AVG_WOBA_BY_PITCH } from '../../lib/matchup';
+import { generateBatterInsight } from '../../lib/matchup';
 
 // Batter-favorable = green (high BA/wOBA, low K%)
 function baCls(v) {
-  if (v >= 0.300) return 'bg-[#14532d] text-[#86efac]';
-  if (v >= 0.260) return 'bg-[#166534] text-[#bbf7d0]';
-  if (v >= 0.221) return '';
-  if (v >= 0.200) return 'bg-[#7f1d1d] text-[#fca5a5]';
-  return 'bg-[#450a0a] text-[#f87171]';
+  if (v >= 0.300) return 'bg-emerald-500/20 text-emerald-300';
+  if (v >= 0.260) return 'bg-emerald-500/10 text-emerald-400';
+  if (v >= 0.221) return 'text-gray-300';
+  if (v >= 0.200) return 'bg-red-500/10 text-red-400';
+  return 'bg-red-500/20 text-red-300';
 }
 function wobaCls(v) {
-  if (v >= 0.380) return 'bg-[#14532d] text-[#86efac]';
-  if (v >= 0.350) return 'bg-[#166534] text-[#bbf7d0]';
-  if (v >= 0.320) return '';
-  if (v >= 0.281) return 'bg-[#7f1d1d] text-[#fca5a5]';
-  return 'bg-[#450a0a] text-[#f87171]';
+  if (v >= 0.380) return 'bg-emerald-500/20 text-emerald-300';
+  if (v >= 0.350) return 'bg-emerald-500/10 text-emerald-400';
+  if (v >= 0.320) return 'text-gray-300';
+  if (v >= 0.281) return 'bg-red-500/10 text-red-400';
+  return 'bg-red-500/20 text-red-300';
 }
-function slgCls(v) {
-  if (v >= 0.510) return 'bg-[#14532d] text-[#86efac]';
-  if (v >= 0.460) return 'bg-[#166534] text-[#bbf7d0]';
-  if (v >= 0.410) return '';
-  if (v >= 0.351) return 'bg-[#7f1d1d] text-[#fca5a5]';
-  return 'bg-[#450a0a] text-[#f87171]';
-}
-function isoCls(v) {
-  if (v >= 0.240) return 'bg-[#14532d] text-[#86efac]';
-  if (v >= 0.200) return 'bg-[#166534] text-[#bbf7d0]';
-  if (v >= 0.170) return '';
-  if (v >= 0.131) return 'bg-[#7f1d1d] text-[#fca5a5]';
-  return 'bg-[#450a0a] text-[#f87171]';
-}
-// Low K% is batter-favorable
 function kCls(v) {
-  if (v <= 14) return 'bg-[#14532d] text-[#86efac]';
-  if (v <= 19) return 'bg-[#166534] text-[#bbf7d0]';
-  if (v <= 24) return '';
-  if (v <= 29) return 'bg-[#7f1d1d] text-[#fca5a5]';
-  return 'bg-[#450a0a] text-[#f87171]';
+  if (v <= 14) return 'bg-emerald-500/20 text-emerald-300';
+  if (v <= 19) return 'bg-emerald-500/10 text-emerald-400';
+  if (v <= 24) return 'text-gray-300';
+  if (v <= 29) return 'bg-red-500/10 text-red-400';
+  return 'bg-red-500/20 text-red-300';
+}
+function whiffCls(v) {
+  if (v <= 18) return 'bg-emerald-500/20 text-emerald-300';
+  if (v <= 24) return 'bg-emerald-500/10 text-emerald-400';
+  if (v <= 30) return 'text-gray-300';
+  if (v <= 36) return 'bg-red-500/10 text-red-400';
+  return 'bg-red-500/20 text-red-300';
 }
 
-function Td({ cls, children }) {
+function StatCell({ value, cls }) {
   return (
-    <td className={`px-2 py-1.5 text-right text-xs tabular-nums ${cls || 'text-gray-300'}`}>
-      <span className={cls ? `rounded px-1 py-0.5 ${cls}` : ''}>{children}</span>
+    <td className="px-2 py-2.5 text-right tabular-nums">
+      <span className={`inline-block rounded px-1.5 py-0.5 text-xs font-bold ${cls || 'text-gray-300'}`}>
+        {value}
+      </span>
     </td>
   );
 }
 
-function fmt3(v) { return v != null ? parseFloat(v).toFixed(3) : '—'; }
+function fmt3(v) { return v != null && v !== 0 ? parseFloat(v).toFixed(3) : v === 0 ? '.000' : '—'; }
 function fmtPct(v) { return v != null ? parseFloat(v).toFixed(1) + '%' : '—'; }
-function fmtN(v) { return v != null ? parseInt(v) : '—'; }
 
 export default function BatterPitchCard({ batter, pitcherName, pitcherPitchData, pitcherHand, loading }) {
   if (loading) {
     return (
-      <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 animate-pulse">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-12 h-12 rounded-full bg-gray-800"/>
-          <div className="flex-1">
-            <div className="h-4 w-32 bg-gray-800 rounded mb-2"/>
-            <div className="h-3 w-24 bg-gray-800 rounded"/>
+      <div className="rounded-xl border border-gray-800 bg-gray-900 overflow-hidden animate-pulse">
+        <div className="p-4 border-b border-gray-800/60">
+          <div className="flex items-center gap-3">
+            <div className="w-14 h-14 rounded-full bg-gray-800"/>
+            <div className="flex-1">
+              <div className="h-4 w-36 bg-gray-800 rounded mb-2"/>
+              <div className="h-3 w-28 bg-gray-800 rounded"/>
+            </div>
           </div>
         </div>
-        {[1,2,3,4].map(i => <div key={i} className="h-8 bg-gray-800 rounded mb-2"/>)}
+        {[1,2,3,4,5].map(i => <div key={i} className="h-10 bg-gray-800/60 mx-4 my-2 rounded"/>)}
       </div>
     );
   }
 
   if (!batter) return null;
 
-  // Show pitcher's top 4 pitches as rows — fill "—" if batter hasn't faced a pitch type
-  const top4Pitches = (pitcherPitchData ?? []).slice(0, 4);
-  const top4Types   = top4Pitches.map(p => p.type);
-  const batterMap   = Object.fromEntries((batter.pitchData ?? []).map(p => [p.type, p]));
-  const rows = top4Types.length
-    ? top4Pitches.map(p => batterMap[p.type] ?? { type: p.type, _noData: true })
+  // Align rows to pitcher's top 4 pitches; fill '—' for any the batter hasn't faced
+  const top4 = (pitcherPitchData ?? []).slice(0, 4);
+  const batterMap = Object.fromEntries((batter.pitchData ?? []).map(p => [p.type, p]));
+  const rows = top4.length
+    ? top4.map(p => batterMap[p.type] ?? { type: p.type, _noData: true })
     : (batter.pitchData ?? []).slice(0, 6);
 
   const insight = rows.length
@@ -84,38 +78,36 @@ export default function BatterPitchCard({ batter, pitcherName, pitcherPitchData,
 
   const st = batter.seasonStat;
   const statPills = [
-    st?.avg  != null && { label: 'AVG',  val: parseFloat(st.avg).toFixed(3)  },
-    st?.obp  != null && { label: 'OBP',  val: parseFloat(st.obp).toFixed(3)  },
-    st?.slg  != null && { label: 'SLG',  val: parseFloat(st.slg).toFixed(3)  },
-    st?.ops  != null && { label: 'OPS',  val: parseFloat(st.ops).toFixed(3)  },
-    batter.splitAVG != null && { label: `vs ${pitcherHand}HP`, val: batter.splitAVG.toFixed(3) },
+    st?.avg  != null && { label: 'AVG', val: parseFloat(st.avg).toFixed(3) },
+    st?.obp  != null && { label: 'OBP', val: parseFloat(st.obp).toFixed(3) },
+    st?.slg  != null && { label: 'SLG', val: parseFloat(st.slg).toFixed(3) },
+    st?.ops  != null && { label: 'OPS', val: parseFloat(st.ops).toFixed(3) },
   ].filter(Boolean);
 
   const relevantHandLabel = pitcherHand === 'L' ? 'vs LHP' : 'vs RHP';
-  const otherHandLabel    = pitcherHand === 'L' ? 'vs RHP' : 'vs LHP';
 
   return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900 overflow-hidden">
+    <div className="rounded-xl border border-gray-800 bg-gray-900 overflow-hidden flex flex-col">
       {/* Header */}
       <div className="p-4 border-b border-gray-800/60">
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
             <img
               src={batter.headshotUrl}
               alt={batter.name}
-              className="w-12 h-12 rounded-full object-cover bg-gray-800 flex-shrink-0"
+              className="w-14 h-14 rounded-full object-cover bg-gray-800 flex-shrink-0 ring-2 ring-sky-500/20"
               onError={e => { e.target.style.display='none'; }}
             />
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-base font-black text-white">{batter.name}</span>
                 {batter.hand && (
-                  <span className="rounded-full bg-violet-600/20 border border-violet-500/30 px-2 py-0.5 text-[10px] font-bold text-violet-300">
+                  <span className="rounded-full bg-sky-600/20 border border-sky-500/30 px-2 py-0.5 text-[10px] font-bold text-sky-300">
                     {batter.hand === 'L' ? 'LHB' : batter.hand === 'S' ? 'SH' : 'RHB'}
                   </span>
                 )}
                 {batter.teamAbbrev && (
-                  <span className="text-xs text-gray-500">{batter.teamAbbrev}</span>
+                  <span className="text-xs text-gray-500 font-semibold">{batter.teamAbbrev}</span>
                 )}
               </div>
               <div className="flex flex-wrap gap-1.5 mt-1.5">
@@ -127,73 +119,60 @@ export default function BatterPitchCard({ batter, pitcherName, pitcherPitchData,
               </div>
             </div>
           </div>
-
-          {/* Platoon header */}
-          <div className="flex-shrink-0 flex items-center gap-3 text-xs font-bold">
-            <span className="text-gray-600">{otherHandLabel}</span>
-            <span className="border-b-2 border-violet-500 text-white pb-0.5">{relevantHandLabel}</span>
-            <div className="relative group">
-              <button className="flex h-5 w-5 items-center justify-center rounded-full border border-gray-700 text-gray-500 hover:text-gray-300 text-[10px] font-black">ⓘ</button>
-              <div className="absolute right-0 top-6 w-56 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-[10px] text-gray-300 leading-snug opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 shadow-xl">
-                Showing stats vs {pitcherHand === 'L' ? 'left-handed' : 'right-handed'} pitchers — matched to today&apos;s starter
-              </div>
-            </div>
-          </div>
+          <span className="flex-shrink-0 rounded-full bg-sky-600/10 border border-sky-500/20 px-2 py-1 text-[10px] font-bold text-sky-400">
+            {relevantHandLabel}
+          </span>
         </div>
       </div>
 
-      {/* Pitch table — pitcher's top 4 pitches; "—" for any not in batter's data */}
+      {/* Pitch table — aligned to pitcher's top 4 pitches */}
       {rows.length === 0 ? (
-        <div className="p-4 text-center">
-          <p className="text-sm text-gray-500">
+        <div className="flex-1 flex items-center justify-center p-6">
+          <p className="text-sm text-gray-500 text-center">
             {batter.usingFallbackSeason ? 'Showing 2025 stats — limited 2026 data' : 'No pitch breakdown data available yet'}
           </p>
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
+        <div className="overflow-x-auto flex-1">
+          <table className="w-full">
             <thead>
-              <tr className="border-b border-gray-800/60 text-gray-600 uppercase tracking-wide">
-                <th className="px-3 py-2 text-left font-bold">Type</th>
-                <th className="px-2 py-2 text-right font-bold">#</th>
-                <th className="px-2 py-2 text-right font-bold">%</th>
-                <th className="px-2 py-2 text-right font-bold">BA</th>
-                <th className="px-2 py-2 text-right font-bold">wOBA</th>
-                <th className="px-2 py-2 text-right font-bold">SLG</th>
-                <th className="px-2 py-2 text-right font-bold">ISO</th>
-                <th className="px-2 py-2 text-right font-bold">HR</th>
-                <th className="px-2 py-2 text-right font-bold">K%</th>
-                <th className="px-2 py-2 text-right font-bold">WHIFF%</th>
+              <tr className="border-b border-gray-800/60">
+                <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-gray-600">Pitch</th>
+                <th className="px-2 py-2 text-right text-[10px] font-bold uppercase tracking-wider text-gray-600">PA</th>
+                <th className="px-2 py-2 text-right text-[10px] font-bold uppercase tracking-wider text-gray-600">BA</th>
+                <th className="px-2 py-2 text-right text-[10px] font-bold uppercase tracking-wider text-gray-600">wOBA</th>
+                <th className="px-2 py-2 text-right text-[10px] font-bold uppercase tracking-wider text-gray-600">K%</th>
+                <th className="px-2 py-2 text-right text-[10px] font-bold uppercase tracking-wider text-gray-600">Whiff</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((row, idx) => {
-                const isPrimary = idx < 4;
                 if (row._noData) {
                   return (
-                    <tr key={row.type}
-                      className={`border-b border-gray-800/30 ${isPrimary ? 'border-l-2 border-l-violet-500/60' : ''}`}>
-                      <td className="px-3 py-1.5 text-left font-semibold text-gray-400">{row.type}</td>
-                      {['','','','','','','','',''].map((_, i) => (
-                        <td key={i} className="px-2 py-1.5 text-right text-xs text-gray-600">—</td>
+                    <tr key={row.type} className="border-b border-gray-800/30 border-l-2 border-l-sky-500/40">
+                      <td className="px-3 py-2.5">
+                        <span className="text-sm font-bold text-gray-500">{row.type}</span>
+                        <span className="block text-[10px] text-gray-700">No data vs this pitch</span>
+                      </td>
+                      {[1,2,3,4,5].map(i => (
+                        <td key={i} className="px-2 py-2.5 text-right text-xs text-gray-700">—</td>
                       ))}
                     </tr>
                   );
                 }
                 return (
-                <tr key={row.type}
-                  className={`border-b border-gray-800/30 hover:bg-gray-800/30 transition-colors ${isPrimary ? 'border-l-2 border-l-violet-500/60' : ''}`}>
-                  <td className="px-3 py-1.5 text-left font-semibold text-gray-200">{row.type}</td>
-                  <Td>{fmtN(row.pitches)}</Td>
-                  <Td>{row.usagePct != null ? row.usagePct.toFixed(1) + '%' : '—'}</Td>
-                  <Td cls={baCls(row.ba)}>{fmt3(row.ba)}</Td>
-                  <Td cls={wobaCls(row.woba)}>{fmt3(row.woba)}</Td>
-                  <Td cls={slgCls(row.slg)}>{fmt3(row.slg)}</Td>
-                  <Td cls={isoCls(row.iso)}>{fmt3(row.iso)}</Td>
-                  <Td>{fmtN(row.hr)}</Td>
-                  <Td cls={kCls(row.kPct)}>{fmtPct(row.kPct)}</Td>
-                  <Td cls={kCls(row.whiffPct)}>{fmtPct(row.whiffPct)}</Td>
-                </tr>
+                  <tr key={row.type}
+                    className={`border-b border-gray-800/30 hover:bg-gray-800/30 transition-colors ${idx < 4 ? 'border-l-2 border-l-sky-500/40' : 'border-l-2 border-l-transparent'}`}>
+                    <td className="px-3 py-2.5">
+                      <span className="text-sm font-bold text-gray-200">{row.type}</span>
+                      <span className="block text-[10px] text-gray-600">{row.pitches} pitches seen</span>
+                    </td>
+                    <td className="px-2 py-2.5 text-right text-xs text-gray-400 tabular-nums">{row.pitches}</td>
+                    <StatCell value={fmt3(row.ba)}       cls={baCls(row.ba)} />
+                    <StatCell value={fmt3(row.woba)}     cls={wobaCls(row.woba)} />
+                    <StatCell value={fmtPct(row.kPct)}   cls={kCls(row.kPct)} />
+                    <StatCell value={fmtPct(row.whiffPct)} cls={whiffCls(row.whiffPct)} />
+                  </tr>
                 );
               })}
             </tbody>
@@ -201,9 +180,9 @@ export default function BatterPitchCard({ batter, pitcherName, pitcherPitchData,
         </div>
       )}
 
-      {/* Auto insight */}
+      {/* Insight */}
       {insight && (
-        <div className="px-4 py-3 border-t border-gray-800/60 bg-gray-900/50">
+        <div className="px-4 py-3 border-t border-gray-800/60 bg-gray-950/40">
           <p className="text-xs text-gray-400 leading-relaxed">{insight}</p>
         </div>
       )}
