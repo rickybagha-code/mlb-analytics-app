@@ -45,12 +45,10 @@ function parseCSV(text) {
   });
 }
 
-async function fetchSavantBatterVsPitch(batterId, year, pitcherHand) {
+async function fetchSavantBatterVsPitch(batterId, year) {
   try {
-    // pitcherHand = 'L' or 'R' — filters stats vs left or right-handed pitchers
-    const handFilter = pitcherHand === 'L' || pitcherHand === 'R' ? `&hand=${pitcherHand}` : '';
-    // Baseball Savant pitch-arsenal-stats leaderboard — per pitch type with hitting stats for batter
-    const url = `https://baseballsavant.mlb.com/leaderboard/pitch-arsenal-stats?min=0&pitchType=&year=${year}${handFilter}&startInning=1&endInning=9&minPA=1&type=batter&stats=pa-percentages,pa-details&groupBy=name&sort=pa&sortDir=desc&playerId=${batterId}&csv=true`;
+    // Full season stats vs ALL pitchers — no hand filter so sample sizes are meaningful
+    const url = `https://baseballsavant.mlb.com/leaderboard/pitch-arsenal-stats?min=0&pitchType=&year=${year}&startInning=1&endInning=9&minPA=1&type=batter&stats=pa-percentages,pa-details&groupBy=name&sort=pa&sortDir=desc&playerId=${batterId}&csv=true`;
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ProprStats/1.0)' },
       signal: AbortSignal.timeout(12000),
@@ -165,7 +163,7 @@ export async function GET(request, { params }) {
   }
 
   const [savantData, mlbStats, platoon, playerInfo] = await Promise.all([
-    fetchSavantBatterVsPitch(batterId, year, pitcherHand),
+    fetchSavantBatterVsPitch(batterId, year),
     fetchMLBBatterStats(batterId, year),
     fetchPlatoonSplits(batterId, year),
     fetchPlayerInfo(batterId),
@@ -175,7 +173,7 @@ export async function GET(request, { params }) {
   let pitchData = savantData;
   let usingFallbackSeason = false;
   if (!pitchData && year !== '2025') {
-    pitchData = await fetchSavantBatterVsPitch(batterId, '2025', pitcherHand);
+    pitchData = await fetchSavantBatterVsPitch(batterId, '2025');
     if (pitchData) usingFallbackSeason = true;
   }
 
