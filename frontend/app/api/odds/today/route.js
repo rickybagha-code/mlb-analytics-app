@@ -1,0 +1,163 @@
+// GET /api/odds/today
+// Fetches today's MLB player prop odds from The Odds API.
+// Returns a normalised player-name map so the deep-dive can look up any player.
+//
+// Credit cost per call: (number of markets × 1 region) × number of games
+//   = 6 markets × ~15 games = ~90 credits per full refresh
+// Free tier: 500 credits/month — keep revalidate high (3600 = 1 h, ~5 refreshes/day)
+// $30/month plan: 20k credits — comfortable for hourly refreshes across a full season.
+
+import { NextResponse } from 'next/server';
+
+const ODDS_API_KEY  = process.env.ODDS_API_KEY;
+const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
+
+// Markets to fetch — covers all props in our model
+const BATTER_MARKETS   = ['batter_hits', 'batter_home_runs', 'batter_total_bases', 'batter_rbis', 'batter_runs_scored'];
+const PITCHER_MARKETS  = ['pitcher_strikeouts'];
+const ALL_MARKETS      = [...BATTER_MARKETS, ...PITCHER_MARKETS].join(',');
+
+// Odds API market key → internal prop label
+const MARKET_LABEL = {
+  batter_hits:        'Hits',
+  batter_home_runs:   'Home Runs',
+  batter_total_bases: 'Total Bases',
+  batter_rbis:        'RBIs',
+  batter_runs_scored: 'Runs',
+  pitcher_strikeouts: 'Strikeouts',
+};
+
+// Strip accents, suffixes, lowercase — for fuzzy name matching
+function normName(name = '') {
+  return name
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+(jr|sr|ii|iii|iv)\.?\s*$/i, '')
+    .trim();
+}
+
+// American odds → implied probability (0–1), removes vig direction awareness
+function impliedProb(americanOdds) {
+  if (americanOdds == null) return null;
+  const o = Number(americanOdds);
+  if (o < 0) return Math.round((-o / (-o + 100)) * 1000) / 10;   // e.g. -115 → 53.5
+  return Math.round((100 / (o + 100)) * 1000) / 10;              // e.g. +105 → 48.8
+}
+
+export async function GET() {
+  if (!ODDS_API_KEY) {
+    return NextResponse.json(
+      { players: {}, error: 'ODDS_API_KEY not set — add it to .env.local and Vercel env vars' },
+      { status: 200 }
+    );
+  }
+
+  try {
+    // ── Step 1: get today's event IDs ─────────────────────────────────────────
+    const eventsRes = await fetch(
+      `${ODDS_API_BASE}/sports/baseball_mlb/events?apiKey=${ODDS_API_KEY}&dateFormat=iso`,
+      {
+        headers: { 'User-Agent': 'ProprStats/1.0' },
+        next:    { revalidate: 3600 },
+      }
+    );
+
+    const creditsRemaining = eventsRes.headers.get('x-requests-remaining');
+    const creditsUsed      = eventsRes.headers.get('x-requests-last');
+
+    if (!eventsRes.ok) {
+      const body = await eventsRes.text();
+      console.error('Odds API events error:', eventsRes.status, body);
+      return NextResponse.json({ players: {}, creditsRemaining });
+    }
+
+    const events = await eventsRes.json();
+    if (!Array.isArray(events) || !events.length) {
+      return NextResponse.json({ players: {}, creditsRemaining, note: 'No games today' });
+    }
+
+    // ── Step 2: fetch prop odds for every game in parallel ────────────────────
+    const propResults = await Promise.allSettled(
+      events.map(ev =>
+        fetch(
+          `${ODDS_API_BASE}/sports/baseball_mlb/events/${ev.id}/odds` +
+          `?apiKey=${ODDS_API_KEY}&regions=us&markets=${ALL_MARKETS}&oddsFormat=american`,
+          {
+            headers: { 'User-Agent': 'ProprStats/1.0' },
+            next:    { revalidate: 3600 },
+          }
+        ).then(r => r.ok ? r.json() : null)
+      )
+    );
+
+    // ── Step 3: build normalised player map ───────────────────────────────────
+    // players[normName] = {
+    //   displayName, hits, hr, totalBases, rbi, runs, strikeouts
+    // }
+    // Each prop: { label, line, over, under, overProb, underProb, book }
+    const players = {};
+
+    for (const result of propResults) {
+      if (result.status !== 'fulfilled' || !result.value) continue;
+      const ev = result.value;
+
+      for (const bookmaker of (ev.bookmakers ?? [])) {
+        for (const market of (bookmaker.markets ?? [])) {
+          const label = MARKET_LABEL[market.key];
+          if (!label) continue;
+
+          // Group Over/Under by player name
+          const byPlayer = {};
+          for (const outcome of (market.outcomes ?? [])) {
+            const pName = outcome.description;
+            if (!pName) continue;
+            if (!byPlayer[pName]) byPlayer[pName] = {};
+            if (outcome.name === 'Over')  byPlayer[pName].over  = { price: outcome.price, point: outcome.point };
+            if (outcome.name === 'Under') byPlayer[pName].under = { price: outcome.price, point: outcome.point };
+          }
+
+          for (const [pName, sides] of Object.entries(byPlayer)) {
+            const key = normName(pName);
+            if (!players[key]) players[key] = { displayName: pName };
+
+            const propKey = Object.keys(MARKET_LABEL).find(k => MARKET_LABEL[k] === label);
+            const internalKey = {
+              batter_hits:        'hits',
+              batter_home_runs:   'hr',
+              batter_total_bases: 'totalBases',
+              batter_rbis:        'rbi',
+              batter_runs_scored: 'runs',
+              pitcher_strikeouts: 'strikeouts',
+            }[market.key];
+            if (!internalKey) continue;
+
+            // Keep best over odds (highest price = most batter-favourable)
+            const existing = players[key][internalKey];
+            const newOverPrice  = sides.over?.price  ?? -9999;
+            const existingPrice = existing?.over      ?? -9999;
+            if (!existing || newOverPrice > existingPrice) {
+              players[key][internalKey] = {
+                label,
+                line:      sides.over?.point ?? sides.under?.point,
+                over:      sides.over?.price  ?? null,
+                under:     sides.under?.price ?? null,
+                overProb:  impliedProb(sides.over?.price),
+                underProb: impliedProb(sides.under?.price),
+                book:      bookmaker.title,
+              };
+            }
+          }
+        }
+      }
+    }
+
+    return NextResponse.json(
+      { players, creditsRemaining, creditsUsed, gamesCount: events.length },
+      { headers: { 'Cache-Control': 'public, max-age=3600' } }
+    );
+  } catch (err) {
+    console.error('Odds API error:', err.message);
+    return NextResponse.json({ players: {}, error: err.message });
+  }
+}
