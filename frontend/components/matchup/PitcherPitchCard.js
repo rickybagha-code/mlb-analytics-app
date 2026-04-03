@@ -43,13 +43,6 @@ function whiffCls(v) {
   if (v >= 14) return ['bg-red-500/15',     'text-red-300'];
   return              ['bg-red-500/30',      'text-red-200'];
 }
-function hrCls(v) {
-  if (v === 0) return ['bg-emerald-500/30', 'text-emerald-200'];
-  if (v <= 2)  return ['bg-emerald-500/15', 'text-emerald-300'];
-  if (v <= 4)  return ['bg-gray-800/40',    'text-gray-300'];
-  if (v <= 7)  return ['bg-red-500/15',     'text-red-300'];
-  return              ['bg-red-500/30',      'text-red-200'];
-}
 
 function HeatCell({ value, clsFn, raw }) {
   if (raw == null) return <td className="px-2 py-1.5 text-center text-sm text-gray-600 bg-gray-800/20">—</td>;
@@ -63,7 +56,6 @@ function HeatCell({ value, clsFn, raw }) {
 
 function fmt3(v) { return v != null ? parseFloat(v).toFixed(3) : null; }
 function fmtPct(v) { return v != null ? parseFloat(v).toFixed(1) + '%' : null; }
-function fmtHR(v) { return v != null ? String(parseInt(v)) : null; }
 
 export default function PitcherPitchCard({ pitcher, batterName, batterPitchStats, batterHand, loading }) {
   if (loading) {
@@ -150,7 +142,6 @@ export default function PitcherPitchCard({ pitcher, batterName, batterPitchStats
                 <th className="px-2 py-1.5 text-center text-[10px] font-bold uppercase tracking-wider text-gray-600">wOBA</th>
                 <th className="px-2 py-1.5 text-center text-[10px] font-bold uppercase tracking-wider text-gray-600">SLG</th>
                 <th className="px-2 py-1.5 text-center text-[10px] font-bold uppercase tracking-wider text-gray-600">ISO</th>
-                <th className="px-2 py-1.5 text-center text-[10px] font-bold uppercase tracking-wider text-gray-600">HR</th>
                 <th className="px-2 py-1.5 text-center text-[10px] font-bold uppercase tracking-wider text-gray-600">K%</th>
                 <th className="px-2 py-1.5 text-center text-[10px] font-bold uppercase tracking-wider text-gray-600">Whiff%</th>
               </tr>
@@ -171,7 +162,6 @@ export default function PitcherPitchCard({ pitcher, batterName, batterPitchStats
                   <HeatCell value={fmt3(row.woba)}       clsFn={wobaCls}  raw={row.woba} />
                   <HeatCell value={fmt3(row.slg)}        clsFn={slgCls}   raw={row.slg} />
                   <HeatCell value={fmt3(row.iso)}        clsFn={isoCls}   raw={row.iso} />
-                  <HeatCell value={fmtHR(row.hr)}        clsFn={hrCls}    raw={row.hr} />
                   <HeatCell value={fmtPct(row.kPct)}     clsFn={kCls}     raw={row.kPct} />
                   <HeatCell value={fmtPct(row.whiffPct)} clsFn={whiffCls} raw={row.whiffPct} />
                 </tr>

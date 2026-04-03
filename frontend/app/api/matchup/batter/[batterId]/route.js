@@ -77,8 +77,7 @@ async function fetchSavantBatterVsPitch(batterId, year) {
         ba:       parseFloat(row.ba)              || 0,
         woba:     parseFloat(row.woba)            || 0,
         slg:      parseFloat(row.slg)             || 0,
-        iso:      parseFloat(row.iso)             || 0,
-        hr:       parseInt(row.home_run || row.hr)|| 0,
+        iso:      (parseFloat(row.slg) - parseFloat(row.ba)) || 0,
         kPct:     parseFloat(row.k_percent)       || 0,
         whiffPct: parseFloat(row.whiff_percent)   || 0,
       });
