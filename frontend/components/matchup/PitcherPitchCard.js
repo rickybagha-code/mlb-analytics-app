@@ -17,6 +17,22 @@ function wobaCls(v) {
   if (v <= 0.374) return ['bg-red-500/15',     'text-red-300'];
   return               ['bg-red-500/30',       'text-red-200'];
 }
+// Pitcher SLG allowed — low is good
+function slgCls(v) {
+  if (v <= 0.300) return ['bg-emerald-500/30', 'text-emerald-200'];
+  if (v <= 0.380) return ['bg-emerald-500/15', 'text-emerald-300'];
+  if (v <= 0.450) return ['bg-gray-800/40',    'text-gray-300'];
+  if (v <= 0.530) return ['bg-red-500/15',     'text-red-300'];
+  return               ['bg-red-500/30',       'text-red-200'];
+}
+// Pitcher ISO allowed — low is good
+function isoCls(v) {
+  if (v <= 0.100) return ['bg-emerald-500/30', 'text-emerald-200'];
+  if (v <= 0.150) return ['bg-emerald-500/15', 'text-emerald-300'];
+  if (v <= 0.200) return ['bg-gray-800/40',    'text-gray-300'];
+  if (v <= 0.250) return ['bg-red-500/15',     'text-red-300'];
+  return               ['bg-red-500/30',       'text-red-200'];
+}
 function kCls(v) {
   if (v >= 30) return ['bg-emerald-500/30', 'text-emerald-200'];
   if (v >= 25) return ['bg-emerald-500/15', 'text-emerald-300'];
@@ -31,6 +47,14 @@ function whiffCls(v) {
   if (v >= 14) return ['bg-red-500/15',     'text-red-300'];
   return              ['bg-red-500/30',      'text-red-200'];
 }
+// Pitcher HR allowed — low is good (green)
+function hrCls(v) {
+  if (v === 0)  return ['bg-emerald-500/30', 'text-emerald-200'];
+  if (v <= 2)   return ['bg-emerald-500/15', 'text-emerald-300'];
+  if (v <= 4)   return ['bg-gray-800/40',    'text-gray-300'];
+  if (v <= 7)   return ['bg-red-500/15',     'text-red-300'];
+  return               ['bg-red-500/30',      'text-red-200'];
+}
 
 function HeatCell({ value, clsFn, raw }) {
   if (raw == null) return <td className="px-3 py-3 text-center text-sm text-gray-600 bg-gray-800/20">—</td>;
@@ -42,20 +66,9 @@ function HeatCell({ value, clsFn, raw }) {
   );
 }
 
-function UsageBar({ pct }) {
-  const w = Math.min(100, Math.round(parseFloat(pct) || 0));
-  return (
-    <div className="flex items-center gap-2">
-      <div className="w-20 h-2 rounded-full bg-gray-800 overflow-hidden">
-        <div className="h-full rounded-full bg-violet-500/60" style={{ width: `${w}%` }} />
-      </div>
-      <span className="text-xs font-bold text-gray-400 tabular-nums w-8">{w}%</span>
-    </div>
-  );
-}
-
 function fmt3(v) { return v != null ? parseFloat(v).toFixed(3) : null; }
 function fmtPct(v) { return v != null ? parseFloat(v).toFixed(1) + '%' : null; }
+function fmtHR(v) { return v != null ? String(parseInt(v)) : null; }
 
 export default function PitcherPitchCard({ pitcher, batterName, batterPitchStats, batterHand, loading }) {
   if (loading) {
@@ -77,7 +90,7 @@ export default function PitcherPitchCard({ pitcher, batterName, batterPitchStats
 
   if (!pitcher) return null;
 
-  const pitches = pitcher.pitchData ?? [];
+  const pitches = (pitcher.pitchData ?? []).slice(0, 4);
   const insight = pitches.length
     ? generatePitcherInsight(pitcher.name, pitches.slice(0, 4), batterName, batterPitchStats)
     : null;
@@ -141,9 +154,11 @@ export default function PitcherPitchCard({ pitcher, batterName, batterPitchStats
             <thead>
               <tr className="border-b-2 border-gray-800">
                 <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-gray-600">Pitch</th>
-                <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-gray-600">Usage</th>
                 <th className="px-3 py-2.5 text-center text-[10px] font-bold uppercase tracking-wider text-gray-600">BA</th>
                 <th className="px-3 py-2.5 text-center text-[10px] font-bold uppercase tracking-wider text-gray-600">wOBA</th>
+                <th className="px-3 py-2.5 text-center text-[10px] font-bold uppercase tracking-wider text-gray-600">SLG</th>
+                <th className="px-3 py-2.5 text-center text-[10px] font-bold uppercase tracking-wider text-gray-600">ISO</th>
+                <th className="px-3 py-2.5 text-center text-[10px] font-bold uppercase tracking-wider text-gray-600">HR</th>
                 <th className="px-3 py-2.5 text-center text-[10px] font-bold uppercase tracking-wider text-gray-600">K%</th>
                 <th className="px-3 py-2.5 text-center text-[10px] font-bold uppercase tracking-wider text-gray-600">Whiff%</th>
               </tr>
@@ -155,12 +170,12 @@ export default function PitcherPitchCard({ pitcher, batterName, batterPitchStats
                     <p className="text-sm font-bold text-gray-200 whitespace-nowrap">{row.type}</p>
                     <p className="text-[10px] text-gray-600 mt-0.5">{row.pitches} pitches</p>
                   </td>
-                  <td className="px-3 py-3 bg-gray-900">
-                    <UsageBar pct={row.usagePct} />
-                  </td>
-                  <HeatCell value={fmt3(row.ba)}        clsFn={baCls}    raw={row.ba} />
-                  <HeatCell value={fmt3(row.woba)}      clsFn={wobaCls}  raw={row.woba} />
-                  <HeatCell value={fmtPct(row.kPct)}    clsFn={kCls}     raw={row.kPct} />
+                  <HeatCell value={fmt3(row.ba)}         clsFn={baCls}    raw={row.ba} />
+                  <HeatCell value={fmt3(row.woba)}       clsFn={wobaCls}  raw={row.woba} />
+                  <HeatCell value={fmt3(row.slg)}        clsFn={slgCls}   raw={row.slg} />
+                  <HeatCell value={fmt3(row.iso)}        clsFn={isoCls}   raw={row.iso} />
+                  <HeatCell value={fmtHR(row.hr)}        clsFn={hrCls}    raw={row.hr} />
+                  <HeatCell value={fmtPct(row.kPct)}     clsFn={kCls}     raw={row.kPct} />
                   <HeatCell value={fmtPct(row.whiffPct)} clsFn={whiffCls} raw={row.whiffPct} />
                 </tr>
               ))}

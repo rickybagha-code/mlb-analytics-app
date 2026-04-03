@@ -9,7 +9,7 @@ import H2HStrip from './H2HStrip';
 import MatchupSummaryCard from './MatchupSummaryCard';
 
 export default function MatchupDeepDiveView({ pitcherId, batterId }) {
-  const [season,  setSeason]  = useState('2026');
+  const [season,  setSeason]  = useState('2025');
   const [pitcher, setPitcher] = useState(null);
   const [batter,  setBatter]  = useState(null);
   const [h2h,     setH2H]     = useState(null);
