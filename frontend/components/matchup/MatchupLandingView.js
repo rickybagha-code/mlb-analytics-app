@@ -440,7 +440,7 @@ export default function MatchupLandingView({ isPro }) {
 
       {!loading && !error && matchups.length > 0 && (
         <p className="mt-3 text-[11px] text-gray-600 text-right">
-          Scores based on platoon splits vs today&apos;s probable pitcher · Click any row for full pitch breakdown
+          Scores based on pitch-type wOBA mismatch (2025 Savant data) · Click any row for full breakdown
         </p>
       )}
     </div>
