@@ -82,8 +82,8 @@ export default function MatchupDeepDiveView({ pitcherId, batterId }) {
       </div>
 
       <div className="space-y-4">
-        {/* ── Pitch breakdown matrix — pitcher left, batter right ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* ── Pitch breakdown — pitcher on top, batter below ── */}
+        <div className="flex flex-col gap-3">
           {errorPitcher ? (
             <div className="rounded-xl border border-gray-800 bg-gray-900 p-6 text-center">
               <p className="text-sm text-gray-500">{errorPitcher}</p>
