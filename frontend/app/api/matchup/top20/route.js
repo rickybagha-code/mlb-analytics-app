@@ -39,60 +39,41 @@ function parseCSV(text) {
   });
 }
 
-async function fetchSavantPitcherPitches(pitcherId, year) {
+// Fetch one full Savant leaderboard and return a map of playerId → pitch rows.
+// hand = 'L' | 'R' | '' — for pitchers, 'L' means stats vs LHB, 'R' vs RHB.
+async function fetchSavantLeaderboard(type, year, hand = '') {
   try {
-    const url = `https://baseballsavant.mlb.com/leaderboard/pitch-arsenal-stats?min=0&pitchType=&year=${year}&startInning=1&endInning=9&minPA=1&type=pitcher&stats=pa-percentages,pa-details&groupBy=name&sort=pa&sortDir=desc&playerId=${pitcherId}&csv=true`;
+    const handParam = hand === 'L' || hand === 'R' ? `&hand=${hand}` : '';
+    const url = `https://baseballsavant.mlb.com/leaderboard/pitch-arsenal-stats?min=0&pitchType=&year=${year}${handParam}&startInning=1&endInning=9&minPA=1&type=${type}&stats=pa-percentages,pa-details&groupBy=name&sort=pa&sortDir=desc&csv=true`;
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ProprStats/1.0)' },
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(20000),
       next: { revalidate: 86400 },
     });
-    if (!res.ok) return null;
+    if (!res.ok) return {};
     const text = await res.text();
-    if (!text || text.includes('<!DOCTYPE')) return null;
+    if (!text || text.includes('<!DOCTYPE')) return {};
     const rows = parseCSV(text);
-    const results = [];
+
+    const map = {}; // playerId → pitch[]
     for (const row of rows) {
-      if (String(row.player_id).trim() !== String(pitcherId).trim()) continue;
+      const id = String(row.player_id).trim();
+      if (!id) continue;
       const pitchName = (row.pitch_name || '').trim();
       if (!pitchName) continue;
       const pitches = parseInt(row.pitches) || 0;
-      if (pitches < 10) continue;
-      results.push({
+      const minPitches = type === 'pitcher' ? 10 : 5;
+      if (pitches < minPitches) continue;
+
+      if (!map[id]) map[id] = [];
+      map[id].push({
         type:     pitchName,
         woba:     parseFloat(row.woba)        || 0,
         usagePct: parseFloat(row.pitch_usage) || 0,
       });
     }
-    return results.length ? results : null;
-  } catch { return null; }
-}
-
-async function fetchSavantBatterPitches(batterId, year) {
-  try {
-    const url = `https://baseballsavant.mlb.com/leaderboard/pitch-arsenal-stats?min=0&pitchType=&year=${year}&startInning=1&endInning=9&minPA=1&type=batter&stats=pa-percentages,pa-details&groupBy=name&sort=pa&sortDir=desc&playerId=${batterId}&csv=true`;
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ProprStats/1.0)' },
-      signal: AbortSignal.timeout(10000),
-      next: { revalidate: 86400 },
-    });
-    if (!res.ok) return null;
-    const text = await res.text();
-    if (!text || text.includes('<!DOCTYPE')) return null;
-    const rows = parseCSV(text);
-    const results = [];
-    for (const row of rows) {
-      if (String(row.player_id).trim() !== String(batterId).trim()) continue;
-      const pitchName = (row.pitch_name || '').trim();
-      if (!pitchName) continue;
-      if ((parseInt(row.pitches) || 0) < 5) continue;
-      results.push({
-        type: pitchName,
-        woba: parseFloat(row.woba) || 0,
-      });
-    }
-    return results.length ? results : null;
-  } catch { return null; }
+    return map;
+  } catch { return {}; }
 }
 
 function todayEST() {
@@ -341,43 +322,39 @@ export async function GET(request) {
       }
     }
 
-    // Initial sort by simplified score — take top 40 candidates for Savant enrichment
-    const top40 = pairs
-      .sort((a, b) => b.mismatchScore - a.mismatchScore)
-      .slice(0, 40);
+    // ── Savant enrichment: 3 leaderboard calls total (vs 60+ per-player calls) ──
+    // pitcher vs LHB, pitcher vs RHB, batter overall (no hand filter)
+    const [pitcherVsLMap, pitcherVsRMap, batterMap] = await Promise.all([
+      fetchSavantLeaderboard('pitcher', '2025', 'L'),
+      fetchSavantLeaderboard('pitcher', '2025', 'R'),
+      fetchSavantLeaderboard('batter',  '2025', ''),
+    ]);
 
-    // Fetch Savant pitch data for unique pitchers in top-40
-    const uniquePitcherIds = [...new Set(top40.map(p => p.pitcherId))];
-    const pitcherArsenalResults = await Promise.allSettled(
-      uniquePitcherIds.map(id => fetchSavantPitcherPitches(id, '2025'))
-    );
-    const pitcherArsenalMap = {};
-    uniquePitcherIds.forEach((id, i) => {
-      if (pitcherArsenalResults[i].status === 'fulfilled' && pitcherArsenalResults[i].value) {
-        pitcherArsenalMap[id] = pitcherArsenalResults[i].value;
-      }
-    });
+    // Score every pair using accurate Savant data where available
+    for (const pair of pairs) {
+      const batterHand = pair.batterHand ?? 'R';
+      // Switch hitters: vs RHP they bat left → pitcher stats vs LHB, and vice versa
+      // We use pitcher hand stored on each pitcher to determine this
+      const pitcherHandForBatter = pitcherMap[String(pair.pitcherId)]?.hand ?? 'R';
+      let effectiveBatterHand = batterHand;
+      if (batterHand === 'S') effectiveBatterHand = pitcherHandForBatter === 'L' ? 'R' : 'L';
 
-    // Fetch Savant batter pitch stats for all top-40 batters
-    const batterSavantResults = await Promise.allSettled(
-      top40.map(p => fetchSavantBatterPitches(p.batterId, '2025'))
-    );
+      const pitcherPitches = effectiveBatterHand === 'L'
+        ? pitcherVsLMap[String(pair.pitcherId)]
+        : pitcherVsRMap[String(pair.pitcherId)];
+      const batterPitches = batterMap[String(pair.batterId)];
 
-    // Re-score using full pitch-type wOBA mismatch where Savant data available
-    top40.forEach((pair, i) => {
-      const pitcherPitches = pitcherArsenalMap[pair.pitcherId] ?? null;
-      const batterPitches  = batterSavantResults[i].status === 'fulfilled' ? batterSavantResults[i].value : null;
       if (pitcherPitches?.length && batterPitches?.length) {
         const mismatch = calculateMismatchScore(batterPitches, pitcherPitches);
-        pair.mismatchScore  = mismatch.score;
-        pair.topEdgePitch   = mismatch.topEdgePitch;
-        pair.topEdgeValue   = mismatch.topEdgeValue;
-        pair.verdict        = mismatch.verdict;
+        pair.mismatchScore = mismatch.score;
+        pair.topEdgePitch  = mismatch.topEdgePitch;
+        pair.topEdgeValue  = mismatch.topEdgeValue;
+        pair.verdict       = mismatch.verdict;
       }
-    });
+    }
 
-    // Final sort with accurate scores — take top 20
-    const top20 = top40
+    // Sort by accurate score — take top 20
+    const top20 = pairs
       .sort((a, b) => b.mismatchScore - a.mismatchScore)
       .slice(0, 20)
       .map((p, i) => ({ ...p, rank: i + 1 }));
