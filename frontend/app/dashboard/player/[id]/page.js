@@ -2172,10 +2172,48 @@ function HittingProjectionEVCard({ gameLog, seasonStats, splits, statcast, pitch
 
   const [activeProp, setActiveProp] = useState(activeTab || 'hits');
   const [lines,     setLines]     = useState({ hits:'', hr:'', runs:'', rbi:'', sb:'' });
-  const [overOdds,  setOverOdds]  = useState({ hits:'-115', hr:'-130', runs:'-115', rbi:'-115', sb:'-130' });
-  const [underOdds, setUnderOdds] = useState({ hits:'-115', hr:'+110', runs:'-115', rbi:'-115', sb:'+110' });
+  const [overOdds,  setOverOdds]  = useState({ hits:'', hr:'', runs:'', rbi:'', sb:'' });
+  const [underOdds, setUnderOdds] = useState({ hits:'', hr:'', runs:'', rbi:'', sb:'' });
   const [debLines,  setDebLines]  = useState({ hits:'', hr:'', runs:'', rbi:'', sb:'' });
   const [ppSources, setPpSources] = useState({ hits:false, hr:false, runs:false, rbi:false, sb:false });
+
+  // Auto-fill lines + odds from The Odds API
+  useEffect(() => {
+    if (!playerName) return;
+    const normName = (n='') => n.toLowerCase().normalize('NFD')
+      .replace(/[\u0300-\u036f]/g,'').replace(/\s+(jr|sr|ii|iii|iv)\.?\s*$/i,'').trim();
+    fetch('/api/odds/today')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data?.players) return;
+        const p = data.players[normName(playerName)];
+        if (!p) return;
+        // Map odds API keys → prop keys
+        const MAP = { hits:'hits', hr:'hr', runs:'runs', rbi:'rbi' };
+        setLines(prev => {
+          const next = { ...prev };
+          Object.entries(MAP).forEach(([prop, key]) => {
+            if (prev[prop] === '' && p[key]?.line != null) next[prop] = String(p[key].line);
+          });
+          return next;
+        });
+        setOverOdds(prev => {
+          const next = { ...prev };
+          Object.entries(MAP).forEach(([prop, key]) => {
+            if (p[key]?.over != null) next[prop] = String(p[key].over);
+          });
+          return next;
+        });
+        setUnderOdds(prev => {
+          const next = { ...prev };
+          Object.entries(MAP).forEach(([prop, key]) => {
+            if (p[key]?.under != null) next[prop] = String(p[key].under);
+          });
+          return next;
+        });
+      })
+      .catch(() => {});
+  }, [playerName]);
 
   // Auto-fill PrizePicks lines when available (only for empty fields)
   useEffect(() => {

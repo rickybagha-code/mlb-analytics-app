@@ -7,8 +7,6 @@ import PitcherPitchCard from './PitcherPitchCard';
 import BatterPitchCard from './BatterPitchCard';
 import H2HStrip from './H2HStrip';
 import MatchupSummaryCard from './MatchupSummaryCard';
-import PropOddsCard from './PropOddsCard';
-import { calculateMismatchScore, calculateSimplifiedMismatchScore } from '../../lib/matchup';
 
 export default function MatchupDeepDiveView({ pitcherId, batterId }) {
   const [season,  setSeason]  = useState('2025');
@@ -59,20 +57,6 @@ export default function MatchupDeepDiveView({ pitcherId, batterId }) {
   const batterName  = batter?.name  ?? '…';
   const pitcherHand = pitcher?.hand ?? 'R';
   const batterHand  = batter?.hand  ?? 'R';
-
-  // Compute mismatch score to pass to PropOddsCard for edge colouring
-  const top4 = (pitcher?.pitchData ?? []).slice(0, 4);
-  const mismatchScore = (() => {
-    if ((batter?.pitchData ?? []).length && top4.length)
-      return calculateMismatchScore(batter.pitchData, top4).score;
-    return calculateSimplifiedMismatchScore(
-      batter?.splitAVG ?? null,
-      parseFloat(batter?.seasonStat?.avg) || null,
-      pitcher?.era ?? null,
-      h2h?.avg ?? null,
-      h2h?.ab  ?? 0
-    ).score;
-  })();
 
   return (
     <div>
@@ -131,13 +115,6 @@ export default function MatchupDeepDiveView({ pitcherId, batterId }) {
 
         {/* H2H strip */}
         <H2HStrip h2h={h2h} loading={loadingH2H} />
-
-        {/* Prop lines + odds */}
-        <PropOddsCard
-          pitcher={pitcher}
-          batter={batter}
-          mismatchScore={mismatchScore}
-        />
 
         {/* Summary card */}
         <MatchupSummaryCard
