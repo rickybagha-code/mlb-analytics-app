@@ -218,6 +218,12 @@ export default function PropOddsCard({ pitcher, batter, mismatchScore }) {
         <div className="py-8 text-center">
           <p className="text-sm text-gray-500">No lines posted yet for this matchup</p>
           <p className="text-xs text-gray-600 mt-1">Lines typically appear 1–2 hours before first pitch</p>
+          <p className="text-[10px] text-gray-700 mt-2 font-mono">
+            looking for: &quot;{batterKey}&quot; / &quot;{pitcherKey}&quot;
+          </p>
+          <p className="text-[10px] text-gray-700 mt-0.5 font-mono">
+            {Object.keys(players).length} players in odds map
+          </p>
         </div>
       ) : (
         <div className="divide-y divide-gray-800/60">
