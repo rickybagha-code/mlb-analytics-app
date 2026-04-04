@@ -139,11 +139,15 @@ export async function GET() {
             const key = normName(pName);
             if (!players[key]) players[key] = { displayName: pName };
 
-            // Keep best over odds across bookmakers (highest price = most value)
+            // Prefer lowest point (primary line); tiebreak on best over odds
             const existing = players[key][internalKey];
-            const newOverPrice  = sides.over  ?? -9999;
-            const existingPrice = existing?.over ?? -9999;
-            if (!existing || newOverPrice > existingPrice) {
+            const existingLine = existing?.line ?? 9999;
+            const newOverPrice = sides.over ?? -9999;
+            const existingOverPrice = existing?.over ?? -9999;
+            const shouldReplace = !existing
+              || selectedPoint < existingLine
+              || (selectedPoint === existingLine && newOverPrice > existingOverPrice);
+            if (shouldReplace) {
               players[key][internalKey] = {
                 label,
                 line:      selectedPoint,
