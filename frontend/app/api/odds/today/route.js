@@ -59,7 +59,7 @@ export async function GET() {
       `${ODDS_API_BASE}/sports/baseball_mlb/events?apiKey=${ODDS_API_KEY}&dateFormat=iso`,
       {
         headers: { 'User-Agent': 'ProprStats/1.0' },
-        next:    { revalidate: 3600 },
+        cache:   'no-store',
       }
     );
 
@@ -85,7 +85,7 @@ export async function GET() {
           `?apiKey=${ODDS_API_KEY}&regions=us&markets=${ALL_MARKETS}&oddsFormat=american`,
           {
             headers: { 'User-Agent': 'ProprStats/1.0' },
-            next:    { revalidate: 3600 },
+            cache:   'no-store',
           }
         ).then(r => r.ok ? r.json() : null)
       )
@@ -107,43 +107,50 @@ export async function GET() {
           const label = MARKET_LABEL[market.key];
           if (!label) continue;
 
-          // Group Over/Under by player name
+          const internalKey = {
+            batter_hits:        'hits',
+            batter_home_runs:   'hr',
+            batter_total_bases: 'totalBases',
+            batter_rbis:        'rbi',
+            batter_runs_scored: 'runs',
+            pitcher_strikeouts: 'strikeouts',
+          }[market.key];
+          if (!internalKey) continue;
+
+          // Group by player → point value → side
+          // Markets like batter_home_runs list multiple Over lines (0.5, 1.5, 2.5) per player
           const byPlayer = {};
           for (const outcome of (market.outcomes ?? [])) {
             const pName = outcome.description;
             if (!pName) continue;
+            const pt = outcome.point ?? 0;
             if (!byPlayer[pName]) byPlayer[pName] = {};
-            if (outcome.name === 'Over')  byPlayer[pName].over  = { price: outcome.price, point: outcome.point };
-            if (outcome.name === 'Under') byPlayer[pName].under = { price: outcome.price, point: outcome.point };
+            if (!byPlayer[pName][pt]) byPlayer[pName][pt] = {};
+            if (outcome.name === 'Over')  byPlayer[pName][pt].over  = outcome.price;
+            if (outcome.name === 'Under') byPlayer[pName][pt].under = outcome.price;
           }
 
-          for (const [pName, sides] of Object.entries(byPlayer)) {
+          for (const [pName, byPoint] of Object.entries(byPlayer)) {
+            // Always use the lowest point (primary line: 0.5 for HR, standard for others)
+            const points = Object.keys(byPoint).map(Number).sort((a, b) => a - b);
+            const selectedPoint = points[0];
+            const sides = byPoint[selectedPoint];
+
             const key = normName(pName);
             if (!players[key]) players[key] = { displayName: pName };
 
-            const propKey = Object.keys(MARKET_LABEL).find(k => MARKET_LABEL[k] === label);
-            const internalKey = {
-              batter_hits:        'hits',
-              batter_home_runs:   'hr',
-              batter_total_bases: 'totalBases',
-              batter_rbis:        'rbi',
-              batter_runs_scored: 'runs',
-              pitcher_strikeouts: 'strikeouts',
-            }[market.key];
-            if (!internalKey) continue;
-
-            // Keep best over odds (highest price = most batter-favourable)
+            // Keep best over odds across bookmakers (highest price = most value)
             const existing = players[key][internalKey];
-            const newOverPrice  = sides.over?.price  ?? -9999;
-            const existingPrice = existing?.over      ?? -9999;
+            const newOverPrice  = sides.over  ?? -9999;
+            const existingPrice = existing?.over ?? -9999;
             if (!existing || newOverPrice > existingPrice) {
               players[key][internalKey] = {
                 label,
-                line:      sides.over?.point ?? sides.under?.point,
-                over:      sides.over?.price  ?? null,
-                under:     sides.under?.price ?? null,
-                overProb:  impliedProb(sides.over?.price),
-                underProb: impliedProb(sides.under?.price),
+                line:      selectedPoint,
+                over:      sides.over  ?? null,
+                under:     sides.under ?? null,
+                overProb:  impliedProb(sides.over),
+                underProb: impliedProb(sides.under),
                 book:      bookmaker.title,
               };
             }
