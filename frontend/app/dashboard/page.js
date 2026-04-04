@@ -1265,7 +1265,7 @@ export default function DashboardPage() {
     try {
       const ids = playerIds.join(',');
       const r = await fetch(
-        `${MLB_API}/people?personIds=${ids}&hydrate=stats(group=%5Bhitting%5D,type=%5BvsPlayer,statSplits%5D,sitCodes=%5Bvl,vr%5D,season=${SEASON})`
+        `${MLB_API}/people?personIds=${ids}&hydrate=stats(group=%5Bhitting%5D,type=%5BvsPlayer,statSplits%5D,sitCodes=%5Bvl,vr%5D,season=2025)`
       );
       if (!r.ok) return;
       const d = await r.json();
