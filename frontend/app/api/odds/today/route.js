@@ -164,8 +164,7 @@ export async function GET() {
     }
 
     return NextResponse.json(
-      { players, creditsRemaining, creditsUsed, gamesCount: events.length },
-      { headers: { 'Cache-Control': 'public, max-age=3600' } }
+      { players, creditsRemaining, creditsUsed, gamesCount: events.length }
     );
   } catch (err) {
     console.error('Odds API error:', err.message);
