@@ -2181,7 +2181,8 @@ function HittingProjectionEVCard({ gameLog, seasonStats, splits, statcast, pitch
   useEffect(() => {
     if (!playerName) return;
     const normName = (n='') => n.toLowerCase().normalize('NFD')
-      .replace(/[\u0300-\u036f]/g,'').replace(/\s+(jr|sr|ii|iii|iv)\.?\s*$/i,'').trim();
+      .replace(/[\u0300-\u036f]/g,'').replace(/\./g,'')
+      .replace(/\s+(jr|sr|ii|iii|iv)\s*$/i,'').replace(/\s+/g,' ').trim();
     fetch('/api/odds/today')
       .then(r => r.ok ? r.json() : null)
       .then(data => {

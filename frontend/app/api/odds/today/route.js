@@ -33,7 +33,9 @@ function normName(name = '') {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+(jr|sr|ii|iii|iv)\.?\s*$/i, '')
+    .replace(/\./g, '')                          // "C.J." → "cj"
+    .replace(/\s+(jr|sr|ii|iii|iv)\s*$/i, '')   // strip suffixes
+    .replace(/\s+/g, ' ')
     .trim();
 }
 

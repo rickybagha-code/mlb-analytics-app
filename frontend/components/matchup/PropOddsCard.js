@@ -8,7 +8,9 @@ function normName(name = '') {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+(jr|sr|ii|iii|iv)\.?\s*$/i, '')
+    .replace(/\./g, '')
+    .replace(/\s+(jr|sr|ii|iii|iv)\s*$/i, '')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
