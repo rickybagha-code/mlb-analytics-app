@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import ProprStatsLogo from '../../../../components/ProprStatsLogo';
 
@@ -2440,6 +2440,7 @@ function HittingProjectionEVCard({ gameLog, seasonStats, splits, statcast, pitch
 export default function PlayerDetailPage() {
   const { id }      = useParams();
   const sp          = useSearchParams();
+  const router      = useRouter();
 
   // Search param context (passed from dashboard card)
   const spTeamId      = sp.get('teamId')      || '';
@@ -3219,7 +3220,7 @@ export default function PlayerDetailPage() {
             {/* ── Category Tabs ──────────────────────────────────────────── */}
             <div className="flex items-center gap-2 flex-wrap mb-5">
               {PROP_CATS.map(c => (
-                <button key={c.id} onClick={() => setCat(c.id)}
+                <button key={c.id} onClick={() => { setCat(c.id); const p = new URLSearchParams(sp.toString()); p.set('cat', c.id); router.replace(`?${p.toString()}`, { scroll: false }); }}
                   className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
                     cat === c.id
                       ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
