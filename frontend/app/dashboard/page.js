@@ -815,7 +815,13 @@ export default function DashboardPage() {
   const [isPro, setIsPro] = useState(true);
 
   // ── Category ──────────────────────────────────────────────────────────────
-  const [category, setCategory] = useState('hitting');
+  const [category, setCategory] = useState(() => {
+    try { return sessionStorage.getItem('dash_category') || 'hitting'; } catch { return 'hitting'; }
+  });
+
+  useEffect(() => {
+    try { sessionStorage.setItem('dash_category', category); } catch {}
+  }, [category]);
 
   // ── Auto board ────────────────────────────────────────────────────────────
   const [boardPlayers,  setBoardPlayers]  = useState([]);
