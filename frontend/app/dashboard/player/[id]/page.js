@@ -2065,10 +2065,10 @@ function useHRProjection(gameLog, seasonStats, splits, statcast, pitcher, spPitc
       const speedFactor = Math.min(0.04, ((wxWindSpd - 10) / 5) * 0.01 + 0.01);
       return isOut ? speedFactor : -speedFactor;
     })();
-    // Cold-start penalty — ramps to -0.05 by 100 PA if player has 0 HR in 2026
+    // Cold-start penalty — fires from first game, ramps to -0.08 by 80 PA if 0 HR in 2026
     const hr26          = parseInt(seasonStats?.homeRuns) || 0;
-    const coldStartShift = (hr26 === 0 && pa26Raw >= 20)
-      ? Math.max(-0.05, -Math.min(1.0, (pa26Raw - 20) / 80) * 0.05)
+    const coldStartShift = (hr26 === 0 && pa26Raw >= 3)
+      ? Math.max(-0.08, -(pa26Raw / 80) * 0.08)
       : 0;
     const rawShift    = barrelShift + evoShift + parkShift + splitShift + pitcherShift + windShift + coldStartShift;
     const totalShift  = Math.max(-0.08, Math.min(0.14, rawShift));

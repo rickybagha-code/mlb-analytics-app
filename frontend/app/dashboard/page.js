@@ -224,11 +224,11 @@ function computeProjectionScore(player, category) {
     const h2hHRShift = h2hAVG != null && h2hAB >= 8
       ? Math.max(-0.06, Math.min(0.03, (h2hAVG - avg) / Math.max(avg, 0.01) * 0.10))
       : 0;
-    // Cold-start penalty — ramps up to -0.05 by 100 PA if player has 0 HR in 2026
+    // Cold-start penalty — fires from first game, ramps to -0.08 by 80 PA if 0 HR in 2026
     const hr26  = player.stats26?.homeRuns ?? null;
     const pa26r = player.pa26Raw ?? 0;
-    const coldStartShift = (hr26 === 0 && pa26r >= 20)
-      ? Math.max(-0.05, -Math.min(1.0, (pa26r - 20) / 80) * 0.05)
+    const coldStartShift = (hr26 === 0 && pa26r >= 3)
+      ? Math.max(-0.08, -(pa26r / 80) * 0.08)
       : 0;
     const rawShift   = barrelShift + evoShift + parkShift + pitcherHRShift + platoonShift + windShift + h2hHRShift + coldStartShift;
     const totalShift = Math.max(-0.08, Math.min(0.14, rawShift));
@@ -1122,18 +1122,19 @@ export default function DashboardPage() {
             gamesPlayed:  parseInt(r26.gamesPlayed)    || 0,
           } : null;
           allPlayers.push({
-            playerId:    rp.id,
-            fullName:    rp.fullName,
-            position:    rp.position,
+            playerId:          rp.id,
+            fullName:          rp.fullName,
+            position:          rp.position,
             teamId,
-            teamName:    team.name,
-            teamAbbrev:  team.abbreviation,
+            teamName:          team.name,
+            teamAbbrev:        team.abbreviation,
             ...stats,
             stats26,
             parkHR,
             pitcherHand,
             gameHomeTeamId,
-            matchup:     { isHome, oppAbbrev, pitcher },
+            opposingPitcherId: pitId ?? null,
+            matchup:           { isHome, oppAbbrev, pitcher },
             scores: {
               hitting:  computeProjectionScore(playerWithCtx, 'hitting'),
               hr:       computeProjectionScore(playerWithCtx, 'hr'),
@@ -1196,6 +1197,12 @@ export default function DashboardPage() {
           .slice(0,40)
           .forEach(p=>topIds.add(p.playerId));
       }
+      // Top HR players for H2H enrichment
+      const topHRPlayers = [...dedupedPlayers]
+        .filter(p => p.scores.hr > 0)
+        .sort((a, b) => b.scores.hr - a.scores.hr)
+        .slice(0, 40);
+
       // Statcast loads fast (1 request), streaks load progressively (batched)
       fetchStatcastData();
       fetchPitcherStatcastData();
@@ -1203,6 +1210,7 @@ export default function DashboardPage() {
       fetchWeatherData(games, teamMap);
       fetchPlatoonSplits([...topIds]);
       fetchLineups(games, today);
+      fetchH2H(topHRPlayers);
 
     } catch (err) {
       setBoardError(err.message || 'Failed to load today\'s board');
@@ -1339,6 +1347,38 @@ export default function DashboardPage() {
         return { ...updated, scores: newScores };
       }));
     } catch {}
+  }
+
+  async function fetchH2H(topPlayers) {
+    // Fetch career H2H stats for top HR/hitting players vs today's opposing pitcher.
+    // Runs in parallel — batches of 10 to avoid hammering MLB Stats API.
+    const eligible = topPlayers.filter(p => p.opposingPitcherId && p.position !== 'SP');
+    if (!eligible.length) return;
+    for (let i = 0; i < eligible.length; i += 10) {
+      const batch = eligible.slice(i, i + 10);
+      await Promise.all(batch.map(async (p) => {
+        const cKey = `mlb_h2h_${p.playerId}_${p.opposingPitcherId}`;
+        let h2h = getCached(cKey, 24 * 60 * 60 * 1000);
+        if (!h2h) {
+          try {
+            const r = await fetch(`/api/matchup/h2h/${p.playerId}?pitcherId=${p.opposingPitcherId}`);
+            if (!r.ok) return;
+            h2h = await r.json();
+            if (!h2h?.error) setCached(cKey, h2h);
+          } catch { return; }
+        }
+        if (!h2h || h2h.error) return;
+        setBoardPlayers(prev => prev.map(bp => {
+          if (bp.playerId !== p.playerId) return bp;
+          const updated = { ...bp, h2hAB: h2h.ab ?? 0, h2hAVG: h2h.avg ?? null };
+          const newScores = { ...bp.scores };
+          for (const cat of ['hitting', 'hr']) {
+            if (newScores[cat] > 0) newScores[cat] = computeProjectionScore(updated, cat);
+          }
+          return { ...updated, scores: newScores };
+        }));
+      }));
+    }
   }
 
   async function fetchLineups(games, today) {
