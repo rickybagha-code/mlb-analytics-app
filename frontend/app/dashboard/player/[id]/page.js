@@ -173,8 +173,8 @@ function computeProjectionScore(player, category) {
     const h2hShift     = (() => {
       const hAB  = player.h2hAB  ?? 0;
       const hAVG = player.h2hAVG ?? null;
-      if (hAB < 8 || hAVG == null) return 0;
-      return Math.max(-0.06, Math.min(0.03, (hAVG - avg) / Math.max(avg, 0.01) * 0.10));
+      if (hAB < 8) return 0;
+      return Math.max(-0.06, Math.min(0.03, ((hAVG ?? 0) - avg) / Math.max(avg, 0.01) * 0.10));
     })();
     const pitcherHRShift = Math.max(-0.03, Math.min(0.03, pitcherMod * 0.003));
     const wxWind    = player.weather ?? null;
@@ -2878,8 +2878,8 @@ export default function PlayerDetailPage() {
       const h2hAVG    = h2hMatch ? (parseFloat(h2hMatch.avg)  || null) : null;
       const seasonAVG = parseFloat(st.avg) || 0;
       let h2hShift = 0;
-      if (h2hAVG != null && h2hAB >= 8 && seasonAVG > 0) {
-        h2hShift = Math.max(-0.06, Math.min(0.03, (h2hAVG - seasonAVG) / seasonAVG * 0.10));
+      if (h2hAB >= 8 && seasonAVG > 0) {
+        h2hShift = Math.max(-0.06, Math.min(0.03, ((h2hAVG ?? 0) - seasonAVG) / seasonAVG * 0.10));
       }
       // Raised cap (0.30→0.40) + lower multiplier (175→130) reserves 80+ for genuine elite
       const adjustedPHR = Math.min(0.40, Math.max(0.005, pHR + h2hShift));

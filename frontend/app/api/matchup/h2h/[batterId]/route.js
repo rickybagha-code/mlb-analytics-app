@@ -38,10 +38,10 @@ export async function GET(request, { params }) {
     const hr  = parseInt(stat.homeRuns)      || 0;
     const bb  = parseInt(stat.baseOnBalls)   || 0;
     const k   = parseInt(stat.strikeOuts)    || 0;
-    const avg = parseFloat(stat.avg)         || null;
-    const obp = parseFloat(stat.obp)         || null;
-    const slg = parseFloat(stat.slg)         || null;
-    const ops = parseFloat(stat.ops)         || null;
+    const avg = stat.avg != null ? (parseFloat(stat.avg) || 0) : null;
+    const obp = stat.obp != null ? (parseFloat(stat.obp) || 0) : null;
+    const slg = stat.slg != null ? (parseFloat(stat.slg) || 0) : null;
+    const ops = stat.ops != null ? (parseFloat(stat.ops) || 0) : null;
 
     // Simple wOBA proxy from available stats
     const pa = ab + bb;

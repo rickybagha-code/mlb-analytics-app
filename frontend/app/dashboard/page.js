@@ -221,8 +221,8 @@ function computeProjectionScore(player, category) {
     // H2H — poor history vs today's specific pitcher pulls pHR down
     const h2hAB  = player.h2hAB  ?? 0;
     const h2hAVG = player.h2hAVG ?? null;
-    const h2hHRShift = h2hAVG != null && h2hAB >= 8
-      ? Math.max(-0.06, Math.min(0.03, (h2hAVG - avg) / Math.max(avg, 0.01) * 0.10))
+    const h2hHRShift = h2hAB >= 8
+      ? Math.max(-0.06, Math.min(0.03, ((h2hAVG ?? 0) - avg) / Math.max(avg, 0.01) * 0.10))
       : 0;
     // Cold-start penalty — fires from first game, ramps to -0.08 by 80 PA if 0 HR in 2026
     const hr26  = player.stats26?.homeRuns ?? null;
