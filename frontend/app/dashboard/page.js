@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import ProprStatsLogo from '../../components/ProprStatsLogo';
+import NavUserMenu from '../../components/NavUserMenu';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 const MLB_API  = 'https://statsapi.mlb.com/api/v1';
@@ -517,6 +518,7 @@ function Navbar() {
           <div className="flex items-center gap-6">
             <span className="text-sm font-semibold text-blue-400 border-b-2 border-blue-500 pb-0.5">Dashboard</span>
             <Link href="/" className="hidden sm:inline-flex text-sm text-gray-500 hover:text-gray-300 transition-colors">← Home</Link>
+            <NavUserMenu />
           </div>
         </div>
       </div>
