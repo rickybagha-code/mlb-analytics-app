@@ -1109,7 +1109,7 @@ function EVGaugeSVG({ evPct }) {
   );
 }
 
-function ProjectionEVCard({ pitcherStarts, seasonStats, oppTeamAbbrev, prizePicksLine, pitcherSavant }) {
+function ProjectionEVCard({ pitcherStarts, seasonStats, oppTeamAbbrev, prizePicksLine, pitcherSavant, playerName }) {
   const [bookLine,  setBookLine]  = useState('');
   const [overOdds,  setOverOdds]  = useState('-115');
   const [underOdds, setUnderOdds] = useState('-115');
@@ -1123,6 +1123,44 @@ function ProjectionEVCard({ pitcherStarts, seasonStats, oppTeamAbbrev, prizePick
       setPpSource(true);
     }
   }, [prizePicksLine]);
+
+  // Auto-fill odds from The Odds API
+  useEffect(() => {
+    if (!playerName) return;
+    const norm = (n='') => n.toLowerCase().normalize('NFD')
+      .replace(/[\u0300-\u036f]/g,'').replace(/\./g,'')
+      .replace(/\s+(jr|sr|ii|iii|iv)\s*$/i,'').replace(/\s+/g,' ').trim();
+    fetch('/api/odds/today')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data?.players) return;
+        const players = data.players;
+        let p = players[norm(playerName)];
+        if (!p) {
+          const nameLower = playerName.toLowerCase();
+          const lastName  = playerName.split(' ').pop().toLowerCase();
+          const firstName = playerName.split(' ')[0].toLowerCase();
+          const exactKey = Object.keys(players).find(k => k === nameLower);
+          if (exactKey) {
+            p = players[exactKey];
+          } else {
+            const partialKey = Object.keys(players).find(k => {
+              if (!k.includes(lastName)) return false;
+              const kFirst = k.split(' ')[0];
+              return k.includes(firstName) || k.includes(firstName[0] + '.') ||
+                firstName.startsWith(kFirst) || kFirst.startsWith(firstName);
+            });
+            if (partialKey) p = players[partialKey];
+          }
+        }
+        if (!p?.strikeouts) return;
+        const sk = p.strikeouts;
+        if (bookLine === '' && sk.line != null) setBookLine(String(sk.line));
+        if (sk.over  != null) setOverOdds(String(sk.over));
+        if (sk.under != null) setUnderOdds(String(sk.under));
+      })
+      .catch(() => {});
+  }, [playerName]);
 
   useEffect(() => {
     const t = setTimeout(() => setDebLine(bookLine), 300);
@@ -2188,17 +2226,38 @@ function HittingProjectionEVCard({ gameLog, seasonStats, splits, statcast, pitch
   // Auto-fill lines + odds from The Odds API
   useEffect(() => {
     if (!playerName) return;
-    const normName = (n='') => n.toLowerCase().normalize('NFD')
+    const norm = (n='') => n.toLowerCase().normalize('NFD')
       .replace(/[\u0300-\u036f]/g,'').replace(/\./g,'')
       .replace(/\s+(jr|sr|ii|iii|iv)\s*$/i,'').replace(/\s+/g,' ').trim();
     fetch('/api/odds/today')
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (!data?.players) return;
-        const p = data.players[normName(playerName)];
+        const players = data.players;
+        // 3-tier fuzzy match — same logic as PrizePicks auto-fill
+        let p = players[norm(playerName)];
+        if (!p) {
+          const nameLower = playerName.toLowerCase();
+          const lastName  = playerName.split(' ').pop().toLowerCase();
+          const firstName = playerName.split(' ')[0].toLowerCase();
+          // Tier 2: case-insensitive exact on raw key
+          const exactKey = Object.keys(players).find(k => k === nameLower);
+          if (exactKey) {
+            p = players[exactKey];
+          } else {
+            // Tier 3: last name present + first name / initial prefix match
+            const partialKey = Object.keys(players).find(k => {
+              if (!k.includes(lastName)) return false;
+              const kFirst = k.split(' ')[0];
+              return k.includes(firstName) || k.includes(firstName[0] + '.') ||
+                firstName.startsWith(kFirst) || kFirst.startsWith(firstName);
+            });
+            if (partialKey) p = players[partialKey];
+          }
+        }
         if (!p) return;
-        // Map odds API keys → prop keys
-        const MAP = { hits:'hits', hr:'hr', runs:'runs', rbi:'rbi' };
+        // Map odds API keys → prop keys (includes sb)
+        const MAP = { hits:'hits', hr:'hr', runs:'runs', rbi:'rbi', sb:'sb' };
         setLines(prev => {
           const next = { ...prev };
           Object.entries(MAP).forEach(([prop, key]) => {
@@ -3180,6 +3239,7 @@ export default function PlayerDetailPage() {
                 oppTeamAbbrev={effectiveOppAbbrev}
                 prizePicksLine={ppLines?.strikeouts ?? null}
                 pitcherSavant={pitcherSavant}
+                playerName={playerInfo.fullName}
               />
             </ProjectionErrorBoundary>
 

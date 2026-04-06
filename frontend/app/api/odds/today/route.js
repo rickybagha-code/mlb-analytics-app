@@ -13,18 +13,19 @@ const ODDS_API_KEY  = process.env.ODDS_API_KEY;
 const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
 
 // Markets to fetch — covers all props in our model
-const BATTER_MARKETS   = ['batter_hits', 'batter_home_runs', 'batter_total_bases', 'batter_rbis', 'batter_runs_scored'];
+const BATTER_MARKETS   = ['batter_hits', 'batter_home_runs', 'batter_total_bases', 'batter_rbis', 'batter_runs_scored', 'batter_stolen_bases'];
 const PITCHER_MARKETS  = ['pitcher_strikeouts'];
 const ALL_MARKETS      = [...BATTER_MARKETS, ...PITCHER_MARKETS].join(',');
 
 // Odds API market key → internal prop label
 const MARKET_LABEL = {
-  batter_hits:        'Hits',
-  batter_home_runs:   'Home Runs',
-  batter_total_bases: 'Total Bases',
-  batter_rbis:        'RBIs',
-  batter_runs_scored: 'Runs',
-  pitcher_strikeouts: 'Strikeouts',
+  batter_hits:          'Hits',
+  batter_home_runs:     'Home Runs',
+  batter_total_bases:   'Total Bases',
+  batter_rbis:          'RBIs',
+  batter_runs_scored:   'Runs',
+  batter_stolen_bases:  'Stolen Bases',
+  pitcher_strikeouts:   'Strikeouts',
 };
 
 // Strip accents, suffixes, lowercase — for fuzzy name matching
@@ -110,12 +111,13 @@ export async function GET() {
           if (!label) continue;
 
           const internalKey = {
-            batter_hits:        'hits',
-            batter_home_runs:   'hr',
-            batter_total_bases: 'totalBases',
-            batter_rbis:        'rbi',
-            batter_runs_scored: 'runs',
-            pitcher_strikeouts: 'strikeouts',
+            batter_hits:          'hits',
+            batter_home_runs:     'hr',
+            batter_total_bases:   'totalBases',
+            batter_rbis:          'rbi',
+            batter_runs_scored:   'runs',
+            batter_stolen_bases:  'sb',
+            pitcher_strikeouts:   'strikeouts',
           }[market.key];
           if (!internalKey) continue;
 
