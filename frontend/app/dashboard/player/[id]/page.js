@@ -75,9 +75,8 @@ const PROP_CATS = [
   { id:'runs', label:'Runs',         field:'runs',        lines:[0.5,1.5],     def:0.5 },
   { id:'rbi',  label:'RBI',          field:'rbi',         lines:[0.5,1.5],     def:0.5 },
   { id:'hr',   label:'Home Runs',    field:'homeRuns',    lines:[0.5],         def:0.5 },
-  { id:'sb',   label:'Stolen Bases', field:'stolenBases', lines:[0.5],         def:0.5 },
 ];
-const CAT_MODEL = { hits:'hitting', runs:'runs', rbi:'rbi', hr:'hr', sb:null };
+const CAT_MODEL = { hits:'hitting', runs:'runs', rbi:'rbi', hr:'hr' };
 
 // ─── Projection Model (mirrors dashboard) ────────────────────────────────────
 function computeProjectionScore(player, category) {
@@ -1378,11 +1377,10 @@ function GameLogTable({ games, cat, loading }) {
     runs: ['Date','Opp','PA','R','RBI','BB','K'],
     rbi:  ['Date','Opp','PA','AB','H','RBI','BB','K'],
     hr:   ['Date','Opp','PA','AB','H','HR','BB','K'],
-    sb:   ['Date','Opp','PA','AB','H','SB','BB','K'],
   };
   const cols     = colDefs[cat] || colDefs.hits;
-  const keyCol   = { hits:'H', runs:'R', rbi:'RBI', hr:'HR', sb:'SB' }[cat] || 'H';
-  const keyField = { hits:'hits', runs:'runs', rbi:'rbi', hr:'homeRuns', sb:'stolenBases' }[cat] || 'hits';
+  const keyCol   = { hits:'H', runs:'R', rbi:'RBI', hr:'HR' }[cat] || 'H';
+  const keyField = { hits:'hits', runs:'runs', rbi:'rbi', hr:'homeRuns' }[cat] || 'hits';
 
   const getVal = (g, col) => {
     if (col==='Date') return fmtDate(g.date);
@@ -1396,7 +1394,6 @@ function GameLogTable({ games, cat, loading }) {
     if (col==='K')    return g.strikeOuts  ?? 0;
     if (col==='RBI')  return g.rbi ?? 0;
     if (col==='R')    return g.runs ?? 0;
-    if (col==='SB')   return g.stolenBases ?? 0;
     if (col==='AVG') {
       const ab = g.atBats || 0, h = g.hits || 0;
       return ab > 0 ? `.${Math.round(h/ab*1000).toString().padStart(3,'0')}` : '—';
@@ -1407,7 +1404,7 @@ function GameLogTable({ games, cat, loading }) {
   const keyCls = (col, rawVal) => {
     if (col !== keyCol) return null;
     const n = Number(rawVal) || 0;
-    if (cat === 'hr' || cat === 'sb') return n >= 1 ? 'text-emerald-400 font-black' : 'text-red-400';
+    if (cat === 'hr') return n >= 1 ? 'text-emerald-400 font-black' : 'text-red-400';
     return n >= 2 ? 'text-emerald-400 font-black' : n >= 1 ? 'text-yellow-400 font-bold' : 'text-red-400';
   };
 
@@ -1532,7 +1529,7 @@ function BaseballDiamondCard({ spTeamAbbrev, spOppAbbrev, spIsHome, activeCat, w
   const tailY = CCY - CR * 0.52 * Math.sin(aRad);
 
   const catVal = activeCat === 'hits' ? park?.hits : activeCat === 'hr' ? park?.hr :
-                 activeCat === 'runs' ? park?.runs : activeCat === 'sb' ? park?.runs : null;
+                 activeCat === 'runs' ? park?.runs : null;
 
   return (
     <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
@@ -1911,7 +1908,7 @@ function blendBatterStats(st26, st25) {
     plateAppearances: parseInt(st.plateAppearances)||0,
     atBats: parseInt(st.atBats)||0,
     homeRuns: parseInt(st.homeRuns)||0, rbi: parseInt(st.rbi)||0,
-    runs: parseInt(st.runs)||0, stolenBases: parseInt(st.stolenBases)||0,
+    runs: parseInt(st.runs)||0,
     baseOnBalls: parseInt(st.baseOnBalls)||0, strikeOuts: parseInt(st.strikeOuts)||0,
     hits: parseInt(st.hits)||0, doubles: parseInt(st.doubles)||0,
     triples: parseInt(st.triples)||0,
@@ -1941,7 +1938,6 @@ function blendBatterStats(st26, st25) {
   const hr_pg  = bHR((parseInt(st26.homeRuns)||0)/gp26,  (parseInt(st25.homeRuns)||0)/gp25);
   const rbi_pg = b((parseInt(st26.rbi)||0)/gp26,         (parseInt(st25.rbi)||0)/gp25);
   const r_pg   = b((parseInt(st26.runs)||0)/gp26,        (parseInt(st25.runs)||0)/gp25);
-  const sb_pg  = b((parseInt(st26.stolenBases)||0)/gp26, (parseInt(st25.stolenBases)||0)/gp25);
   const bb_ppa = b((parseInt(st26.baseOnBalls)||0)/pa26, (parseInt(st25.baseOnBalls)||0)/pa25);
   const k_ppa  = b((parseInt(st26.strikeOuts)||0)/pa26,  (parseInt(st25.strikeOuts)||0)/pa25);
   const h_pab  = b((parseInt(st26.hits)||0)/ab26,    (parseInt(st25.hits)||0)/ab25);
@@ -1959,7 +1955,6 @@ function blendBatterStats(st26, st25) {
     homeRuns:    Math.round(hr_pg  * eff_gp),
     rbi:         Math.round(rbi_pg * eff_gp),
     runs:        Math.round(r_pg   * eff_gp),
-    stolenBases: Math.round(sb_pg  * eff_gp),
     baseOnBalls: Math.round(bb_ppa * eff_pa),
     strikeOuts:  Math.round(k_ppa  * eff_pa),
     hits:        Math.round(h_pab  * eff_ab),
@@ -2198,44 +2193,15 @@ function useRBIProjection(gameLog, seasonStats, splits, statcast, pitcher, spPit
   }, [gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev]);
 }
 
-function useSBProjection(gameLog, seasonStats, spTeamAbbrev, spOppAbbrev, spIsHome) {
-  return useMemo(() => {
-    const st = seasonStats;
-    const gp = Math.max(st?.gamesPlayed || 1, 1);
-    const seasonSB = (st?.stolenBases || 0) / gp;
-    const L10 = gameLog.slice(-10);
-    const L10SB = L10.map(g => Number(g.stolenBases) || 0);
-    const l10SBpg = L10SB.reduce((a,b)=>a+b,0) / Math.max(L10.length,1);
-    const parkKey = spIsHome ? spTeamAbbrev : spOppAbbrev;
-    // Park factor for SB is mostly neutral; use a slight home field adjustment
-    const parkFactor = 1.0;
-    const lambda = Math.max(0, (seasonSB * 0.5 + l10SBpg * 0.5) * parkFactor);
-    const dist = Array.from({length:5},(_,k)=>({ k, p: Math.round(Math.exp(-lambda)*Math.pow(lambda,k)/[1,1,2,6,24][k]*1000)/10 }));
-    const pAtLeast1 = Math.round((1 - Math.exp(-lambda)) * 100);
-    const std = l10StdDev(L10SB, 0.2);
-    return {
-      projected: Math.round(lambda * 10) / 10,
-      pAtLeast1,
-      dist,
-      std,
-      factors: [
-        { label:'Season SB/game',  impact:Math.round((seasonSB-0.10)*100)/100,  dir:seasonSB>0.10?'↑':'↓' },
-        { label:'L10 SB/game avg', impact:Math.round((l10SBpg-seasonSB)*100)/100, dir:l10SBpg>=seasonSB?'↑':'↓' },
-        { label:'Park factor',     impact:0, dir:'→' },
-      ],
-    };
-  }, [gameLog, seasonStats, spTeamAbbrev, spOppAbbrev, spIsHome]);
-}
-
 function HittingProjectionEVCard({ gameLog, seasonStats, splits, statcast, pitcher, playerName,
   spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev, activeTab, loading, prizePicksLines }) {
 
   const [activeProp, setActiveProp] = useState(activeTab || 'hits');
-  const [lines,     setLines]     = useState({ hits:'', hr:'', runs:'', rbi:'', sb:'' });
-  const [overOdds,  setOverOdds]  = useState({ hits:'', hr:'', runs:'', rbi:'', sb:'' });
-  const [underOdds, setUnderOdds] = useState({ hits:'', hr:'', runs:'', rbi:'', sb:'' });
-  const [debLines,  setDebLines]  = useState({ hits:'', hr:'', runs:'', rbi:'', sb:'' });
-  const [ppSources, setPpSources] = useState({ hits:false, hr:false, runs:false, rbi:false, sb:false });
+  const [lines,     setLines]     = useState({ hits:'', hr:'', runs:'', rbi:'' });
+  const [overOdds,  setOverOdds]  = useState({ hits:'', hr:'', runs:'', rbi:'' });
+  const [underOdds, setUnderOdds] = useState({ hits:'', hr:'', runs:'', rbi:'' });
+  const [debLines,  setDebLines]  = useState({ hits:'', hr:'', runs:'', rbi:'' });
+  const [ppSources, setPpSources] = useState({ hits:false, hr:false, runs:false, rbi:false });
 
   // Auto-fill lines + odds from The Odds API (with localStorage cache)
   useEffect(() => {
@@ -2316,7 +2282,7 @@ function HittingProjectionEVCard({ gameLog, seasonStats, splits, statcast, pitch
   // Auto-fill PrizePicks lines when available (only for empty fields)
   useEffect(() => {
     if (!prizePicksLines) return;
-    const PP_MAP = { hits:'hits', hr:'hr', runs:'runs', rbi:'rbi', sb:'sb' };
+    const PP_MAP = { hits:'hits', hr:'hr', runs:'runs', rbi:'rbi' };
     const newLines = {};
     const newSources = {};
     let changed = false;
@@ -2345,15 +2311,13 @@ function HittingProjectionEVCard({ gameLog, seasonStats, splits, statcast, pitch
   useEffect(() => {
     const t = setTimeout(() => setDebLines({ ...lines }), 300);
     return () => clearTimeout(t);
-  }, [lines.hits, lines.hr, lines.runs, lines.rbi, lines.sb]);
+  }, [lines.hits, lines.hr, lines.runs, lines.rbi]);
 
   const hitsProj = useHitsProjection(gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev);
   const hrProj   = useHRProjection(  gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev);
   const runsProj = useRunsProjection( gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev);
   const rbiProj  = useRBIProjection(  gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev);
-  const sbProj   = useSBProjection(   gameLog, seasonStats, spTeamAbbrev, spOppAbbrev, spIsHome);
-
-  const projMap  = { hits:hitsProj, hr:hrProj, runs:runsProj, rbi:rbiProj, sb:sbProj };
+  const projMap  = { hits:hitsProj, hr:hrProj, runs:runsProj, rbi:rbiProj };
   const proj     = projMap[activeProp];
   const line     = parseFloat(debLines[activeProp]) || null;
   const oOdds    = parseInt(overOdds[activeProp])   || -115;
@@ -2383,16 +2347,13 @@ function HittingProjectionEVCard({ gameLog, seasonStats, splits, statcast, pitch
     { id:'hr',   label:'Home Runs',    unit:'HR',  icon:'💣' },
     { id:'runs', label:'Runs',         unit:'R',   icon:'🏃' },
     { id:'rbi',  label:'RBI',          unit:'RBI', icon:'💰' },
-    { id:'sb',   label:'Stolen Bases', unit:'SB',  icon:'⚡' },
   ];
   const activeTab_ = PROP_TABS.find(t=>t.id===activeProp);
   const propUnit   = activeTab_?.unit || 'H';
-  const projLabel  = activeProp === 'hr' ? 'P(HR ≥ 1)' : activeProp === 'sb' ? 'P(SB ≥ 1)' : `Proj ${propUnit}`;
+  const projLabel  = activeProp === 'hr' ? 'P(HR ≥ 1)' : `Proj ${propUnit}`;
   const projVal    = activeProp === 'hr' && proj?.pHR != null
     ? `${proj.pHR}%`
-    : activeProp === 'sb' && proj?.pAtLeast1 != null
-      ? `${proj.pAtLeast1}%`
-      : (proj?.projected?.toFixed(1) ?? '—');
+    : (proj?.projected?.toFixed(1) ?? '—');
 
   if (loading) return (
     <div className="rounded-xl border border-gray-700/50 bg-[#0f1117] p-6">
@@ -2551,7 +2512,7 @@ export default function PlayerDetailPage() {
   const spPosition    = sp.get('position')   || '';
 
   // ── State ─────────────────────────────────────────────────────────────────
-  const validCats = ['hits','runs','rbi','hr','sb'];
+  const validCats = ['hits','runs','rbi','hr'];
   const initCat   = validCats.includes(sp.get('cat')) ? sp.get('cat') : 'hits';
   const [cat,         setCat]         = useState(initCat);
   const [win,         setWin]         = useState(10);
@@ -3157,7 +3118,7 @@ export default function PlayerDetailPage() {
                   </>
                 : <div className="text-center">
                     {modelScore != null
-                      ? <><ScoreRing score={modelScore} size={64}/><p className="text-xs text-gray-500 mt-1 font-semibold tracking-wide">{{ hits:'HIT', hr:'HR', runs:'RUN', rbi:'RBI', sb:'SB' }[cat] ?? cat.toUpperCase()} SCORE</p></>
+                      ? <><ScoreRing score={modelScore} size={64}/><p className="text-xs text-gray-500 mt-1 font-semibold tracking-wide">{{ hits:'HIT', hr:'HR', runs:'RUN', rbi:'RBI' }[cat] ?? cat.toUpperCase()} SCORE</p></>
                       : <div className="w-16 h-16 rounded-full border-2 border-gray-800 bg-gray-800/50 flex items-center justify-center"><span className="text-gray-700 text-xs">N/A</span></div>
                     }
                   </div>

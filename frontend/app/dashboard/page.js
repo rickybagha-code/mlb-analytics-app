@@ -251,10 +251,6 @@ function computeProjectionScore(player, category) {
     const orderRbiBonus = player.battingOrder != null ? (ORDER_RBI[player.battingOrder] ?? 0) : 0;
     base = 38 + rbiComp + slgComp + hrComp + xwobaBonus + pitcherMod + splitSLGbonus + weatherBonus + orderRbiBonus;
 
-  } else if (category === 'sb') {
-    const sbRate = player.stolenBases != null && gp > 0 ? player.stolenBases / gp : 0;
-    const sbComp = Math.min(55, sbRate * 220);
-    base = 15 + sbComp + pitcherMod * 0.3;
   }
 
   // Shrink score toward 50 for thin sample sizes.
@@ -281,7 +277,7 @@ function blendBatterStats(st26, st25) {
     plateAppearances: parseInt(st.plateAppearances)||0,
     atBats: parseInt(st.atBats)||0,
     homeRuns: parseInt(st.homeRuns)||0, rbi: parseInt(st.rbi)||0,
-    runs: parseInt(st.runs)||0, stolenBases: parseInt(st.stolenBases)||0,
+    runs: parseInt(st.runs)||0,
     baseOnBalls: parseInt(st.baseOnBalls)||0, strikeOuts: parseInt(st.strikeOuts)||0,
     hits: parseInt(st.hits)||0, doubles: parseInt(st.doubles)||0,
     triples: parseInt(st.triples)||0,
@@ -314,7 +310,6 @@ function blendBatterStats(st26, st25) {
   const hr_pg  = bHR((parseInt(st26.homeRuns)||0)/gp26,  (parseInt(st25.homeRuns)||0)/gp25);
   const rbi_pg = b((parseInt(st26.rbi)||0)/gp26,         (parseInt(st25.rbi)||0)/gp25);
   const r_pg   = b((parseInt(st26.runs)||0)/gp26,        (parseInt(st25.runs)||0)/gp25);
-  const sb_pg  = b((parseInt(st26.stolenBases)||0)/gp26, (parseInt(st25.stolenBases)||0)/gp25);
   // Blend per-PA rates
   const bb_ppa = b((parseInt(st26.baseOnBalls)||0)/pa26, (parseInt(st25.baseOnBalls)||0)/pa25);
   const k_ppa  = b((parseInt(st26.strikeOuts)||0)/pa26,  (parseInt(st25.strikeOuts)||0)/pa25);
@@ -334,7 +329,6 @@ function blendBatterStats(st26, st25) {
     homeRuns:    Math.round(hr_pg  * eff_gp),
     rbi:         Math.round(rbi_pg * eff_gp),
     runs:        Math.round(r_pg   * eff_gp),
-    stolenBases: Math.round(sb_pg  * eff_gp),
     baseOnBalls: Math.round(bb_ppa * eff_pa),
     strikeOuts:  Math.round(k_ppa  * eff_pa),
     hits:        Math.round(h_pab  * eff_ab),
@@ -609,7 +603,6 @@ const SCORE_TOOLTIP = {
   hr:       'EdgeScore — likelihood of hitting a home run today',
   runs:     'EdgeScore — likelihood of scoring a run today',
   rbi:      'EdgeScore — likelihood of recording an RBI today',
-  sb:       'EdgeScore — likelihood of stealing a base today',
   pitching: 'EdgeScore — projected strikeout edge vs book line',
 };
 
@@ -633,7 +626,6 @@ function AutoPlayerCard({ player, category, rank }) {
   const dispObp  = d.obp       ?? player.obp;
   const dispHR   = d.homeRuns  ?? player.homeRuns;
   const dispRBI  = d.rbi       ?? player.rbi;
-  const dispSB   = d.stolenBases ?? player.stolenBases;
   const dispGP   = d.gamesPlayed ?? player.gamesPlayed;
 
   const avgC    = statCls(dispAvg ?? 0, 0.280, 0.250);
@@ -676,13 +668,6 @@ function AutoPlayerCard({ player, category, rank }) {
           <StatBadge label="ERA"  value={fmt(player.era,  2)} cls={eraCls(player.era)}  />
           <StatBadge label="WHIP" value={fmt(player.whip, 2)} cls={whipCls(player.whip)} />
           <StatBadge label="K/9"  value={fmt(player.k9,   1)} cls={k9C}                  />
-        </div>
-      ) : category === 'sb' ? (
-        <div className="grid grid-cols-4 gap-1">
-          <StatBadge label="SB"   value={dispSB ?? '—'} cls={statCls(dispSB??0,20,10)} />
-          <StatBadge label="SB/G" value={dispGP>0?fmt((dispSB||0)/dispGP,2):'—'} cls={statCls((dispSB||0)/Math.max(dispGP||1,1),0.25,0.10)} />
-          <StatBadge label="AVG"  value={fmt(dispAvg,3)} cls={avgC} />
-          <StatBadge label="Streak" value={player.streakLoading?'…':(player.streak??'—')} cls={streakC} />
         </div>
       ) : (
         <div className="grid grid-cols-4 gap-1">
@@ -814,11 +799,6 @@ const CATEGORIES = [
       <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
     </svg>
   )},
-  { id:'sb',       label:'Stolen Bases', icon:(
-    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-    </svg>
-  )},
   { id:'pitching', label:'Pitching',     icon:(
     <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="12" cy="12" r="10"/><path d="M12 8c-2.5 0-4 1.5-4 4s1.5 4 4 4 4-1.5 4-4"/>
@@ -827,7 +807,7 @@ const CATEGORIES = [
 ];
 
 // Maps dashboard category → player page cat param
-const CAT_TO_PLAYER_TAB = { hitting:'hits', hr:'hr', runs:'runs', rbi:'rbi', sb:'sb', pitching:null };
+const CAT_TO_PLAYER_TAB = { hitting:'hits', hr:'hr', runs:'runs', rbi:'rbi', pitching:null };
 
 // ─── Main Dashboard Page ──────────────────────────────────────────────────────
 export default function DashboardPage() {
@@ -852,6 +832,7 @@ export default function DashboardPage() {
   const [selectedTeamId,   setSelectedTeamId]  = useState('');
   const [roster,           setRoster]          = useState([]);
   const [selectedPlayerId, setSelectedPlayerId]= useState('');
+  const [playerSearch,     setPlayerSearch]    = useState('');
   const [researchList,     setResearchList]    = useState([]);
   const [teamsLoading,     setTeamsLoading]    = useState(false);
   const [rosterLoading,    setRosterLoading]   = useState(false);
@@ -870,13 +851,19 @@ export default function DashboardPage() {
       const p = boardPlayers.find(p => p.playerId === Number(selectedPlayerId));
       return p ? [p] : [];
     }
+    if (playerSearch.trim()) {
+      const q = playerSearch.toLowerCase();
+      return [...boardPlayers]
+        .filter(p => p.fullName.toLowerCase().includes(q) && (p.scores?.[category] ?? 0) > 0)
+        .sort((a, b) => (b.scores?.[category] ?? 0) - (a.scores?.[category] ?? 0));
+    }
     if (selectedTeamId) {
       return [...boardPlayers]
         .filter(p => p.teamId === Number(selectedTeamId) && (p.scores?.[category] ?? 0) > 0)
         .sort((a, b) => (b.scores?.[category] ?? 0) - (a.scores?.[category] ?? 0));
     }
     return currentBoard;
-  }, [boardPlayers, selectedTeamId, selectedPlayerId, category, currentBoard]);
+  }, [boardPlayers, selectedTeamId, selectedPlayerId, playerSearch, category, currentBoard]);
 
   // ── Load daily board ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -1117,7 +1104,6 @@ export default function DashboardPage() {
             homeRuns:     parseInt(r26.homeRuns)       || 0,
             rbi:          parseInt(r26.rbi)            || 0,
             runs:         parseInt(r26.runs)           || 0,
-            stolenBases:  parseInt(r26.stolenBases)    || 0,
             gamesPlayed:  parseInt(r26.gamesPlayed)    || 0,
           } : null;
           allPlayers.push({
@@ -1138,7 +1124,6 @@ export default function DashboardPage() {
               hr:       computeProjectionScore(playerWithCtx, 'hr'),
               runs:     computeProjectionScore(playerWithCtx, 'runs'),
               rbi:      computeProjectionScore(playerWithCtx, 'rbi'),
-              sb:       computeProjectionScore(playerWithCtx, 'sb'),
               pitching: 0,
             },
             battingOrder:  null,
@@ -1170,7 +1155,7 @@ export default function DashboardPage() {
             k9:            myPitcher.k9,
             pitcherStarts: myPitcher.starts || [],
             matchup:       { isHome, oppAbbrev: oppAbbrevP, pitcher: null },
-            scores:        { hitting:0, hr:0, runs:0, rbi:0, sb:0, pitching: pitchingScore },
+            scores:        { hitting:0, hr:0, runs:0, rbi:0, pitching: pitchingScore },
             streak:        null,
             streakLoading: false,
           });
@@ -1189,7 +1174,7 @@ export default function DashboardPage() {
       // 6. Enrichment phase — run in parallel (non-blocking)
       // topIds: top 40 per category — wider net covers rank shifts after Statcast/streak enrichment
       const topIds = new Set();
-      for (const cat of ['hitting','hr','runs','rbi','sb']) {
+      for (const cat of ['hitting','hr','runs','rbi']) {
         [...dedupedPlayers]
           .filter(p=>p.scores[cat]>0)
           .sort((a,b)=>b.scores[cat]-a.scores[cat])
@@ -1514,6 +1499,7 @@ export default function DashboardPage() {
   function clearAll() {
     setSelectedTeamId('');
     setSelectedPlayerId('');
+    setPlayerSearch('');
     setResearchList([]);
   }
 
@@ -1614,7 +1600,21 @@ export default function DashboardPage() {
             );
           })}
           <div className="flex items-center gap-2 ml-auto flex-wrap">
-            <select value={selectedTeamId} onChange={e=>{setSelectedTeamId(e.target.value);setSelectedPlayerId('');}} disabled={teamsLoading}
+            {!selectedTeamId && (
+              <div className="relative">
+                <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-600 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+                </svg>
+                <input
+                  type="text"
+                  placeholder="Search player…"
+                  value={playerSearch}
+                  onChange={e => setPlayerSearch(e.target.value)}
+                  className="rounded-lg border border-gray-700 bg-gray-900 pl-8 pr-3 py-2 text-xs font-bold text-gray-300 outline-none focus:border-blue-500 placeholder-gray-600 w-40"
+                />
+              </div>
+            )}
+            <select value={selectedTeamId} onChange={e=>{setSelectedTeamId(e.target.value);setSelectedPlayerId('');setPlayerSearch('');}} disabled={teamsLoading}
               className="rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-xs font-bold text-gray-300 outline-none focus:border-blue-500 cursor-pointer disabled:opacity-50">
               <option value="">{teamsLoading?'Loading…':'All Teams'}</option>
               {teams.sort((a,b)=>a.name.localeCompare(b.name)).map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
@@ -1626,7 +1626,7 @@ export default function DashboardPage() {
                 {roster.map(p=><option key={p.id} value={p.id}>{p.fullName} ({p.position})</option>)}
               </select>
             )}
-            {(selectedTeamId || researchList.length > 0) && (
+            {(selectedTeamId || playerSearch || researchList.length > 0) && (
               <button onClick={clearAll}
                 className="px-3 py-2 rounded-lg text-xs font-bold bg-gray-900 border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 transition-all">
                 ✕ Clear
