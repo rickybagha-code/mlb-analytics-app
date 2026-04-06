@@ -226,12 +226,16 @@ function computeProjectionScore(player, category) {
     base = 50 + (adjustedPHR - 0.127) * 175;
 
   } else if (category === 'runs') {
-    const rComp         = Math.max(-15, Math.min(25, (r / gp - 0.45) * 55));
-    const obpComp       = Math.max(0,   Math.min(15, (obp - 0.317) / 0.100 * 12));
+    if (pa < 100) return 60;
+    const rComp         = Math.max(-25, Math.min(25, (r / gp - 0.45) * 55));
+    const obpComp       = Math.max(-8,  Math.min(15, (obp - 0.317) / 0.100 * 12));
     const hardBonus     = hardHitPct != null ? Math.max(0, Math.min(5, (hardHitPct - 40) / 18 * 5)) : 0;
     const splitOBPbonus = splitOBP != null && obp > 0
       ? Math.max(-8, Math.min(10, (splitOBP - obp) / obp * 30)) : 0;
-    base = 40 + rComp + obpComp + hardBonus + pitcherMod + splitOBPbonus + weatherBonus;
+    // Batting order — lineup slot posted ~2-3h before first pitch
+    const ORDER_RUNS = { 1:8, 2:5, 3:2, 4:0, 5:-2, 6:-4, 7:-7, 8:-9, 9:-10 };
+    const orderRunsBonus = player.battingOrder != null ? (ORDER_RUNS[player.battingOrder] ?? 0) : 0;
+    base = 40 + rComp + obpComp + hardBonus + pitcherMod + splitOBPbonus + weatherBonus + orderRunsBonus;
 
   } else if (category === 'rbi') {
     const rbiComp       = Math.max(-15, Math.min(35, (rbi / gp - 0.45) * 70));
@@ -240,7 +244,10 @@ function computeProjectionScore(player, category) {
     const xwobaBonus    = xwoba != null ? Math.max(0, Math.min(8, (xwoba - 0.315) / 0.100 * 8)) : 0;
     const splitSLGbonus = splitSLG != null && slg > 0
       ? Math.max(-8, Math.min(10, (splitSLG - slg) / slg * 30)) : 0;
-    base = 38 + rbiComp + slgComp + hrComp + xwobaBonus + pitcherMod + splitSLGbonus + weatherBonus;
+    // Batting order — cleanup/3-5 hitters drive in more runs; leadoff fewer
+    const ORDER_RBI = { 1:-7, 2:-3, 3:5, 4:8, 5:5, 6:2, 7:0, 8:-3, 9:-5 };
+    const orderRbiBonus = player.battingOrder != null ? (ORDER_RBI[player.battingOrder] ?? 0) : 0;
+    base = 38 + rbiComp + slgComp + hrComp + xwobaBonus + pitcherMod + splitSLGbonus + weatherBonus + orderRbiBonus;
 
   } else if (category === 'sb') {
     const sbRate = player.stolenBases != null && gp > 0 ? player.stolenBases / gp : 0;
@@ -644,7 +651,14 @@ function AutoPlayerCard({ player, category, rank }) {
         <div className="flex-1 min-w-0">
           <p className="text-sm font-bold text-white truncate">{player.fullName}</p>
           <p className="text-xs text-gray-500">{player.position} · {player.teamAbbrev || player.teamName}</p>
-          {matchupTxt && <p className="text-xs text-blue-400 mt-0.5 truncate">{matchupTxt}</p>}
+          {matchupTxt && (
+            <p className="text-xs text-blue-400 mt-0.5 truncate">
+              {matchupTxt}
+              {player.battingOrder != null && !isPitcher && (
+                <span className="ml-1.5 text-gray-500">· Bats {player.battingOrder}{['st','nd','rd'][player.battingOrder-1]||'th'}</span>
+              )}
+            </p>
+          )}
         </div>
         <div className="relative group flex-shrink-0 text-center">
           <ScoreRing score={score} size={44} />
@@ -1125,6 +1139,7 @@ export default function DashboardPage() {
               sb:       computeProjectionScore(playerWithCtx, 'sb'),
               pitching: 0,
             },
+            battingOrder:  null,
             streak:        null,
             l10Avg:        null,
             streakLoading: true,
@@ -1185,6 +1200,7 @@ export default function DashboardPage() {
       fetchStreaks([...topIds]);
       fetchWeatherData(games, teamMap);
       fetchPlatoonSplits([...topIds]);
+      fetchLineups(games, today);
 
     } catch (err) {
       setBoardError(err.message || 'Failed to load today\'s board');
@@ -1321,6 +1337,56 @@ export default function DashboardPage() {
         return { ...updated, scores: newScores };
       }));
     } catch {}
+  }
+
+  async function fetchLineups(games, today) {
+    // Only attempt if we're within 4 hours of the earliest game — lineups post ~2-3h before first pitch
+    const gameTimes = games.map(g => new Date(g.gameDate).getTime()).filter(t => !isNaN(t));
+    if (!gameTimes.length) return;
+    const firstPitch = Math.min(...gameTimes);
+    if (Date.now() < firstPitch - 4 * 60 * 60 * 1000) return;
+
+    const cKey = `mlb_lineups_${today}`;
+    const cached = getCached(cKey, 2 * 60 * 60 * 1000);
+    if (cached) {
+      applyLineupMap(cached);
+      return;
+    }
+
+    // Fetch boxscore for every game in parallel — lineup data lives there
+    const lineupMap = {}; // playerId → battingOrder slot (1-9)
+    await Promise.allSettled(
+      games.filter(g => g.gamePk).map(async g => {
+        try {
+          const r = await fetch(`${MLB_API}/game/${g.gamePk}/boxscore`);
+          if (!r.ok) return;
+          const d = await r.json();
+          for (const side of ['home', 'away']) {
+            for (const player of Object.values(d.teams?.[side]?.players ?? {})) {
+              const bo = parseInt(player.battingOrder);
+              if (bo > 0) lineupMap[player.person.id] = Math.round(bo / 100);
+            }
+          }
+        } catch {}
+      })
+    );
+
+    if (Object.keys(lineupMap).length === 0) return;
+    setCached(cKey, lineupMap);
+    applyLineupMap(lineupMap);
+  }
+
+  function applyLineupMap(lineupMap) {
+    setBoardPlayers(prev => prev.map(p => {
+      const slot = lineupMap[p.playerId] ?? null;
+      if (slot === p.battingOrder) return p;
+      const updated = { ...p, battingOrder: slot };
+      const newScores = { ...p.scores };
+      for (const cat of ['runs', 'rbi']) {
+        if (newScores[cat] > 0) newScores[cat] = computeProjectionScore(updated, cat);
+      }
+      return { ...updated, scores: newScores };
+    }));
   }
 
   async function fetchStatcastData() {

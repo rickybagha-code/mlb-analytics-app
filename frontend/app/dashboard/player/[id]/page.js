@@ -207,14 +207,17 @@ function computeProjectionScore(player, category) {
     // Center at league avg pHR (0.127) → 50; max (0.30, elite tier) → ~80; keeps HR below hits
     base = 50 + (adjustedPHR - 0.127) * 175;
   } else if (category === 'runs') {
-    const rComp      = Math.max(-15, Math.min(25, (r / gp - 0.45) * 55));
-    const obpComp    = Math.max(0,   Math.min(15, (obp - 0.317) / 0.100 * 12));
+    if (pa < 100) return 60;
+    const rComp      = Math.max(-25, Math.min(25, (r / gp - 0.45) * 55));
+    const obpComp    = Math.max(-8,  Math.min(15, (obp - 0.317) / 0.100 * 12));
     const hardBonus  = hardHitPct != null ? Math.max(0, Math.min(5, (hardHitPct - 40) / 18 * 5)) : 0;
     // Handedness split on OBP — how much better/worse they get on base vs today's pitcher hand
     const splitOBPbonus = (player.splitOBP != null && obp > 0)
       ? Math.max(-8, Math.min(10, (player.splitOBP - obp) / obp * 30))
       : 0;
-    base = 40 + rComp + obpComp + hardBonus + pitcherMod + splitOBPbonus + weatherBonus;
+    const ORDER_RUNS = { 1:8, 2:5, 3:2, 4:0, 5:-2, 6:-4, 7:-7, 8:-9, 9:-10 };
+    const orderRunsBonus = player.battingOrder != null ? (ORDER_RUNS[player.battingOrder] ?? 0) : 0;
+    base = 40 + rComp + obpComp + hardBonus + pitcherMod + splitOBPbonus + weatherBonus + orderRunsBonus;
   } else if (category === 'rbi') {
     const rbiComp    = Math.max(-15, Math.min(35, (rbi / gp - 0.45) * 70));
     const slgComp    = Math.max(0,   Math.min(15, (slg - 0.400) / 0.200 * 15));
@@ -224,7 +227,9 @@ function computeProjectionScore(player, category) {
     const splitSLGbonus = (player.splitSLG != null && slg > 0)
       ? Math.max(-8, Math.min(10, (player.splitSLG - slg) / slg * 30))
       : 0;
-    base = 38 + rbiComp + slgComp + hrComp + xwobaBonus + pitcherMod + splitSLGbonus + weatherBonus;
+    const ORDER_RBI = { 1:-7, 2:-3, 3:5, 4:8, 5:5, 6:2, 7:0, 8:-3, 9:-5 };
+    const orderRbiBonus = player.battingOrder != null ? (ORDER_RBI[player.battingOrder] ?? 0) : 0;
+    base = 38 + rbiComp + slgComp + hrComp + xwobaBonus + pitcherMod + splitSLGbonus + weatherBonus + orderRbiBonus;
   }
   // Shrink score toward 50 for thin sample sizes.
   // HR is exempt: pHR already has three internal shrinkage layers (sampleWeight, hrSampleWeight,
@@ -2500,6 +2505,7 @@ export default function PlayerDetailPage() {
   const [resolvedPitcherName, setResolvedPitcherName] = useState('');
   const [resolvedOppAbbrev,   setResolvedOppAbbrev]   = useState('');
   const [resolvedIsHome,      setResolvedIsHome]      = useState(false);
+  const [battingOrder,        setBattingOrder]        = useState(null);
 
   // Effective matchup context — URL params take priority; resolved values used when navigating directly
   const effectivePitcherId   = spPitcherId   || resolvedPitcherId;
@@ -2726,6 +2732,26 @@ export default function PlayerDetailPage() {
                     if (activePitcherName) {
                       setPitcher({ id: activePitcherId, name: activePitcherName, hand: activePitcherHand });
                     }
+                    // Fetch batting order from boxscore if within 4h of first pitch
+                    if (game.gamePk && game.gameDate) {
+                      const firstPitch = new Date(game.gameDate).getTime();
+                      if (!isNaN(firstPitch) && Date.now() >= firstPitch - 4 * 60 * 60 * 1000) {
+                        try {
+                          const bsRes = await fetch(`${MLB_API}/game/${game.gamePk}/boxscore`);
+                          if (bsRes.ok) {
+                            const bsData = await bsRes.json();
+                            const pId = parseInt(id);
+                            for (const side of ['home', 'away']) {
+                              const playerEntry = bsData.teams?.[side]?.players?.[`ID${pId}`];
+                              if (playerEntry?.battingOrder) {
+                                setBattingOrder(Math.round(parseInt(playerEntry.battingOrder) / 100));
+                                break;
+                              }
+                            }
+                          }
+                        } catch {}
+                      }
+                    }
                   }
                 }
               } catch {}
@@ -2862,8 +2888,9 @@ export default function PlayerDetailPage() {
       weather,
       streak:  recencyStreak,
       l10Avg:  recencyL10Avg,
-      h2hAB:   h2hData?.careerMatchup ? (parseInt(h2hData.careerMatchup.atBats)  || 0)    : 0,
-      h2hAVG:  h2hData?.careerMatchup ? (parseFloat(h2hData.careerMatchup.avg)   || null) : null,
+      h2hAB:        h2hData?.careerMatchup ? (parseInt(h2hData.careerMatchup.atBats)  || 0)    : 0,
+      h2hAVG:       h2hData?.careerMatchup ? (parseFloat(h2hData.careerMatchup.avg)   || null) : null,
+      battingOrder: battingOrder ?? null,
       ...((() => {
         // Effective hand: URL param → resolved auto-fetch → fetched pitcher object
         const hand = effectivePitcherHand || pitcher?.hand || pitcher?.pitchHand || '';
@@ -2877,7 +2904,7 @@ export default function PlayerDetailPage() {
         };
       })()),
     }, modelCat);
-  }, [cat, seasonStats, statcast, pitcher, recencyStreak, recencyL10Avg, weather, hrProj, h2hData, splits, effectivePitcherHand]);
+  }, [cat, seasonStats, statcast, pitcher, recencyStreak, recencyL10Avg, weather, hrProj, h2hData, splits, effectivePitcherHand, battingOrder]);
 
   // ── Relevant split (vs today's pitcher hand) ──────────────────────────────
   const relevantSplit = useMemo(() => {
@@ -3017,6 +3044,9 @@ export default function PlayerDetailPage() {
                   {effectiveIsHome ? 'vs' : '@'} {effectiveOppAbbrev}
                   {pitcher?.name && ` · ${effectivePitcherHand || ''}HP ${pitcher.name.split(' ').slice(-1)[0]}`}
                   {pitcher?.stats?.era && <span className="text-gray-500 ml-1">({fmt(pitcher.stats.era,2)} ERA)</span>}
+                  {battingOrder != null && !isPitcherView && (
+                    <span className="ml-2 text-gray-500">· Bats {battingOrder}{['st','nd','rd'][battingOrder-1]||'th'}</span>
+                  )}
                 </p>
               )}
             </div>
