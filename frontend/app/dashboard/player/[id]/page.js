@@ -172,19 +172,9 @@ function computeProjectionScore(player, category) {
     const splitShift   = (player.splitSLG != null && slg > 0) ? Math.max(-0.04, Math.min(0.08, (player.splitSLG / slg - 1.0) * 0.22)) : 0;
     const h2hShift     = (() => {
       const hAB  = player.h2hAB  ?? 0;
-      const hHR  = player.h2hHR  ?? 0;
-      const hSlg = player.h2hSlg ?? null;
-      if (hAB < 15) return 0;
-      const abWeight = Math.min(1.0, (hAB - 15) / 45);
-      const h2hHRrate   = hHR / hAB;
-      const seasonHRrate = ab > 0 ? hr / ab : 0;
-      const hrRateShift = seasonHRrate > 0
-        ? Math.max(-0.04, Math.min(0.05, (h2hHRrate / seasonHRrate - 1.0) * 0.10 * abWeight))
-        : 0;
-      const slgShift = hSlg && slg > 0
-        ? Math.max(-0.02, Math.min(0.03, (hSlg / slg - 1.0) * 0.06 * abWeight))
-        : 0;
-      return hrRateShift + slgShift;
+      const hAVG = player.h2hAVG ?? null;
+      if (hAB < 8 || hAVG == null) return 0;
+      return Math.max(-0.06, Math.min(0.03, (hAVG - avg) / Math.max(avg, 0.01) * 0.10));
     })();
     const pitcherHRShift = Math.max(-0.03, Math.min(0.03, pitcherMod * 0.003));
     const wxWind    = player.weather ?? null;
@@ -2884,24 +2874,12 @@ export default function PlayerDetailPage() {
       // hrProj.pHR already includes barrel/park/platoon/wind from useHRProjection
       const pHR = Math.min(0.40, hrProj.pHR / 100);
       const h2hMatch  = h2hData?.careerMatchup;
-      const h2hAB     = h2hMatch ? (parseInt(h2hMatch.atBats)   || 0) : 0;
-      const h2hHR     = h2hMatch ? (parseInt(h2hMatch.homeRuns) || 0) : 0;
-      const h2hSLG    = h2hMatch ? (parseFloat(h2hMatch.slg)    || null) : null;
-      const seasonSLG = parseFloat(st.slg) || 0;
-      const seasonAB  = parseInt(st.atBats) || 1;
-      const seasonHR  = parseInt(st.homeRuns) || 0;
+      const h2hAB     = h2hMatch ? (parseInt(h2hMatch.atBats) || 0) : 0;
+      const h2hAVG    = h2hMatch ? (parseFloat(h2hMatch.avg)  || null) : null;
+      const seasonAVG = parseFloat(st.avg) || 0;
       let h2hShift = 0;
-      if (h2hAB >= 15) {
-        const abWeight = Math.min(1.0, (h2hAB - 15) / 45);
-        const h2hHRrate    = h2hHR / h2hAB;
-        const seasonHRrate = seasonHR / seasonAB;
-        const hrRateShift  = seasonHRrate > 0
-          ? Math.max(-0.04, Math.min(0.05, (h2hHRrate / seasonHRrate - 1.0) * 0.10 * abWeight))
-          : 0;
-        const slgShift = h2hSLG && seasonSLG > 0
-          ? Math.max(-0.02, Math.min(0.03, (h2hSLG / seasonSLG - 1.0) * 0.06 * abWeight))
-          : 0;
-        h2hShift = hrRateShift + slgShift;
+      if (h2hAVG != null && h2hAB >= 8 && seasonAVG > 0) {
+        h2hShift = Math.max(-0.06, Math.min(0.03, (h2hAVG - seasonAVG) / seasonAVG * 0.10));
       }
       // Raised cap (0.30→0.40) + lower multiplier (175→130) reserves 80+ for genuine elite
       const adjustedPHR = Math.min(0.40, Math.max(0.005, pHR + h2hShift));
