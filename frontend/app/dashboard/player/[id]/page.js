@@ -983,7 +983,7 @@ class ProjectionErrorBoundary extends React.Component {
   }
 }
 
-function useKProjection(pitcherStarts, seasonStats, oppTeamAbbrev, pitcherSavant) {
+function useKProjection(pitcherStarts, seasonStats, oppTeamAbbrev, pitcherSavant, homeAbbrev) {
   return useMemo(() => {
     if (!pitcherStarts?.length) return null;
     const last5  = pitcherStarts.slice(-5);
@@ -995,7 +995,11 @@ function useKProjection(pitcherStarts, seasonStats, oppTeamAbbrev, pitcherSavant
     const k9 = parseFloat(seasonStats?.strikeoutsPer9Inn) || null;
     const seasonK = k9 != null ? k9 / 9 * avgL5IP : null;
     const leagueK = 5.5;
-    const raw = l5K * 0.60 + (seasonK ?? leagueK) * 0.30 + leagueK * 0.10;
+    // Early-season blend: ramp L5 weight 0.30→0.60 over first 5 starts in 2026
+    const starts26  = pitcherStarts.filter(s => s.date?.startsWith('2026')).length;
+    const l5Weight  = Math.min(0.60, 0.30 + (starts26 / 5) * 0.30);
+    const sznWeight = 0.90 - l5Weight;
+    const raw = l5K * l5Weight + (seasonK ?? leagueK) * sznWeight + leagueK * 0.10;
     // Savant additive shifts
     const LG_WHIFF = 24.0;
     const whiffShift = pitcherSavant?.whiffPct != null
@@ -1015,7 +1019,10 @@ function useKProjection(pitcherStarts, seasonStats, oppTeamAbbrev, pitcherSavant
     // Opponent team K rate adjustment
     const oppKRate   = TEAM_K_RATES[oppTeamAbbrev] || LG_K_RATE;
     const oppKFactor = oppKRate / LG_K_RATE;
-    const adj      = Math.round(projected * restFactor * oppKFactor * 10) / 10;
+    // Park K factor — uses PARK_FACTORS[].k (already in this file)
+    const normHome    = homeAbbrev ? normAbbrev(homeAbbrev) : null;
+    const parkKFactor = normHome ? (PARK_FACTORS[normHome]?.k ?? 1.0) : 1.0;
+    const adj      = Math.round(projected * restFactor * oppKFactor * parkKFactor * 10) / 10;
     const lower80  = Math.max(0, Math.round((adj - 1.28 * kStdDev) * 10) / 10);
     const upper80  = Math.round((adj + 1.28 * kStdDev) * 10) / 10;
     const projectedOuts = Math.round(avgL5IP * 3 * 10) / 10;
@@ -1026,11 +1033,12 @@ function useKProjection(pitcherStarts, seasonStats, oppTeamAbbrev, pitcherSavant
       ? `WhiffRate ${pitcherSavant.whiffPct != null ? pitcherSavant.whiffPct.toFixed(1)+'%' : 'n/a'} · K% ${pitcherSavant.kPct != null ? pitcherSavant.kPct.toFixed(1)+'%' : 'n/a'}`
       : null;
     const factorImpacts = [
-      { label:'L5 K avg',         impact: Math.round((l5K - leagueK) * 0.60 * 10)/10,                      dir: l5K > leagueK ? '↑' : l5K < leagueK ? '↓' : '—' },
-      { label:'Season K/start',   impact: seasonK != null ? Math.round((seasonK - leagueK)*0.30*10)/10 : 0, dir: (seasonK??leagueK) > leagueK ? '↑' : '↓', note: seasonK == null ? 'using L5 only' : null },
+      { label:`L5 K avg`,         impact: Math.round((l5K - leagueK) * l5Weight * 10)/10,                        dir: l5K > leagueK ? '↑' : l5K < leagueK ? '↓' : '—' },
+      { label:'Season K/start',   impact: seasonK != null ? Math.round((seasonK - leagueK)*sznWeight*10)/10 : 0, dir: (seasonK??leagueK) > leagueK ? '↑' : '↓', note: seasonK == null ? 'using L5 only' : starts26 < 5 ? `${starts26} 2026 starts` : null },
       { label:'Opp team K rate',  impact: Math.round((oppKFactor-1)*projected*10)/10, dir: oppKFactor>1?'↑':'↓', note: !oppTeamAbbrev?'opp unknown':null },
       { label:'SwStr% / K%',      impact: Math.round((whiffShift + kPctShift) * 10)/10, dir: (whiffShift+kPctShift)>0?'↑':(whiffShift+kPctShift)<0?'↓':'—', note: savantNote ?? 'Savant — no data' },
       { label:'Rest adj',         impact: Math.round((restFactor - 1) * projected * 10)/10, dir: restFactor > 1 ? '↑' : restFactor < 1 ? '↓' : '—' },
+      ...(parkKFactor !== 1.0 ? [{ label:'Park K factor', impact: Math.round((parkKFactor-1)*projected*10)/10, dir: parkKFactor>1?'↑':'↓', note: normHome ?? null }] : []),
     ];
     return {
       projected: adj, lower80, upper80, kStdDev: Math.round(kStdDev*10)/10,
@@ -1039,7 +1047,7 @@ function useKProjection(pitcherStarts, seasonStats, oppTeamAbbrev, pitcherSavant
       confidence, restFactor, daysRest, l5Ks, l5IPValues: l5IP,
       factorImpacts, hasSeasStats: seasonK != null, oppKFactor, oppKRate,
     };
-  }, [pitcherStarts, seasonStats, oppTeamAbbrev, pitcherSavant]);
+  }, [pitcherStarts, seasonStats, oppTeamAbbrev, pitcherSavant, homeAbbrev]);
 }
 
 function PoissonBarChart({ lambda, bookLine }) {
@@ -1098,7 +1106,7 @@ function EVGaugeSVG({ evPct }) {
   );
 }
 
-function ProjectionEVCard({ pitcherStarts, seasonStats, oppTeamAbbrev, prizePicksLine, pitcherSavant, playerName }) {
+function ProjectionEVCard({ pitcherStarts, seasonStats, oppTeamAbbrev, homeAbbrev, prizePicksLine, pitcherSavant, playerName }) {
   const [bookLine,  setBookLine]  = useState('');
   const [overOdds,  setOverOdds]  = useState('-115');
   const [underOdds, setUnderOdds] = useState('-115');
@@ -1170,7 +1178,7 @@ function ProjectionEVCard({ pitcherStarts, seasonStats, oppTeamAbbrev, prizePick
     return () => clearTimeout(t);
   }, [bookLine]);
 
-  const proj   = useKProjection(pitcherStarts, seasonStats, oppTeamAbbrev, pitcherSavant);
+  const proj   = useKProjection(pitcherStarts, seasonStats, oppTeamAbbrev, pitcherSavant, homeAbbrev);
   const line   = parseFloat(debLine) || null;
   const oOdds  = parseInt(overOdds)  || -115;
   const uOdds  = parseInt(underOdds) || -115;
@@ -2968,7 +2976,8 @@ export default function PlayerDetailPage() {
   }, [isPitcherView, seasonStats]);
 
   // Page-level K projection (mirrors ProjectionEVCard)
-  const pageKProj = useKProjection(isPitcherView ? pitcherStarts : [], isPitcherView ? seasonStats : null, effectiveOppAbbrev, isPitcherView ? pitcherSavant : null);
+  const pitcherHomeAbbrev = effectiveIsHome ? normAbbrev(playerInfo.teamAbbrev || spTeamAbbrev) : normAbbrev(effectiveOppAbbrev);
+  const pageKProj = useKProjection(isPitcherView ? pitcherStarts : [], isPitcherView ? seasonStats : null, effectiveOppAbbrev, isPitcherView ? pitcherSavant : null, isPitcherView ? pitcherHomeAbbrev : null);
   const kProjScore = useMemo(() => {
     if (!isPitcherView || !pageKProj) return null;
     return pitcherScoreFromKProj(pageKProj.projected, ppLines?.strikeouts ?? null);
@@ -3204,6 +3213,7 @@ export default function PlayerDetailPage() {
                 pitcherStarts={pitcherStarts}
                 seasonStats={seasonStats}
                 oppTeamAbbrev={effectiveOppAbbrev}
+                homeAbbrev={pitcherHomeAbbrev}
                 prizePicksLine={ppLines?.strikeouts ?? null}
                 pitcherSavant={pitcherSavant}
                 playerName={playerInfo.fullName}

@@ -379,7 +379,11 @@ function computeKProjection(starts, k9, oppTeamAbbrev, pitcherSavant, homeAbbrev
   const avgL5IP = Math.max(1, l5IP.reduce((a, b) => a + b, 0) / l5IP.length);
   const seasonK = k9 != null ? k9 / 9 * avgL5IP : null;
   const leagueK = 5.5;
-  const raw = l5K * 0.60 + (seasonK ?? leagueK) * 0.30 + leagueK * 0.10;
+  // Early-season blend: ramp L5 weight 0.30→0.60 over first 5 starts in 2026
+  const starts26  = starts.filter(s => s.date?.startsWith('2026')).length;
+  const l5Weight  = Math.min(0.60, 0.30 + (starts26 / 5) * 0.30);
+  const sznWeight = 0.90 - l5Weight;
+  const raw = l5K * l5Weight + (seasonK ?? leagueK) * sznWeight + leagueK * 0.10;
 
   // ── Savant SwStr% (whiff rate) signal — strongest K predictor ──
   // whiff_percent = swinging strikes / swings, LG avg ~24%
@@ -908,10 +912,10 @@ export default function DashboardPage() {
       if (p.position !== 'SP') return p;
       const ppMatch = findPPLines(p.fullName, ppLinesByName);
       if (!ppMatch?.strikeouts) return p;
-      const kProj   = computeKProjection(p.pitcherStarts, p.k9, p.matchup?.oppAbbrev);
+      const kProj   = computeKProjection(p.pitcherStarts, p.k9, p.matchup?.oppAbbrev, p.pitcherSavant ?? null, p.homeAbbrev ?? '');
       const newScore = (kProj != null ? pitcherKScore(kProj, ppMatch.strikeouts) : null)
         ?? scorePitcher({ era: p.era, whip: p.whip, k9: p.k9 }, ppMatch.strikeouts);
-      return { ...p, scores: { ...p.scores, pitching: newScore } };
+      return { ...p, ppKLine: ppMatch.strikeouts, scores: { ...p.scores, pitching: newScore } };
     }));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ppLinesByName, boardPlayers.length]);
@@ -1467,7 +1471,7 @@ export default function DashboardPage() {
           sc,
           p.homeAbbrev ?? ''
         );
-        const newPitchingScore = pitcherKScore(kProj) ?? p.scores.pitching;
+        const newPitchingScore = pitcherKScore(kProj, p.ppKLine ?? null) ?? p.scores.pitching;
         return {
           ...p,
           pitcherSavant: sc,
