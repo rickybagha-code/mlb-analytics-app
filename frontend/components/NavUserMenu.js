@@ -34,7 +34,7 @@ export default function NavUserMenu() {
       setUser(u);
       const { data } = await supabase
         .from('profiles')
-        .select('plan, current_period_end')
+        .select('plan, current_period_end, stripe_customer_id')
         .eq('id', u.id)
         .single();
       setProfile(data ?? { plan: 'free' });
@@ -142,12 +142,14 @@ export default function NavUserMenu() {
           {/* Upgrade / Manage */}
           <div className="px-4 py-3 border-b border-gray-800">
             {isPro ? (
+              profile?.stripe_customer_id ? (
               <button
                 onClick={handleManage}
                 className="w-full rounded-xl border border-gray-700 py-2 text-sm font-semibold text-gray-300 hover:border-gray-500 hover:text-white transition-all text-center"
               >
                 Manage Subscription →
               </button>
+              ) : null
             ) : (
               <div className="space-y-2">
                 <p className="text-xs text-gray-600 mb-2">Unlock full access with Pro</p>

@@ -206,6 +206,7 @@ function AccountContent() {
                   </div>
 
                   {isPro ? (
+                    profile?.stripe_customer_id ? (
                     <button
                       onClick={handleManage}
                       disabled={actionLoading}
@@ -213,6 +214,9 @@ function AccountContent() {
                     >
                       {actionLoading ? 'Loading…' : 'Manage Subscription →'}
                     </button>
+                    ) : (
+                      <p className="text-xs text-gray-600">Contact support@proprstats.com to manage your subscription.</p>
+                    )
                   ) : (
                     <div className="space-y-2">
                       <button
