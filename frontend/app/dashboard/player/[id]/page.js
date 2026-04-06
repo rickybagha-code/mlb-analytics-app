@@ -169,8 +169,8 @@ function computeProjectionScore(player, category) {
     const pHR     = 1 - Math.exp(-lambda);
     const barrelShift  = barrelPct != null ? Math.max(-0.03, Math.min(0.05, (barrelPct - 8.2) / 200)) : 0;
     const evoShift     = (player.exitVelo ?? null) != null ? Math.max(-0.02, Math.min(0.03, (player.exitVelo - 88.5) / 300)) : 0;
-    const parkShift    = (player.parkHR ?? null) != null ? Math.max(-0.06, Math.min(0.07, (player.parkHR - 1.0) * 0.35)) : 0;
-    const splitShift   = (player.splitSLG != null && slg > 0) ? Math.max(-0.04, Math.min(0.05, (player.splitSLG / slg - 1.0) * 0.15)) : 0;
+    const parkShift    = (player.parkHR ?? null) != null ? Math.max(-0.06, Math.min(0.10, (player.parkHR - 1.0) * 0.50)) : 0;
+    const splitShift   = (player.splitSLG != null && slg > 0) ? Math.max(-0.04, Math.min(0.08, (player.splitSLG / slg - 1.0) * 0.22)) : 0;
     const h2hShift     = (() => {
       const hAB  = player.h2hAB  ?? 0;
       const hHR  = player.h2hHR  ?? 0;
@@ -199,10 +199,10 @@ function computeProjectionScore(player, category) {
       const speedFactor = Math.min(0.04, ((wxWindSpd - 10) / 5) * 0.01 + 0.01);
       return isOut ? speedFactor : -speedFactor;
     })();
-    // Cap total situational shift at +0.10/−0.08; h2h kept separate (earned signal)
+    // Cap total situational shift at +0.14/−0.08; h2h kept separate (earned signal)
     const rawShift   = barrelShift + evoShift + parkShift + splitShift + pitcherHRShift + windShift;
-    const totalShift = Math.max(-0.08, Math.min(0.10, rawShift)) + h2hShift;
-    // Raised cap (0.30→0.40) + lower multiplier (175→130) reserves 80+ for genuine elite
+    const totalShift = Math.max(-0.08, Math.min(0.14, rawShift)) + h2hShift;
+    // pHR cap 0.40, multiplier 130 — reserves 80+ for genuine elite
     const adjustedPHR = Math.min(0.40, Math.max(0.005, pHR + totalShift));
     base = 50 + (adjustedPHR - 0.127) * 130;
   } else if (category === 'runs') {
@@ -2009,11 +2009,11 @@ function useHRProjection(gameLog, seasonStats, splits, statcast, pitcher, spPitc
     // scores align; only splits and H2H should cause the two views to differ.
     const pitcherShift = Math.max(-0.03, Math.min(0.03, (c.pitcherERA - LG.era) * 0.0075));
     const parkHR       = c.park?.hr || 1.0;
-    const parkShift    = Math.max(-0.06, Math.min(0.07, (parkHR - 1.0) * 0.35));
+    const parkShift    = Math.max(-0.06, Math.min(0.10, (parkHR - 1.0) * 0.50));
     const barrelShift  = Math.max(-0.03, Math.min(0.05, (c.barrelPct - LG.barrel) / 200));
     const evoShift     = c.exitVelo != null ? Math.max(-0.02, Math.min(0.03, (c.exitVelo - 88.5) / 300)) : 0;
     const splitShift   = c.splitSLG && c.seasonSLG > 0
-      ? Math.max(-0.04, Math.min(0.05, (c.splitSLG / c.seasonSLG - 1.0) * 0.15)) : 0;
+      ? Math.max(-0.04, Math.min(0.08, (c.splitSLG / c.seasonSLG - 1.0) * 0.22)) : 0;
     const wxWindSpd = Number(weather?.windSpeed ?? 0);
     const wxWindDir = Number(weather?.windDir ?? 0);
     const windShift = (() => {
@@ -2024,9 +2024,9 @@ function useHRProjection(gameLog, seasonStats, splits, statcast, pitcher, spPitc
       const speedFactor = Math.min(0.04, ((wxWindSpd - 10) / 5) * 0.01 + 0.01);
       return isOut ? speedFactor : -speedFactor;
     })();
-    // Cap total situational shift at +0.10/−0.08 to prevent all 6 factors simultaneously maxing
+    // Raised total cap (0.10→0.14) to let park + platoon combine properly
     const rawShift    = barrelShift + evoShift + parkShift + splitShift + pitcherShift + windShift;
-    const totalShift  = Math.max(-0.08, Math.min(0.10, rawShift));
+    const totalShift  = Math.max(-0.08, Math.min(0.14, rawShift));
     // Raised cap (0.30→0.40) + lower multiplier (175→130) reserved for genuine elite
     const adjustedPHR = Math.min(0.40, Math.max(0.005, pHR_base + totalShift));
     // Back-calculate lambda so Poisson chart is consistent with adjustedPHR

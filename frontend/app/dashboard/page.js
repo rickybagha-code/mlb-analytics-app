@@ -203,10 +203,12 @@ function computeProjectionScore(player, category) {
     const pHR    = 1 - Math.exp(-lambda);
     const barrelShift    = barrelPct != null ? Math.max(-0.03, Math.min(0.05, (barrelPct - 8.2) / 200)) : 0;
     const evoShift       = (player.exitVelo ?? null) != null ? Math.max(-0.02, Math.min(0.03, (player.exitVelo - 88.5) / 300)) : 0;
-    const parkShift      = (player.parkHR ?? null) != null ? Math.max(-0.06, Math.min(0.07, (player.parkHR - 1.0) * 0.35)) : 0;
+    // Park: raised multiplier (0.35→0.50) and cap (0.07→0.10) — Coors (1.38) and favorable parks deserve more credit
+    const parkShift      = (player.parkHR ?? null) != null ? Math.max(-0.06, Math.min(0.10, (player.parkHR - 1.0) * 0.50)) : 0;
     const pitcherHRShift = Math.max(-0.03, Math.min(0.03, pitcherMod * 0.003));
+    // Platoon: raised multiplier (0.15→0.22) and cap (0.05→0.08) — favorable hand matchup is a strong HR edge
     const platoonShift   = splitSLG != null && slg > 0
-      ? Math.max(-0.04, Math.min(0.05, (splitSLG / slg - 1.0) * 0.15)) : 0;
+      ? Math.max(-0.04, Math.min(0.08, (splitSLG / slg - 1.0) * 0.22)) : 0;
     const wxWind    = player.weather ?? null;
     const wxWindSpd = Number(wxWind?.windSpeed ?? 0);
     const wxWindDir = Number(wxWind?.windDir ?? 0);
@@ -218,10 +220,10 @@ function computeProjectionScore(player, category) {
       const speedFactor = Math.min(0.04, ((wxWindSpd - 10) / 5) * 0.01 + 0.01);
       return isOut ? speedFactor : -speedFactor;
     })();
-    // Cap total situational shift at ±0.10/−0.08 to prevent all 6 factors simultaneously maxing
+    // Raised total cap (0.10→0.14) to let park + platoon combine without being cut off
     const rawShift   = barrelShift + evoShift + parkShift + pitcherHRShift + platoonShift + windShift;
-    const totalShift = Math.max(-0.08, Math.min(0.10, rawShift));
-    // Raised pHR cap (0.30→0.40) + lower multiplier (175→130) reserves 80+ for genuine elite
+    const totalShift = Math.max(-0.08, Math.min(0.14, rawShift));
+    // pHR cap 0.40, multiplier 130 — reserves 80+ for genuine elite
     const adjustedPHR = Math.min(0.40, Math.max(0.005, pHR + totalShift));
     base = 50 + (adjustedPHR - 0.127) * 130;
 
