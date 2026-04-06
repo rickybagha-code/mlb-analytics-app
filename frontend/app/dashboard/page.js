@@ -160,6 +160,8 @@ function computeProjectionScore(player, category) {
   let base = 50;
 
   if (category === 'hitting') {
+    // Insufficient data guard — rookies / call-ups with < 100 PA have no reliable signal
+    if (pa < 100) return 60;
     // Contact-adjusted wOBA: reduce HR weight (2.101→1.3) since HRs don't add extra hits
     const hitWOBA = pa > 0
       ? (bb*0.690 + singles*0.888 + dbl*1.271 + tri*1.616 + hr*1.300) / pa
