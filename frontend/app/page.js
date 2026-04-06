@@ -901,7 +901,7 @@ const plans = [
       'Unlimited LineCheck — every prop, every game',
       'TrueContact™ — xwOBA, Barrel%, Hard-hit% on every player',
       'ProbMap™ on every prop — see the full distribution',
-      'Live PrizePicks lines — auto-filled into LineCheck',
+      'Live book lines — auto-filled from The Odds API',
       'Park factors + weather — built into every EdgeScore',
       'MatchupFile™ + PlatoonIQ™ on every player card',
       'Cancel anytime',
@@ -1132,14 +1132,14 @@ function Footer() {
           <div>
             <p className="text-xs font-bold uppercase tracking-widest text-gray-600 mb-3">Legal</p>
             <div className="flex flex-col gap-2">
-              <a href="#" className="text-sm text-gray-500 hover:text-white transition-colors">Terms of Service</a>
-              <a href="#" className="text-sm text-gray-500 hover:text-white transition-colors">Privacy Policy</a>
+              <Link href="/legal/terms" className="text-sm text-gray-500 hover:text-white transition-colors">Terms of Service</Link>
+              <Link href="/legal/privacy" className="text-sm text-gray-500 hover:text-white transition-colors">Privacy Policy</Link>
             </div>
           </div>
         </div>
 
         <div className="border-t border-white/5 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <p className="text-xs text-gray-700">© 2025 ProprStats. For research purposes only. Not financial advice.</p>
+          <p className="text-xs text-gray-700">© 2026 ProprStats. For research and informational purposes only. Not gambling or financial advice.</p>
           <p className="text-xs text-gray-700">Data: MLB Stats API · Baseball Savant · Open-Meteo — updated daily</p>
         </div>
       </div>

@@ -1,4 +1,5 @@
 User-agent: *
 Allow: /
 Disallow: /api/
+Disallow: /dashboard/player/
 Sitemap: https://proprstats.com/sitemap.xml
