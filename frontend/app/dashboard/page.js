@@ -192,7 +192,7 @@ function computeProjectionScore(player, category) {
       : LG_HRPA;
     const sampleWeight        = Math.min(1.0, pa_safe / 200);
     const effectiveSeasonHRpa = sampleWeight * seasonHRpa + (1 - sampleWeight) * talentHRpa;
-    const hrSampleWeight = Math.min(1.0, (player.pa26Raw ?? pa_safe) / 400);
+    const hrSampleWeight = Math.min(1.0, (player.pa26Raw ?? pa_safe) / 300);
     const l10Weight      = 0.35 * hrSampleWeight;
     const seasonHRWeight = 0.55 + (0.35 - l10Weight);
     const effectiveHR = l10HRrate != null
@@ -203,10 +203,8 @@ function computeProjectionScore(player, category) {
     const pHR    = 1 - Math.exp(-lambda);
     const barrelShift    = barrelPct != null ? Math.max(-0.03, Math.min(0.05, (barrelPct - 8.2) / 200)) : 0;
     const evoShift       = (player.exitVelo ?? null) != null ? Math.max(-0.02, Math.min(0.03, (player.exitVelo - 88.5) / 300)) : 0;
-    // Park: raised multiplier (0.35→0.50) and cap (0.07→0.10) — Coors (1.38) and favorable parks deserve more credit
     const parkShift      = (player.parkHR ?? null) != null ? Math.max(-0.06, Math.min(0.10, (player.parkHR - 1.0) * 0.50)) : 0;
     const pitcherHRShift = Math.max(-0.03, Math.min(0.03, pitcherMod * 0.003));
-    // Platoon: raised multiplier (0.15→0.22) and cap (0.05→0.08) — favorable hand matchup is a strong HR edge
     const platoonShift   = splitSLG != null && slg > 0
       ? Math.max(-0.04, Math.min(0.08, (splitSLG / slg - 1.0) * 0.22)) : 0;
     const wxWind    = player.weather ?? null;
@@ -220,8 +218,19 @@ function computeProjectionScore(player, category) {
       const speedFactor = Math.min(0.04, ((wxWindSpd - 10) / 5) * 0.01 + 0.01);
       return isOut ? speedFactor : -speedFactor;
     })();
-    // Raised total cap (0.10→0.14) to let park + platoon combine without being cut off
-    const rawShift   = barrelShift + evoShift + parkShift + pitcherHRShift + platoonShift + windShift;
+    // H2H — poor history vs today's specific pitcher pulls pHR down
+    const h2hAB  = player.h2hAB  ?? 0;
+    const h2hAVG = player.h2hAVG ?? null;
+    const h2hHRShift = h2hAVG != null && h2hAB >= 8
+      ? Math.max(-0.06, Math.min(0.03, (h2hAVG - avg) / Math.max(avg, 0.01) * 0.10))
+      : 0;
+    // Cold-start penalty — ramps up to -0.05 by 100 PA if player has 0 HR in 2026
+    const hr26  = player.stats26?.homeRuns ?? null;
+    const pa26r = player.pa26Raw ?? 0;
+    const coldStartShift = (hr26 === 0 && pa26r >= 20)
+      ? Math.max(-0.05, -Math.min(1.0, (pa26r - 20) / 80) * 0.05)
+      : 0;
+    const rawShift   = barrelShift + evoShift + parkShift + pitcherHRShift + platoonShift + windShift + h2hHRShift + coldStartShift;
     const totalShift = Math.max(-0.08, Math.min(0.14, rawShift));
     // pHR cap 0.40, multiplier 130 — reserves 80+ for genuine elite
     const adjustedPHR = Math.min(0.40, Math.max(0.005, pHR + totalShift));
@@ -303,7 +312,7 @@ function blendBatterStats(st26, st25) {
 
   // HR uses a slower blend weight (pa/400) — HR rate is the most volatile stat early in the
   // season, so we trust 2025 production longer than other counting stats.
-  const w_hr = Math.min(1.0, pa26 / 400);
+  const w_hr = Math.min(1.0, pa26 / 300);
   const bHR  = (v26, v25) => w_hr * v26 + (1 - w_hr) * v25;
 
   // Blend per-game rates

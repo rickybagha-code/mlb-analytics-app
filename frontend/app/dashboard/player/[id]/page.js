@@ -1932,7 +1932,7 @@ function blendBatterStats(st26, st25) {
 
   // HR uses a slower blend weight (pa/400) — HR rate is the most volatile stat early in the
   // season, so we trust 2025 production longer than other counting stats.
-  const w_hr = Math.min(1.0, pa26 / 400);
+  const w_hr = Math.min(1.0, pa26 / 300);
   const bHR  = (v26, v25) => w_hr * v26 + (1 - w_hr) * v25;
 
   const hr_pg  = bHR((parseInt(st26.homeRuns)||0)/gp26,  (parseInt(st25.homeRuns)||0)/gp25);
@@ -2039,21 +2039,15 @@ function useHRProjection(gameLog, seasonStats, splits, statcast, pitcher, spPitc
     const sampleWeight   = Math.min(1.0, c.seasonPA / 200);
     const effectiveHRpa  = sampleWeight * seasonHRpa + (1 - sampleWeight) * talentHRpa;
     const l10HRpa        = l10HRpa_raw ?? effectiveHRpa;
-    // hrSampleWeight scales the L10 contribution using pa/400 (2× slower than general blend)
-    // so a hot 5-game start doesn't inflate the score before we have enough PA to trust it.
+    // hrSampleWeight scales the L10 contribution — pa/300 matches updated blend speed
     const pa26Raw        = parseInt(seasonStats?._pa26) || 0;
-    const hrSampleWeight = Math.min(1.0, pa26Raw / 400);
+    const hrSampleWeight = Math.min(1.0, pa26Raw / 300);
     const l10Weight      = 0.35 * hrSampleWeight;
     const seasonHRWeight = 0.55 + (0.35 - l10Weight);
     const hrRate = l10HRpa * l10Weight + effectiveHRpa * seasonHRWeight + LG_HRPA * 0.10;
     // Base Poisson probability from blended rate
     const baseLambda = Math.max(0, hrRate * c.avgPA);
     const pHR_base   = 1 - Math.exp(-baseLambda);
-    // Additive pHR shifts — same approach as dashboard to prevent multiplicative compounding.
-    // Barrel/evo shifts are halved vs raw output because seasonHRpa already reflects
-    // the player's actual contact quality; these are marginal adjustments only.
-    // Pitcher HR shift — same coefficient as dashboard (0.0075/ERA unit) so base
-    // scores align; only splits and H2H should cause the two views to differ.
     const pitcherShift = Math.max(-0.03, Math.min(0.03, (c.pitcherERA - LG.era) * 0.0075));
     const parkHR       = c.park?.hr || 1.0;
     const parkShift    = Math.max(-0.06, Math.min(0.10, (parkHR - 1.0) * 0.50));
@@ -2071,8 +2065,12 @@ function useHRProjection(gameLog, seasonStats, splits, statcast, pitcher, spPitc
       const speedFactor = Math.min(0.04, ((wxWindSpd - 10) / 5) * 0.01 + 0.01);
       return isOut ? speedFactor : -speedFactor;
     })();
-    // Raised total cap (0.10→0.14) to let park + platoon combine properly
-    const rawShift    = barrelShift + evoShift + parkShift + splitShift + pitcherShift + windShift;
+    // Cold-start penalty — ramps to -0.05 by 100 PA if player has 0 HR in 2026
+    const hr26          = parseInt(seasonStats?.homeRuns) || 0;
+    const coldStartShift = (hr26 === 0 && pa26Raw >= 20)
+      ? Math.max(-0.05, -Math.min(1.0, (pa26Raw - 20) / 80) * 0.05)
+      : 0;
+    const rawShift    = barrelShift + evoShift + parkShift + splitShift + pitcherShift + windShift + coldStartShift;
     const totalShift  = Math.max(-0.08, Math.min(0.14, rawShift));
     // Raised cap (0.30→0.40) + lower multiplier (175→130) reserved for genuine elite
     const adjustedPHR = Math.min(0.40, Math.max(0.005, pHR_base + totalShift));
@@ -2093,6 +2091,7 @@ function useHRProjection(gameLog, seasonStats, splits, statcast, pitcher, spPitc
         { label:`${spPitcherHand||'?'}HP SLG split`, impact:Math.round(splitShift * 100)/100, dir:splitShift >= 0?'↑':'↓', note:!c.splitSLG?'no split data':null },
         { label:'Park HR factor',            impact:Math.round(parkShift * 100)/100, dir:parkShift >= 0?'↑':'↓', note:!c.park?'no data':null },
         { label:'Wind (carry)',              impact:Math.round(windShift * 100)/100, dir:windShift >= 0?'↑':'↓', note:!weather?'no weather':null },
+        ...(coldStartShift < 0 ? [{ label:'2026 HR drought',  impact:Math.round(coldStartShift * 100)/100, dir:'↓', note:`0 HR in ${pa26Raw} PA` }] : []),
       ],
     };
   }, [gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev, weather]);
