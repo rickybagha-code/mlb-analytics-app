@@ -156,6 +156,7 @@ function computeProjectionScore(player, category) {
     // Weather scaled to 35% for hits — wind affects HR carry, not singles/doubles
     base = 53 + wComp - kPenalty + bbBonus + hardBonus + pitcherMod + splitBonus + weatherBonus * 0.35 + h2hHitShift;
   } else if (category === 'hr') {
+    if (pa < 100) return 55;
     // Poisson base: blends L10 HR rate (if loaded) with season rate
     // This is the fallback path — on player page the badge is driven from useHRProjection
     const seasonHRpa  = hr / pa_safe;
@@ -166,11 +167,8 @@ function computeProjectionScore(player, category) {
     const avgPAs  = Math.max(3.0, Math.min(5.0, gp > 0 ? pa_safe / gp : 4.0));
     const lambda  = Math.max(0, effectiveHR * avgPAs);
     const pHR     = 1 - Math.exp(-lambda);
-    // Contact quality — additive pHR shifts (prevents multiplicative compounding).
-    // Barrel/evo halved vs raw output because seasonHRpa already reflects actual production.
     const barrelShift  = barrelPct != null ? Math.max(-0.03, Math.min(0.05, (barrelPct - 8.2) / 200)) : 0;
     const evoShift     = (player.exitVelo ?? null) != null ? Math.max(-0.02, Math.min(0.03, (player.exitVelo - 88.5) / 300)) : 0;
-    // Situational
     const parkShift    = (player.parkHR ?? null) != null ? Math.max(-0.06, Math.min(0.07, (player.parkHR - 1.0) * 0.35)) : 0;
     const splitShift   = (player.splitSLG != null && slg > 0) ? Math.max(-0.04, Math.min(0.05, (player.splitSLG / slg - 1.0) * 0.15)) : 0;
     const h2hShift     = (() => {
@@ -201,11 +199,12 @@ function computeProjectionScore(player, category) {
       const speedFactor = Math.min(0.04, ((wxWindSpd - 10) / 5) * 0.01 + 0.01);
       return isOut ? speedFactor : -speedFactor;
     })();
-    const adjustedPHR = Math.min(0.30, Math.max(0.005,
-      pHR + barrelShift + evoShift + parkShift + splitShift + h2hShift + pitcherHRShift + windShift
-    ));
-    // Center at league avg pHR (0.127) → 50; max (0.30, elite tier) → ~80; keeps HR below hits
-    base = 50 + (adjustedPHR - 0.127) * 175;
+    // Cap total situational shift at +0.10/−0.08; h2h kept separate (earned signal)
+    const rawShift   = barrelShift + evoShift + parkShift + splitShift + pitcherHRShift + windShift;
+    const totalShift = Math.max(-0.08, Math.min(0.10, rawShift)) + h2hShift;
+    // Raised cap (0.30→0.40) + lower multiplier (175→130) reserves 80+ for genuine elite
+    const adjustedPHR = Math.min(0.40, Math.max(0.005, pHR + totalShift));
+    base = 50 + (adjustedPHR - 0.127) * 130;
   } else if (category === 'runs') {
     if (pa < 100) return 60;
     const rComp      = Math.max(-25, Math.min(25, (r / gp - 0.45) * 55));
@@ -2025,9 +2024,11 @@ function useHRProjection(gameLog, seasonStats, splits, statcast, pitcher, spPitc
       const speedFactor = Math.min(0.04, ((wxWindSpd - 10) / 5) * 0.01 + 0.01);
       return isOut ? speedFactor : -speedFactor;
     })();
-    const adjustedPHR = Math.min(0.30, Math.max(0.005,
-      pHR_base + barrelShift + evoShift + parkShift + splitShift + pitcherShift + windShift
-    ));
+    // Cap total situational shift at +0.10/−0.08 to prevent all 6 factors simultaneously maxing
+    const rawShift    = barrelShift + evoShift + parkShift + splitShift + pitcherShift + windShift;
+    const totalShift  = Math.max(-0.08, Math.min(0.10, rawShift));
+    // Raised cap (0.30→0.40) + lower multiplier (175→130) reserved for genuine elite
+    const adjustedPHR = Math.min(0.40, Math.max(0.005, pHR_base + totalShift));
     // Back-calculate lambda so Poisson chart is consistent with adjustedPHR
     const lambda = Math.max(0.001, -Math.log(1 - adjustedPHR));
     return {
@@ -2832,8 +2833,8 @@ export default function PlayerDetailPage() {
     // HR badge: driven directly from useHRProjection for perfect alignment with the
     // Poisson chart. Career H2H is the only factor not yet in useHRProjection.
     if (modelCat === 'hr' && hrProj?.pHR != null) {
-      // Cap raw pHR at 36% — above that the model is overclaiming
-      const pHR = Math.min(0.30, hrProj.pHR / 100);
+      // hrProj.pHR already includes barrel/park/platoon/wind from useHRProjection
+      const pHR = Math.min(0.40, hrProj.pHR / 100);
       const h2hMatch  = h2hData?.careerMatchup;
       const h2hAB     = h2hMatch ? (parseInt(h2hMatch.atBats)   || 0) : 0;
       const h2hHR     = h2hMatch ? (parseInt(h2hMatch.homeRuns) || 0) : 0;
@@ -2843,25 +2844,20 @@ export default function PlayerDetailPage() {
       const seasonHR  = parseInt(st.homeRuns) || 0;
       let h2hShift = 0;
       if (h2hAB >= 15) {
-        // Sample weight: 0 at 15 AB → 1.0 at 60+ AB
         const abWeight = Math.min(1.0, (h2hAB - 15) / 45);
-        // Signal 1 — direct HR rate vs this pitcher vs season HR rate
-        // e.g. 4 HR in 30 AB (0.133) vs season 0.05 HR/AB → ratio 2.67x → strong boost
-        const h2hHRrate   = h2hHR / h2hAB;
+        const h2hHRrate    = h2hHR / h2hAB;
         const seasonHRrate = seasonHR / seasonAB;
-        const hrRateShift = seasonHRrate > 0
+        const hrRateShift  = seasonHRrate > 0
           ? Math.max(-0.04, Math.min(0.05, (h2hHRrate / seasonHRrate - 1.0) * 0.10 * abWeight))
           : 0;
-        // Signal 2 — SLG ratio (broader power proxy, lower weight)
         const slgShift = h2hSLG && seasonSLG > 0
           ? Math.max(-0.02, Math.min(0.03, (h2hSLG / seasonSLG - 1.0) * 0.06 * abWeight))
           : 0;
         h2hShift = hrRateShift + slgShift;
       }
-      const adjustedPHR = Math.min(0.30, Math.max(0.005, pHR + h2hShift));
-      const base = 50 + (adjustedPHR - 0.127) * 175;
-      // No conf dampening — pHR already has a 10% LG anchor + talent-prior blending
-      // for early-season stability. A second pull toward 50 double-penalises small samples.
+      // Raised cap (0.30→0.40) + lower multiplier (175→130) reserves 80+ for genuine elite
+      const adjustedPHR = Math.min(0.40, Math.max(0.005, pHR + h2hShift));
+      const base = 50 + (adjustedPHR - 0.127) * 130;
       return Math.round(Math.max(5, Math.min(92, base)));
     }
 

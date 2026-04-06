@@ -183,6 +183,7 @@ function computeProjectionScore(player, category) {
     base = 53 + wComp - kPenalty + bbBonus + hardBonus + pitcherMod + splitBonus + weatherBonus * 0.35 + h2hHitShift;
 
   } else if (category === 'hr') {
+    if (pa < 100) return 55;
     const seasonHRpa = hr / pa_safe;
     const l10HRrate  = player.l10HRrate ?? null;
     const LG_HRPA    = 0.034;
@@ -204,10 +205,8 @@ function computeProjectionScore(player, category) {
     const evoShift       = (player.exitVelo ?? null) != null ? Math.max(-0.02, Math.min(0.03, (player.exitVelo - 88.5) / 300)) : 0;
     const parkShift      = (player.parkHR ?? null) != null ? Math.max(-0.06, Math.min(0.07, (player.parkHR - 1.0) * 0.35)) : 0;
     const pitcherHRShift = Math.max(-0.03, Math.min(0.03, pitcherMod * 0.003));
-    // Platoon shift on pHR (SLG-based)
-    const platoonShift = splitSLG != null && slg > 0
+    const platoonShift   = splitSLG != null && slg > 0
       ? Math.max(-0.04, Math.min(0.05, (splitSLG / slg - 1.0) * 0.15)) : 0;
-    // pHR ceiling aligned with player card (0.30); weather added as direct score pts below
     const wxWind    = player.weather ?? null;
     const wxWindSpd = Number(wxWind?.windSpeed ?? 0);
     const wxWindDir = Number(wxWind?.windDir ?? 0);
@@ -219,11 +218,12 @@ function computeProjectionScore(player, category) {
       const speedFactor = Math.min(0.04, ((wxWindSpd - 10) / 5) * 0.01 + 0.01);
       return isOut ? speedFactor : -speedFactor;
     })();
-    const adjustedPHR = Math.min(0.30, Math.max(0.005,
-      pHR + barrelShift + evoShift + parkShift + pitcherHRShift + platoonShift + windShift
-    ));
-    // Center at league avg (0.127) → 50; scale 175 matches player card
-    base = 50 + (adjustedPHR - 0.127) * 175;
+    // Cap total situational shift at ±0.10/−0.08 to prevent all 6 factors simultaneously maxing
+    const rawShift   = barrelShift + evoShift + parkShift + pitcherHRShift + platoonShift + windShift;
+    const totalShift = Math.max(-0.08, Math.min(0.10, rawShift));
+    // Raised pHR cap (0.30→0.40) + lower multiplier (175→130) reserves 80+ for genuine elite
+    const adjustedPHR = Math.min(0.40, Math.max(0.005, pHR + totalShift));
+    base = 50 + (adjustedPHR - 0.127) * 130;
 
   } else if (category === 'runs') {
     if (pa < 100) return 60;
