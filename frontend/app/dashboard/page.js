@@ -617,11 +617,21 @@ function AutoPlayerCard({ player, category, rank }) {
       : `${m.isHome ? 'vs' : '@'} ${m.oppAbbrev} · ${hand}${lastName}`
     : null;
 
-  const avgC    = statCls(player.avg    ?? 0, 0.280, 0.250);
-  const slgC    = statCls(player.slg    ?? 0, 0.450, 0.380);
-  const obpC    = statCls(player.obp    ?? 0, 0.360, 0.320);
-  const hrNumC  = statCls(player.homeRuns ?? 0, 20, 10);
-  const k9C     = statCls(player.k9     ?? 0, 9.0, 7.0);
+  // Prefer raw 2026 stats for display; fall back to blended if 2026 not available
+  const d = player.stats26 ?? player;
+  const dispAvg  = d.avg       ?? player.avg;
+  const dispSlg  = d.slg       ?? player.slg;
+  const dispObp  = d.obp       ?? player.obp;
+  const dispHR   = d.homeRuns  ?? player.homeRuns;
+  const dispRBI  = d.rbi       ?? player.rbi;
+  const dispSB   = d.stolenBases ?? player.stolenBases;
+  const dispGP   = d.gamesPlayed ?? player.gamesPlayed;
+
+  const avgC    = statCls(dispAvg ?? 0, 0.280, 0.250);
+  const slgC    = statCls(dispSlg ?? 0, 0.450, 0.380);
+  const obpC    = statCls(dispObp ?? 0, 0.360, 0.320);
+  const hrNumC  = statCls(dispHR  ?? 0, 20, 10);
+  const k9C     = statCls(player.k9 ?? 0, 9.0, 7.0);
   const streakC = player.streak != null
     ? statCls(player.streak, 5, 3)
     : { text:'text-gray-600', bg:'bg-gray-800/50 border-gray-800' };
@@ -653,20 +663,20 @@ function AutoPlayerCard({ player, category, rank }) {
         </div>
       ) : category === 'sb' ? (
         <div className="grid grid-cols-4 gap-1">
-          <StatBadge label="SB"   value={player.stolenBases ?? '—'} cls={statCls(player.stolenBases??0,20,10)} />
-          <StatBadge label="SB/G" value={player.gamesPlayed>0?fmt((player.stolenBases||0)/player.gamesPlayed,2):'—'} cls={statCls((player.stolenBases||0)/Math.max(player.gamesPlayed||1,1),0.25,0.10)} />
-          <StatBadge label="AVG"  value={fmt(player.avg,3)} cls={avgC} />
+          <StatBadge label="SB"   value={dispSB ?? '—'} cls={statCls(dispSB??0,20,10)} />
+          <StatBadge label="SB/G" value={dispGP>0?fmt((dispSB||0)/dispGP,2):'—'} cls={statCls((dispSB||0)/Math.max(dispGP||1,1),0.25,0.10)} />
+          <StatBadge label="AVG"  value={fmt(dispAvg,3)} cls={avgC} />
           <StatBadge label="Streak" value={player.streakLoading?'…':(player.streak??'—')} cls={streakC} />
         </div>
       ) : (
         <div className="grid grid-cols-4 gap-1">
-          <StatBadge label="AVG" value={fmt(player.avg, 3)} cls={avgC} />
-          <StatBadge label="SLG" value={fmt(player.slg, 3)} cls={slgC} />
+          <StatBadge label="AVG" value={fmt(dispAvg, 3)} cls={avgC} />
+          <StatBadge label="SLG" value={fmt(dispSlg, 3)} cls={slgC} />
           {category === 'hr'
-            ? <StatBadge label="HR"  value={player.homeRuns ?? '—'} cls={hrNumC} />
+            ? <StatBadge label="HR"  value={dispHR ?? '—'} cls={hrNumC} />
             : category === 'rbi'
-              ? <StatBadge label="RBI" value={player.rbi ?? '—'} cls={statCls(player.rbi??0,60,40)} />
-              : <StatBadge label="OBP" value={fmt(player.obp, 3)} cls={obpC} />
+              ? <StatBadge label="RBI" value={dispRBI ?? '—'} cls={statCls(dispRBI??0,60,40)} />
+              : <StatBadge label="OBP" value={fmt(dispObp, 3)} cls={obpC} />
           }
           <StatBadge
             label="Streak"
@@ -1082,6 +1092,18 @@ export default function DashboardPage() {
           const pitcherHand    = pitcher?.hand ?? null;
           const gameHomeTeamId = game?.homeTeamId ?? null;
           const playerWithCtx  = { ...stats, matchup:{ isHome, oppAbbrev, pitcher }, parkHR, pitcherHand };
+          // Raw 2026 display stats — shown on card, separate from blended scoring stats
+          const r26 = raw26[rp.id];
+          const stats26 = r26 ? {
+            avg:          parseFloat(r26.avg)          || null,
+            slg:          parseFloat(r26.slg)          || null,
+            obp:          parseFloat(r26.obp)          || null,
+            homeRuns:     parseInt(r26.homeRuns)       || 0,
+            rbi:          parseInt(r26.rbi)            || 0,
+            runs:         parseInt(r26.runs)           || 0,
+            stolenBases:  parseInt(r26.stolenBases)    || 0,
+            gamesPlayed:  parseInt(r26.gamesPlayed)    || 0,
+          } : null;
           allPlayers.push({
             playerId:    rp.id,
             fullName:    rp.fullName,
@@ -1090,6 +1112,7 @@ export default function DashboardPage() {
             teamName:    team.name,
             teamAbbrev:  team.abbreviation,
             ...stats,
+            stats26,
             parkHR,
             pitcherHand,
             gameHomeTeamId,
