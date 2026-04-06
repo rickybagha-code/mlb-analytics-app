@@ -272,10 +272,10 @@ export default function MatchupLandingView({ isPro }) {
         <div className="flex flex-col sm:flex-row gap-3 items-end">
           <div className="flex-1 min-w-0">
             <PlayerSearchDropdown
-              options={todayPlayers.batters}
+              options={dropdownBatters}
               value={selectedBatter}
               onChange={handleBatterSelect}
-              placeholder={loadingDropdowns ? 'Loading players…' : 'Search batter…'}
+              placeholder={loadingDropdowns ? 'Loading players…' : selectedPitcher ? 'Search opposing batter…' : 'Search batter…'}
               disabled={loadingDropdowns}
               label="Batter"
             />

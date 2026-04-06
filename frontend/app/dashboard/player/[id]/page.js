@@ -1106,22 +1106,13 @@ function EVGaugeSVG({ evPct }) {
   );
 }
 
-function ProjectionEVCard({ pitcherStarts, seasonStats, oppTeamAbbrev, homeAbbrev, prizePicksLine, pitcherSavant, playerName }) {
+function ProjectionEVCard({ pitcherStarts, seasonStats, oppTeamAbbrev, homeAbbrev, pitcherSavant, playerName, onLineAutoFill }) {
   const [bookLine,  setBookLine]  = useState('');
   const [overOdds,  setOverOdds]  = useState('-115');
   const [underOdds, setUnderOdds] = useState('-115');
   const [debLine,   setDebLine]   = useState('');
-  const [ppSource,  setPpSource]  = useState(false); // true = auto-filled from PP
 
-  // Auto-fill from PrizePicks when available (user can override)
-  useEffect(() => {
-    if (prizePicksLine != null && bookLine === '') {
-      setBookLine(String(prizePicksLine));
-      setPpSource(true);
-    }
-  }, [prizePicksLine]);
-
-  // Auto-fill odds from The Odds API (with localStorage cache)
+  // Auto-fill line + odds from The Odds API (with localStorage cache)
   useEffect(() => {
     if (!playerName) return;
     const norm = (n='') => n.toLowerCase().normalize('NFD')
@@ -1139,8 +1130,10 @@ function ProjectionEVCard({ pitcherStarts, seasonStats, oppTeamAbbrev, homeAbbre
       if (!res.ok) return null;
       const d = await res.json();
       try {
-        localStorage.setItem(CACHE_KEY, JSON.stringify(d));
-        localStorage.setItem(CACHE_KEY + '_ts', String(Date.now()));
+        if (d?.players && Object.keys(d.players).length > 0) {
+          localStorage.setItem(CACHE_KEY, JSON.stringify(d));
+          localStorage.setItem(CACHE_KEY + '_ts', String(Date.now()));
+        }
       } catch {}
       return d;
     }
@@ -1167,7 +1160,10 @@ function ProjectionEVCard({ pitcherStarts, seasonStats, oppTeamAbbrev, homeAbbre
       }
       if (!p?.strikeouts) return;
       const sk = p.strikeouts;
-      if (bookLine === '' && sk.line != null) setBookLine(String(sk.line));
+      if (bookLine === '' && sk.line != null) {
+        setBookLine(String(sk.line));
+        onLineAutoFill?.(sk.line);
+      }
       if (sk.over  != null) setOverOdds(String(sk.over));
       if (sk.under != null) setUnderOdds(String(sk.under));
     }).catch(() => {});
@@ -1235,11 +1231,11 @@ function ProjectionEVCard({ pitcherStarts, seasonStats, oppTeamAbbrev, homeAbbre
           <div className="text-sm font-black text-gray-300 tabular-nums">{proj.lower80} – {proj.upper80}</div>
           <div className="text-xs text-gray-600 mt-0.5">80% Range</div>
         </div>
-        <div className={`rounded-lg border p-3 text-center ${ppSource && bookLine ? 'border-purple-500/40 bg-purple-500/5' : 'bg-gray-800/50 border-gray-700'}`}>
+        <div className="rounded-lg border p-3 text-center bg-gray-800/50 border-gray-700">
           <input type="number" step="0.5" placeholder="e.g. 5.5" value={bookLine}
-            onChange={e => { setBookLine(e.target.value); setPpSource(false); }}
+            onChange={e => setBookLine(e.target.value)}
             className="w-full bg-transparent text-center text-base font-black text-white tabular-nums outline-none placeholder-gray-700 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"/>
-          <div className="text-xs text-gray-600 mt-0.5">{ppSource ? '🟣 PrizePicks line' : 'Book Line ↑ type'}</div>
+          <div className="text-xs text-gray-600 mt-0.5">Book Line ↑ type</div>
         </div>
         <div className={`rounded-lg border p-3 text-center ${evBadge ? evBadge.cls : 'bg-gray-800/50 border-gray-700'}`}>
           <div className={`text-xl font-black tabular-nums ${evBadge ? '' : 'text-gray-600'}`}>
@@ -2191,14 +2187,13 @@ function useRBIProjection(gameLog, seasonStats, splits, statcast, pitcher, spPit
 }
 
 function HittingProjectionEVCard({ gameLog, seasonStats, splits, statcast, pitcher, playerName,
-  spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev, activeTab, loading, prizePicksLines }) {
+  spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev, activeTab, loading, onLineAutoFill }) {
 
   const [activeProp, setActiveProp] = useState(activeTab || 'hits');
   const [lines,     setLines]     = useState({ hits:'', hr:'', runs:'', rbi:'' });
   const [overOdds,  setOverOdds]  = useState({ hits:'', hr:'', runs:'', rbi:'' });
   const [underOdds, setUnderOdds] = useState({ hits:'', hr:'', runs:'', rbi:'' });
   const [debLines,  setDebLines]  = useState({ hits:'', hr:'', runs:'', rbi:'' });
-  const [ppSources, setPpSources] = useState({ hits:false, hr:false, runs:false, rbi:false });
 
   // Auto-fill lines + odds from The Odds API (with localStorage cache)
   useEffect(() => {
@@ -2218,8 +2213,10 @@ function HittingProjectionEVCard({ gameLog, seasonStats, splits, statcast, pitch
       if (!res.ok) return null;
       const d = await res.json();
       try {
-        localStorage.setItem(CACHE_KEY, JSON.stringify(d));
-        localStorage.setItem(CACHE_KEY + '_ts', String(Date.now()));
+        if (d?.players && Object.keys(d.players).length > 0) {
+          localStorage.setItem(CACHE_KEY, JSON.stringify(d));
+          localStorage.setItem(CACHE_KEY + '_ts', String(Date.now()));
+        }
       } catch {}
       return d;
     }
@@ -2227,7 +2224,7 @@ function HittingProjectionEVCard({ gameLog, seasonStats, splits, statcast, pitch
       .then(data => {
         if (!data?.players) return;
         const players = data.players;
-        // 3-tier fuzzy match — same logic as PrizePicks auto-fill
+        // 3-tier fuzzy match
         let p = players[norm(playerName)];
         if (!p) {
           const nameLower = playerName.toLowerCase();
@@ -2251,12 +2248,20 @@ function HittingProjectionEVCard({ gameLog, seasonStats, splits, statcast, pitch
         if (!p) return;
         // Map odds API keys → prop keys
         const MAP = { hits:'hits', hr:'hr', runs:'runs', rbi:'rbi' };
+        const toFill = {};
+        Object.entries(MAP).forEach(([prop, key]) => {
+          if (p[key]?.line != null) toFill[prop] = p[key].line;
+        });
         setLines(prev => {
           const next = { ...prev };
-          Object.entries(MAP).forEach(([prop, key]) => {
-            if (prev[prop] === '' && p[key]?.line != null) next[prop] = String(p[key].line);
+          Object.entries(toFill).forEach(([prop, lineVal]) => {
+            if (prev[prop] === '') next[prop] = String(lineVal);
           });
           return next;
+        });
+        // Notify parent for L10 chart sync (outside of setState updater)
+        Object.entries(toFill).forEach(([prop, lineVal]) => {
+          onLineAutoFill?.(prop, lineVal);
         });
         setOverOdds(prev => {
           const next = { ...prev };
@@ -2275,34 +2280,6 @@ function HittingProjectionEVCard({ gameLog, seasonStats, splits, statcast, pitch
       })
       .catch(() => {});
   }, [playerName]);
-
-  // Auto-fill PrizePicks lines when available (only for empty fields)
-  useEffect(() => {
-    if (!prizePicksLines) return;
-    const PP_MAP = { hits:'hits', hr:'hr', runs:'runs', rbi:'rbi' };
-    const newLines = {};
-    const newSources = {};
-    let changed = false;
-    Object.entries(PP_MAP).forEach(([prop, ppKey]) => {
-      const ppVal = prizePicksLines[ppKey];
-      if (ppVal != null) {
-        newLines[prop] = String(ppVal);
-        newSources[prop] = true;
-        changed = true;
-      }
-    });
-    if (changed) {
-      setLines(prev => {
-        const next = { ...prev };
-        const actualSources = {};
-        Object.entries(newLines).forEach(([prop, val]) => {
-          if (prev[prop] === '') { next[prop] = val; actualSources[prop] = true; }
-        });
-        setPpSources(p => ({ ...p, ...actualSources }));
-        return next;
-      });
-    }
-  }, [prizePicksLines]);
 
   useEffect(() => { setActiveProp(activeTab || 'hits'); }, [activeTab]);
   useEffect(() => {
@@ -2396,11 +2373,11 @@ function HittingProjectionEVCard({ gameLog, seasonStats, splits, statcast, pitch
               <div className="text-sm font-black text-gray-300 tabular-nums">{proj.lower80} – {proj.upper80}</div>
               <div className="text-xs text-gray-600 mt-0.5">80% Range</div>
             </div>
-            <div className={`rounded-lg border p-3 text-center ${ppSources[activeProp] && lines[activeProp] ? 'border-purple-500/40 bg-purple-500/5' : 'bg-gray-800/50 border-gray-700'}`}>
+            <div className="rounded-lg border p-3 text-center bg-gray-800/50 border-gray-700">
               <input type="number" step="0.5" placeholder="e.g. 1.5" value={lines[activeProp]}
-                onChange={e => { setLines(prev => ({ ...prev, [activeProp]: e.target.value })); setPpSources(prev=>({...prev,[activeProp]:false})); }}
+                onChange={e => setLines(prev => ({ ...prev, [activeProp]: e.target.value }))}
                 className="w-full bg-transparent text-center text-base font-black text-white tabular-nums outline-none placeholder-gray-700 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"/>
-              <div className="text-xs text-gray-600 mt-0.5">{ppSources[activeProp] ? '🟣 PrizePicks line' : 'Book Line ↑ type'}</div>
+              <div className="text-xs text-gray-600 mt-0.5">Book Line ↑ type</div>
             </div>
             <div className={`rounded-lg border p-3 text-center ${evBadge ? evBadge.cls : 'bg-gray-800/50 border-gray-700'}`}>
               <div className={`text-xl font-black tabular-nums ${evBadge ? '' : 'text-gray-600'}`}>
@@ -2539,12 +2516,11 @@ export default function PlayerDetailPage() {
   // ── Free tier paywall ─────────────────────────────────────────────────
   const [showPaywall, setShowPaywall] = useState(false);
 
-  // ── Weather + PrizePicks state ─────────────────────────────────────────
+  // ── Weather state ─────────────────────────────────────────────────────
   const [weather,       setWeather]      = useState(null);
   // Recency signals computed from 2026-only games (not backfilled) — matches dashboard source
   const [recencyStreak,   setRecencyStreak]   = useState(null);
   const [recencyL10Avg,   setRecencyL10Avg]   = useState(null);
-  const [ppLines,       setPpLines]      = useState(null); // { hits:1.5, hr:0.5, ... } for this player
 
   // ── Resolved matchup context (auto-fetched when URL params absent) ──────────
   const [resolvedPitcherId,   setResolvedPitcherId]   = useState('');
@@ -2561,44 +2537,6 @@ export default function PlayerDetailPage() {
   const effectiveOppAbbrev   = spOppAbbrev   || resolvedOppAbbrev;
   const effectiveIsHome      = spPitcherId   ? spIsHome : resolvedIsHome;
 
-  // ── Fetch PrizePicks lines for this player ────────────────────────────────
-  useEffect(() => {
-    const name = playerInfo.fullName || spName;
-    if (!name) return;
-    async function fetchPP() {
-      try {
-        const res = await fetch(`/api/prizepicks`, { signal: AbortSignal.timeout(10000) });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (!data.lines) return;
-        // 1. Exact match
-        let playerLines = data.lines[name];
-        if (!playerLines) {
-          const nameLower = name.toLowerCase();
-          const lastName  = name.split(' ').pop().toLowerCase();
-          const firstName = name.split(' ')[0].toLowerCase();
-          // 2. Case-insensitive exact
-          const exactKey = Object.keys(data.lines).find(k => k.toLowerCase() === nameLower);
-          if (exactKey) { playerLines = data.lines[exactKey]; }
-          else {
-            // 3. Last name + first name prefix match
-            // Handles: "M. Fried" vs "Max Fried", "Yoshi Yamamoto" vs "Yoshinobu Yamamoto"
-            const partialKey = Object.keys(data.lines).find(k => {
-              const kl = k.toLowerCase();
-              if (!kl.includes(lastName)) return false;
-              if (kl.includes(firstName) || kl.includes(firstName[0] + '.')) return true;
-              // Nickname prefix: MLB "yoshinobu" starts with PP "yoshi", or vice versa
-              const ppFirst = kl.split(' ')[0];
-              return firstName.startsWith(ppFirst) || ppFirst.startsWith(firstName);
-            });
-            if (partialKey) playerLines = data.lines[partialKey];
-          }
-        }
-        if (playerLines) setPpLines(playerLines);
-      } catch {}
-    }
-    fetchPP();
-  }, [playerInfo.fullName, spName]);
 
   // ── On line change, reset to first valid line for new cat ─────────────────
   useEffect(() => {
@@ -2980,8 +2918,8 @@ export default function PlayerDetailPage() {
   const pageKProj = useKProjection(isPitcherView ? pitcherStarts : [], isPitcherView ? seasonStats : null, effectiveOppAbbrev, isPitcherView ? pitcherSavant : null, isPitcherView ? pitcherHomeAbbrev : null);
   const kProjScore = useMemo(() => {
     if (!isPitcherView || !pageKProj) return null;
-    return pitcherScoreFromKProj(pageKProj.projected, ppLines?.strikeouts ?? null);
-  }, [isPitcherView, pageKProj, ppLines]);
+    return pitcherScoreFromKProj(pageKProj.projected, pitcherChartLine > 0 ? pitcherChartLine : null);
+  }, [isPitcherView, pageKProj, pitcherChartLine]);
 
   // Main pitcher score is K projection; fall back to ERA score
   const pitcherScore = kProjScore ?? pitcherERAScore;
@@ -3214,9 +3152,9 @@ export default function PlayerDetailPage() {
                 seasonStats={seasonStats}
                 oppTeamAbbrev={effectiveOppAbbrev}
                 homeAbbrev={pitcherHomeAbbrev}
-                prizePicksLine={ppLines?.strikeouts ?? null}
                 pitcherSavant={pitcherSavant}
                 playerName={playerInfo.fullName}
+                onLineAutoFill={(lineVal) => setPitcherChartLine(lineVal)}
               />
             </ProjectionErrorBoundary>
 
@@ -3354,7 +3292,7 @@ export default function PlayerDetailPage() {
                 spOppAbbrev={effectiveOppAbbrev}
                 activeTab={cat}
                 loading={loading || chartLoading}
-                prizePicksLines={ppLines}
+                onLineAutoFill={(prop, lineVal) => { if (prop === cat) setLine(lineVal); }}
               />
             </ProjectionErrorBoundary>
 

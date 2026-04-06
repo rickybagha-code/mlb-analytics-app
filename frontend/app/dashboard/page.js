@@ -419,7 +419,7 @@ function pitcherKScore(projected, ppKLine) {
 }
 
 // ─── Pitcher Score — fallback when no start history available ─────────────────
-// ppKLine: actual PrizePicks K line for this pitcher (fallback 5.5).
+// kLine: book K line for this pitcher (fallback 5.5).
 // Uses 5.0 IP avg (aligns with player-page model; *100 scale for consistency).
 function scorePitcher(stats, ppKLine) {
   const era   = stats.era  ?? 4.50;
@@ -435,33 +435,6 @@ function scorePitcher(stats, ppKLine) {
   const whipAdj = Math.max(-0.03, Math.min(0.03, (1.30 - whip) * 0.07));
   const adjusted = Math.min(0.95, Math.max(0.03, pOver + eraAdj + whipAdj));
   return Math.round(Math.max(5, Math.min(99, adjusted * 100)));
-}
-
-// ─── PP name matching (exact → case-insensitive → last+first-initial) ────────
-function findPPLines(name, linesMap) {
-  if (!name || !linesMap) return null;
-  // Tier 1: exact
-  if (linesMap[name]) return linesMap[name];
-  const lower = name.toLowerCase();
-  // Tier 2: case-insensitive exact
-  const k1 = Object.keys(linesMap).find(k => k.toLowerCase() === lower);
-  if (k1) return linesMap[k1];
-  // Tier 3: last name + first name prefix match
-  // Handles "M. Fried" vs "Max Fried", "Yoshi Yamamoto" vs "Yoshinobu Yamamoto"
-  const parts = name.split(' ');
-  if (parts.length >= 2) {
-    const lastName  = parts[parts.length - 1].toLowerCase();
-    const firstName = parts[0].toLowerCase();
-    const k2 = Object.keys(linesMap).find(k => {
-      const kl = k.toLowerCase();
-      if (!kl.includes(lastName)) return false;
-      if (kl.includes(firstName) || kl.includes(firstName[0] + '.')) return true;
-      const ppFirst = kl.split(' ')[0];
-      return firstName.startsWith(ppFirst) || ppFirst.startsWith(firstName);
-    });
-    if (k2) return linesMap[k2];
-  }
-  return null;
 }
 
 // ─── Streak ───────────────────────────────────────────────────────────────────
@@ -843,9 +816,6 @@ export default function DashboardPage() {
   const [todayGames,    setTodayGames]    = useState([]);
   const [gameWeatherMap, setGameWeatherMap] = useState({});
 
-  // ── PrizePicks lines (keyed by player name) ────────────────────────────────
-  const [ppLinesByName,  setPpLinesByName]  = useState(null);
-
   // ── Manual research ───────────────────────────────────────────────────────
   const [teams,            setTeams]           = useState([]);
   const [selectedTeamId,   setSelectedTeamId]  = useState('');
@@ -890,35 +860,60 @@ export default function DashboardPage() {
     loadDailyBoard();
   }, []);
 
-  // ── Fetch PrizePicks lines (non-blocking, re-scores pitchers when ready) ──
+  // ── Re-score pitchers using Odds API K lines (localStorage cache, 4h TTL) ──
   useEffect(() => {
-    async function fetchPP() {
+    if (!boardPlayers.length) return;
+    const CACHE_KEY = 'odds_today_v1';
+    const CACHE_TTL = 4 * 60 * 60 * 1000;
+    const norm = (n = '') => n.toLowerCase().normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '').replace(/\./g, '')
+      .replace(/\s+(jr|sr|ii|iii|iv)\s*$/i, '').replace(/\s+/g, ' ').trim();
+    async function loadOdds() {
       try {
-        const res = await fetch(`/api/prizepicks`, { signal: AbortSignal.timeout(10000) });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (data.lines) setPpLinesByName(data.lines);
+        const raw = localStorage.getItem(CACHE_KEY);
+        const ts  = parseInt(localStorage.getItem(CACHE_KEY + '_ts') || '0');
+        if (raw && Date.now() - ts < CACHE_TTL) return JSON.parse(raw);
       } catch {}
+      try {
+        const res = await fetch('/api/odds/today');
+        if (!res.ok) return null;
+        const d = await res.json();
+        try {
+          if (d?.players && Object.keys(d.players).length > 0) {
+            localStorage.setItem(CACHE_KEY, JSON.stringify(d));
+            localStorage.setItem(CACHE_KEY + '_ts', String(Date.now()));
+          }
+        } catch {}
+        return d;
+      } catch { return null; }
     }
-    fetchPP();
-  }, []);
-
-  // Re-score pitchers once PP lines arrive — OR once the board loads (whichever is later).
-  // /api/prizepicks is live (fetches latest from GitHub) but the board takes 5-10s to build,
-  // so we depend on boardPlayers.length to catch the case where PP loads first.
-  useEffect(() => {
-    if (!ppLinesByName || !boardPlayers.length) return;
-    setBoardPlayers(prev => prev.map(p => {
-      if (p.position !== 'SP') return p;
-      const ppMatch = findPPLines(p.fullName, ppLinesByName);
-      if (!ppMatch?.strikeouts) return p;
-      const kProj   = computeKProjection(p.pitcherStarts, p.k9, p.matchup?.oppAbbrev, p.pitcherSavant ?? null, p.homeAbbrev ?? '');
-      const newScore = (kProj != null ? pitcherKScore(kProj, ppMatch.strikeouts) : null)
-        ?? scorePitcher({ era: p.era, whip: p.whip, k9: p.k9 }, ppMatch.strikeouts);
-      return { ...p, ppKLine: ppMatch.strikeouts, scores: { ...p.scores, pitching: newScore } };
-    }));
+    loadOdds().then(data => {
+      if (!data?.players) return;
+      const players = data.players;
+      setBoardPlayers(prev => prev.map(p => {
+        if (p.position !== 'SP') return p;
+        const key = norm(p.fullName);
+        let pd = players[key];
+        if (!pd) {
+          const lastName  = p.fullName.split(' ').pop().toLowerCase();
+          const firstName = p.fullName.split(' ')[0].toLowerCase();
+          const partialKey = Object.keys(players).find(k => {
+            if (!k.includes(lastName)) return false;
+            const kFirst = k.split(' ')[0];
+            return k.includes(firstName) || firstName.startsWith(kFirst) || kFirst.startsWith(firstName);
+          });
+          if (partialKey) pd = players[partialKey];
+        }
+        if (!pd?.strikeouts?.line) return p;
+        const kLine   = pd.strikeouts.line;
+        const kProj   = computeKProjection(p.pitcherStarts, p.k9, p.matchup?.oppAbbrev, p.pitcherSavant ?? null, p.homeAbbrev ?? '');
+        const newScore = (kProj != null ? pitcherKScore(kProj, kLine) : null)
+          ?? scorePitcher({ era: p.era, whip: p.whip, k9: p.k9 }, kLine);
+        return { ...p, ppKLine: kLine, scores: { ...p.scores, pitching: newScore } };
+      }));
+    }).catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ppLinesByName, boardPlayers.length]);
+  }, [boardPlayers.length]);
 
   async function loadDailyBoard() {
     // Bust localStorage cache on new deploy.

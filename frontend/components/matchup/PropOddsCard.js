@@ -142,8 +142,10 @@ async function fetchOddsWithCache() {
   if (!res.ok) throw new Error(res.status);
   const data = await res.json();
   try {
-    localStorage.setItem(ODDS_CACHE_KEY, JSON.stringify(data));
-    localStorage.setItem(ODDS_CACHE_KEY + '_ts', String(Date.now()));
+    if (data?.players && Object.keys(data.players).length > 0) {
+      localStorage.setItem(ODDS_CACHE_KEY, JSON.stringify(data));
+      localStorage.setItem(ODDS_CACHE_KEY + '_ts', String(Date.now()));
+    }
   } catch {}
   return data;
 }
