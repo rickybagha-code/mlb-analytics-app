@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import ProprStatsLogo from '../../components/ProprStatsLogo';
 import NavUserMenu from '../../components/NavUserMenu';
+import { createClient } from '../../lib/supabase/client';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 const MLB_API  = 'https://statsapi.mlb.com/api/v1';
@@ -799,8 +800,23 @@ const CAT_TO_PLAYER_TAB = { hitting:'hits', hr:'hr', runs:'runs', rbi:'rbi', pit
 
 // ─── Main Dashboard Page ──────────────────────────────────────────────────────
 export default function DashboardPage() {
-  // ── Free tier plan check (disabled for beta) ─────────────────────────────
-  const [isPro, setIsPro] = useState(true);
+  // ── Free tier plan check ──────────────────────────────────────────────────
+  const [isPro, setIsPro] = useState(false);
+
+  useEffect(() => {
+    async function checkPlan() {
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const { data: profile } = await supabase
+          .from('profiles').select('plan').eq('id', user.id).single();
+        const plan = profile?.plan ?? 'free';
+        if (plan === 'pro_monthly' || plan === 'pro_annual') setIsPro(true);
+      } catch {}
+    }
+    checkPlan();
+  }, []);
 
   // ── Category ──────────────────────────────────────────────────────────────
   const [category, setCategory] = useState(() => {

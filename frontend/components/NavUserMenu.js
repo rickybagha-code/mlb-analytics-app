@@ -51,6 +51,15 @@ export default function NavUserMenu() {
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
+  // Reset spinner when user navigates back (bfcache restores actionLoading=true)
+  useEffect(() => {
+    function handlePageShow(e) {
+      if (e.persisted) setActionLoading(false);
+    }
+    window.addEventListener('pageshow', handlePageShow);
+    return () => window.removeEventListener('pageshow', handlePageShow);
+  }, []);
+
   async function handleUpgrade(plan) {
     setActionLoading(true);
     setOpen(false);
