@@ -2313,10 +2313,9 @@ function HittingProjectionEVCard({ gameLog, seasonStats, splits, statcast, pitch
 
   useEffect(() => { setActiveProp(activeTab || 'hits'); }, [activeTab]);
   useEffect(() => {
-    const cur = lines[activeProp];
-    const t = setTimeout(() => setDebLines(prev => ({ ...prev, [activeProp]: cur })), 300);
+    const t = setTimeout(() => setDebLines({ ...lines }), 300);
     return () => clearTimeout(t);
-  }, [lines.hits, lines.hr, lines.runs, lines.rbi, lines.sb, activeProp]);
+  }, [lines.hits, lines.hr, lines.runs, lines.rbi, lines.sb]);
 
   const hitsProj = useHitsProjection(gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev);
   const hrProj   = useHRProjection(  gameLog, seasonStats, splits, statcast, pitcher, spPitcherHand, spIsHome, spTeamAbbrev, spOppAbbrev);
