@@ -83,9 +83,8 @@ export default function NavUserMenu() {
   }
 
   async function handleSignOut() {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.push('/');
+    await fetch('/api/auth/signout', { method: 'POST' });
+    window.location.href = '/';
   }
 
   if (!user) {

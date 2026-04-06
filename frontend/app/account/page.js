@@ -55,9 +55,8 @@ function AccountContent() {
   }, [router]);
 
   async function handleSignOut() {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.push('/');
+    await fetch('/api/auth/signout', { method: 'POST' });
+    window.location.href = '/';
   }
 
   async function handleUpgrade(plan) {
