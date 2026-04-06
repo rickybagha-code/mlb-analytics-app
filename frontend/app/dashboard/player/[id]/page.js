@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import ProprStatsLogo from '../../../../components/ProprStatsLogo';
+import { createClient } from '../../../../lib/supabase/client';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 const MLB_API  = 'https://statsapi.mlb.com/api/v1';
@@ -2550,8 +2551,27 @@ export default function PlayerDetailPage() {
     if (cfg) setPitcherChartLine(cfg.defaultLine);
   }, [pitcherChartCat]);
 
-  // ── Paywall check (disabled for beta) ────────────────────────────────────
-  // useEffect(() => { ... }, []);
+  // ── Paywall: check plan from Supabase; free users get a timed gate ───────
+  useEffect(() => {
+    async function checkPlan() {
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return; // middleware already guards the route
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('plan')
+          .eq('id', user.id)
+          .single();
+        const plan = profile?.plan ?? 'free';
+        if (plan === 'pro_monthly' || plan === 'pro_annual') return; // full access
+        // Free users: show paywall after 12 seconds
+        const timer = setTimeout(() => setShowPaywall(true), 12000);
+        return () => clearTimeout(timer);
+      } catch {}
+    }
+    checkPlan();
+  }, []);
 
   // ── Load data ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -2954,19 +2974,27 @@ export default function PlayerDetailPage() {
               Your free account includes <span className="text-white font-semibold">1 player deep-dive</span>. Upgrade for unlimited access to every player&apos;s EdgeScore, LineCheck, and full prop projections.
             </p>
             <div className="flex flex-col gap-3 mb-5">
-              <Link
-                href="/signup?plan=yearly"
+              <button
+                onClick={async () => {
+                  const res = await fetch('/api/stripe/checkout', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ plan:'yearly' }) });
+                  const { url } = await res.json();
+                  if (url) window.location.href = url;
+                }}
                 className="block w-full rounded-xl bg-blue-600 hover:bg-blue-500 px-6 py-3.5 text-sm font-bold text-white shadow-lg shadow-blue-500/25 transition-all hover:-translate-y-0.5"
               >
                 Get Annual Access — $189.99/yr
                 <span className="ml-2 text-xs font-normal text-blue-200">Most Popular · Save $37</span>
-              </Link>
-              <Link
-                href="/signup?plan=monthly"
+              </button>
+              <button
+                onClick={async () => {
+                  const res = await fetch('/api/stripe/checkout', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ plan:'monthly' }) });
+                  const { url } = await res.json();
+                  if (url) window.location.href = url;
+                }}
                 className="block w-full rounded-xl border border-gray-700 hover:border-gray-500 px-6 py-3 text-sm font-semibold text-gray-300 hover:text-white transition-all"
               >
                 Monthly Access — $18.99/mo
-              </Link>
+              </button>
             </div>
             <Link href="/dashboard" className="text-xs text-gray-600 hover:text-gray-400 transition-colors">
               &larr; Back to dashboard

@@ -8,9 +8,12 @@
     "start": "next start -p 3000"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.10.0",
+    "@supabase/supabase-js": "^2.101.1",
     "next": "^15.3.0",
     "react": "^18",
-    "react-dom": "^18"
+    "react-dom": "^18",
+    "stripe": "^22.0.0"
   },
   "devDependencies": {
     "autoprefixer": "^10",
