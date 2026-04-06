@@ -44,7 +44,7 @@ function AccountContent() {
 
       const { data } = await supabase
         .from('profiles')
-        .select('plan, subscription_status, current_period_end, stripe_customer_id, created_at')
+        .select('plan, subscription_status, current_period_end, stripe_customer_id, created_at, first_name, last_name')
         .eq('id', u.id)
         .single();
 
@@ -105,10 +105,14 @@ function AccountContent() {
         {/* Header */}
         <div className="flex items-center gap-4 mb-8">
           <div className="w-12 h-12 rounded-full bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 font-bold text-lg">
-            {user?.email?.[0]?.toUpperCase() ?? '?'}
+            {profile?.first_name?.[0]?.toUpperCase() ?? user?.email?.[0]?.toUpperCase() ?? '?'}
           </div>
           <div>
-            <h1 className="text-xl font-black text-white leading-tight">{user?.email}</h1>
+            <h1 className="text-xl font-black text-white leading-tight">
+              {profile?.first_name && profile?.last_name
+                ? `${profile.first_name} ${profile.last_name}`
+                : user?.email}
+            </h1>
             <div className="flex items-center gap-2 mt-1">
               <span className={`rounded-full border px-2.5 py-0.5 text-xs font-bold ${planBadgeCls(profile?.plan)}`}>
                 {planLabel(profile?.plan)}
@@ -245,6 +249,12 @@ function AccountContent() {
                 <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
                   <SectionHeader label="Profile" />
                   <div className="space-y-3">
+                    {profile?.first_name && (
+                      <div className="flex items-center justify-between py-2 border-b border-gray-800">
+                        <span className="text-xs text-gray-500 uppercase tracking-widest">Name</span>
+                        <span className="text-sm text-white">{profile.first_name} {profile.last_name}</span>
+                      </div>
+                    )}
                     <div className="flex items-center justify-between py-2 border-b border-gray-800">
                       <span className="text-xs text-gray-500 uppercase tracking-widest">Email</span>
                       <span className="text-sm text-white">{user?.email}</span>
