@@ -14,6 +14,8 @@ function SignupForm() {
   const searchParams = useSearchParams();
   const plan         = searchParams.get('plan') || 'free'; // 'free' | 'monthly' | 'yearly'
 
+  const [firstName,       setFirstName]       = useState('');
+  const [lastName,        setLastName]        = useState('');
   const [email,           setEmail]           = useState('');
   const [password,        setPassword]        = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -39,7 +41,7 @@ function SignupForm() {
     setLoading(true);
 
     const supabase = createClient();
-    const { error: authError } = await supabase.auth.signUp({
+    const { data: signUpData, error: authError } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -51,6 +53,14 @@ function SignupForm() {
       setError(authError.message);
       setLoading(false);
       return;
+    }
+
+    // Save first/last name to profile
+    if (signUpData?.user) {
+      await supabase
+        .from('profiles')
+        .update({ first_name: firstName, last_name: lastName })
+        .eq('id', signUpData.user.id);
     }
 
     // If paid plan, create Stripe checkout session
@@ -120,6 +130,24 @@ function SignupForm() {
         )}
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <div className="flex gap-3">
+            <input
+              type="text"
+              placeholder="First name"
+              value={firstName}
+              onChange={e => setFirstName(e.target.value)}
+              required
+              className={inputCls}
+            />
+            <input
+              type="text"
+              placeholder="Last name"
+              value={lastName}
+              onChange={e => setLastName(e.target.value)}
+              required
+              className={inputCls}
+            />
+          </div>
           <input
             type="email"
             placeholder="Email address"
