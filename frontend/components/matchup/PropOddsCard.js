@@ -129,6 +129,25 @@ function PlayerOddsSection({ name, propKeys, playerData, mismatchScore, accentCl
   );
 }
 
+const ODDS_CACHE_KEY = 'odds_today_v1';
+const ODDS_CACHE_TTL = 4 * 60 * 60 * 1000; // 4 hours
+
+async function fetchOddsWithCache() {
+  try {
+    const raw = localStorage.getItem(ODDS_CACHE_KEY);
+    const ts  = parseInt(localStorage.getItem(ODDS_CACHE_KEY + '_ts') || '0');
+    if (raw && Date.now() - ts < ODDS_CACHE_TTL) return JSON.parse(raw);
+  } catch {}
+  const res = await fetch('/api/odds/today');
+  if (!res.ok) throw new Error(res.status);
+  const data = await res.json();
+  try {
+    localStorage.setItem(ODDS_CACHE_KEY, JSON.stringify(data));
+    localStorage.setItem(ODDS_CACHE_KEY + '_ts', String(Date.now()));
+  } catch {}
+  return data;
+}
+
 export default function PropOddsCard({ pitcher, batter, mismatchScore }) {
   const [oddsData,  setOddsData]  = useState(null);
   const [loading,   setLoading]   = useState(true);
@@ -136,8 +155,7 @@ export default function PropOddsCard({ pitcher, batter, mismatchScore }) {
   const [lastUpdated, setLastUpdated] = useState(null);
 
   useEffect(() => {
-    fetch('/api/odds/today')
-      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+    fetchOddsWithCache()
       .then(d => {
         setOddsData(d);
         setLastUpdated(new Date());

@@ -1124,42 +1124,56 @@ function ProjectionEVCard({ pitcherStarts, seasonStats, oppTeamAbbrev, prizePick
     }
   }, [prizePicksLine]);
 
-  // Auto-fill odds from The Odds API
+  // Auto-fill odds from The Odds API (with localStorage cache)
   useEffect(() => {
     if (!playerName) return;
     const norm = (n='') => n.toLowerCase().normalize('NFD')
       .replace(/[\u0300-\u036f]/g,'').replace(/\./g,'')
       .replace(/\s+(jr|sr|ii|iii|iv)\s*$/i,'').replace(/\s+/g,' ').trim();
-    fetch('/api/odds/today')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (!data?.players) return;
-        const players = data.players;
-        let p = players[norm(playerName)];
-        if (!p) {
-          const nameLower = playerName.toLowerCase();
-          const lastName  = playerName.split(' ').pop().toLowerCase();
-          const firstName = playerName.split(' ')[0].toLowerCase();
-          const exactKey = Object.keys(players).find(k => k === nameLower);
-          if (exactKey) {
-            p = players[exactKey];
-          } else {
-            const partialKey = Object.keys(players).find(k => {
-              if (!k.includes(lastName)) return false;
-              const kFirst = k.split(' ')[0];
-              return k.includes(firstName) || k.includes(firstName[0] + '.') ||
-                firstName.startsWith(kFirst) || kFirst.startsWith(firstName);
-            });
-            if (partialKey) p = players[partialKey];
-          }
+    const CACHE_KEY = 'odds_today_v1';
+    const CACHE_TTL = 4 * 60 * 60 * 1000;
+    async function load() {
+      try {
+        const raw = localStorage.getItem(CACHE_KEY);
+        const ts  = parseInt(localStorage.getItem(CACHE_KEY + '_ts') || '0');
+        if (raw && Date.now() - ts < CACHE_TTL) return JSON.parse(raw);
+      } catch {}
+      const res = await fetch('/api/odds/today');
+      if (!res.ok) return null;
+      const d = await res.json();
+      try {
+        localStorage.setItem(CACHE_KEY, JSON.stringify(d));
+        localStorage.setItem(CACHE_KEY + '_ts', String(Date.now()));
+      } catch {}
+      return d;
+    }
+    load().then(data => {
+      if (!data?.players) return;
+      const players = data.players;
+      let p = players[norm(playerName)];
+      if (!p) {
+        const nameLower = playerName.toLowerCase();
+        const lastName  = playerName.split(' ').pop().toLowerCase();
+        const firstName = playerName.split(' ')[0].toLowerCase();
+        const exactKey = Object.keys(players).find(k => k === nameLower);
+        if (exactKey) {
+          p = players[exactKey];
+        } else {
+          const partialKey = Object.keys(players).find(k => {
+            if (!k.includes(lastName)) return false;
+            const kFirst = k.split(' ')[0];
+            return k.includes(firstName) || k.includes(firstName[0] + '.') ||
+              firstName.startsWith(kFirst) || kFirst.startsWith(firstName);
+          });
+          if (partialKey) p = players[partialKey];
         }
-        if (!p?.strikeouts) return;
-        const sk = p.strikeouts;
-        if (bookLine === '' && sk.line != null) setBookLine(String(sk.line));
-        if (sk.over  != null) setOverOdds(String(sk.over));
-        if (sk.under != null) setUnderOdds(String(sk.under));
-      })
-      .catch(() => {});
+      }
+      if (!p?.strikeouts) return;
+      const sk = p.strikeouts;
+      if (bookLine === '' && sk.line != null) setBookLine(String(sk.line));
+      if (sk.over  != null) setOverOdds(String(sk.over));
+      if (sk.under != null) setUnderOdds(String(sk.under));
+    }).catch(() => {});
   }, [playerName]);
 
   useEffect(() => {
@@ -2223,14 +2237,30 @@ function HittingProjectionEVCard({ gameLog, seasonStats, splits, statcast, pitch
   const [debLines,  setDebLines]  = useState({ hits:'', hr:'', runs:'', rbi:'', sb:'' });
   const [ppSources, setPpSources] = useState({ hits:false, hr:false, runs:false, rbi:false, sb:false });
 
-  // Auto-fill lines + odds from The Odds API
+  // Auto-fill lines + odds from The Odds API (with localStorage cache)
   useEffect(() => {
     if (!playerName) return;
     const norm = (n='') => n.toLowerCase().normalize('NFD')
       .replace(/[\u0300-\u036f]/g,'').replace(/\./g,'')
       .replace(/\s+(jr|sr|ii|iii|iv)\s*$/i,'').replace(/\s+/g,' ').trim();
-    fetch('/api/odds/today')
-      .then(r => r.ok ? r.json() : null)
+    const CACHE_KEY = 'odds_today_v1';
+    const CACHE_TTL = 4 * 60 * 60 * 1000;
+    async function load() {
+      try {
+        const raw = localStorage.getItem(CACHE_KEY);
+        const ts  = parseInt(localStorage.getItem(CACHE_KEY + '_ts') || '0');
+        if (raw && Date.now() - ts < CACHE_TTL) return JSON.parse(raw);
+      } catch {}
+      const res = await fetch('/api/odds/today');
+      if (!res.ok) return null;
+      const d = await res.json();
+      try {
+        localStorage.setItem(CACHE_KEY, JSON.stringify(d));
+        localStorage.setItem(CACHE_KEY + '_ts', String(Date.now()));
+      } catch {}
+      return d;
+    }
+    load()
       .then(data => {
         if (!data?.players) return;
         const players = data.players;
@@ -2256,8 +2286,8 @@ function HittingProjectionEVCard({ gameLog, seasonStats, splits, statcast, pitch
           }
         }
         if (!p) return;
-        // Map odds API keys → prop keys (includes sb)
-        const MAP = { hits:'hits', hr:'hr', runs:'runs', rbi:'rbi', sb:'sb' };
+        // Map odds API keys → prop keys
+        const MAP = { hits:'hits', hr:'hr', runs:'runs', rbi:'rbi' };
         setLines(prev => {
           const next = { ...prev };
           Object.entries(MAP).forEach(([prop, key]) => {

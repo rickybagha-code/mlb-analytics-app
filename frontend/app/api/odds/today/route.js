@@ -13,7 +13,7 @@ const ODDS_API_KEY  = process.env.ODDS_API_KEY;
 const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
 
 // Markets to fetch — covers all props in our model
-const BATTER_MARKETS   = ['batter_hits', 'batter_home_runs', 'batter_total_bases', 'batter_rbis', 'batter_runs_scored', 'batter_stolen_bases'];
+const BATTER_MARKETS   = ['batter_hits', 'batter_home_runs', 'batter_total_bases', 'batter_rbis', 'batter_runs_scored'];
 const PITCHER_MARKETS  = ['pitcher_strikeouts'];
 const ALL_MARKETS      = [...BATTER_MARKETS, ...PITCHER_MARKETS].join(',');
 
@@ -24,7 +24,6 @@ const MARKET_LABEL = {
   batter_total_bases:   'Total Bases',
   batter_rbis:          'RBIs',
   batter_runs_scored:   'Runs',
-  batter_stolen_bases:  'Stolen Bases',
   pitcher_strikeouts:   'Strikeouts',
 };
 
@@ -116,7 +115,6 @@ export async function GET() {
             batter_total_bases:   'totalBases',
             batter_rbis:          'rbi',
             batter_runs_scored:   'runs',
-            batter_stolen_bases:  'sb',
             pitcher_strikeouts:   'strikeouts',
           }[market.key];
           if (!internalKey) continue;
