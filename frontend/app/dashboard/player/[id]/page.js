@@ -2529,7 +2529,7 @@ export default function PlayerDetailPage() {
   const [pitcherSavant,   setPitcherSavant]   = useState(null);
   const [seasonStats25,   setSeasonStats25]   = useState(null);
   const [pitcherChartCat,  setPitcherChartCat]  = useState('k');
-  const [pitcherChartLine, setPitcherChartLine] = useState(4.5);
+  const [pitcherChartLine, setPitcherChartLine] = useState(0);
   const [pitcherChartWin,  setPitcherChartWin]  = useState(10);
 
   // ── Free tier paywall ─────────────────────────────────────────────────
@@ -2969,8 +2969,12 @@ export default function PlayerDetailPage() {
   const pageKProj = useKProjection(isPitcherView ? pitcherStarts : [], isPitcherView ? seasonStats : null, isPitcherView ? seasonStats25 : null, effectiveOppAbbrev, isPitcherView ? pitcherSavant : null, isPitcherView ? pitcherHomeAbbrev : null);
   const kProjScore = useMemo(() => {
     if (!isPitcherView || !pageKProj) return null;
+    // Insufficient data gate: < 3 starts with no 2025 prior → score 50 (no signal)
+    const starts26Count = pitcherStarts.filter(s => s.date?.startsWith('2026')).length;
+    const has2025Prior  = parseFloat(seasonStats25?.strikeoutsPer9Inn) > 0;
+    if (starts26Count < 3 && !has2025Prior) return 50;
     return pitcherScoreFromKProj(pageKProj.projected, pitcherChartLine > 0 ? pitcherChartLine : null);
-  }, [isPitcherView, pageKProj, pitcherChartLine]);
+  }, [isPitcherView, pageKProj, pitcherChartLine, pitcherStarts, seasonStats25]);
 
   // Main pitcher score is K projection; fall back to ERA score
   const pitcherScore = kProjScore ?? pitcherERAScore;
