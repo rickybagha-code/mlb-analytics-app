@@ -189,6 +189,10 @@ export default function MatchupLandingView({ isPro }) {
   const [selectedPitcher,  setSelectedPitcher]  = useState(null);
   const [loadingDropdowns, setLoadingDropdowns] = useState(true);
 
+  // Pitcher-filtered fetch state
+  const [pitcherData,    setPitcherData]    = useState(null);
+  const [loadingPitcher, setLoadingPitcher] = useState(false);
+
   // Fetch top-20 list
   useEffect(() => {
     setLoading(true);
@@ -198,6 +202,17 @@ export default function MatchupLandingView({ isPro }) {
       .then(d => { setData(d); setLoading(false); })
       .catch(e => { setError(`Failed to load matchups (${e})`); setLoading(false); });
   }, [season]);
+
+  // When pitcher is selected, fetch ALL their matchups from API
+  useEffect(() => {
+    if (!selectedPitcher) { setPitcherData(null); return; }
+    setLoadingPitcher(true);
+    setPitcherData(null);
+    fetch(`/api/matchup/top20?season=${season}&pitcherId=${selectedPitcher.id}`)
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then(d => { setPitcherData(d); setLoadingPitcher(false); })
+      .catch(() => { setPitcherData(null); setLoadingPitcher(false); });
+  }, [selectedPitcher, season]);
 
   // Fetch today's players for dropdowns (once on mount)
   useEffect(() => {
@@ -245,13 +260,47 @@ export default function MatchupLandingView({ isPro }) {
   }
 
   const allMatchups = data?.matchups ?? [];
-  // When pitcher is selected, filter list to only their matchups
-  // When batter is selected (no pitcher), filter to that batter's matchups
+
+  // When pitcher selected: merge API scored results with batters-today list.
+  // batters-today is the authoritative source for who faces this pitcher today —
+  // any batter present there but missing from the API result is added as a row
+  // with a neutral score so the full lineup always appears.
   const matchups = useMemo(() => {
-    if (selectedPitcher) return allMatchups.filter(m => m.pitcherId === selectedPitcher.id);
-    if (selectedBatter)  return allMatchups.filter(m => m.batterId  === selectedBatter.id);
+    if (selectedPitcher) {
+      const scored = pitcherData?.matchups ?? [];
+      const scoredIds = new Set(scored.map(m => m.batterId));
+      // Batters from today's data facing this pitcher that aren't in the API result
+      const facing = todayPlayers.batters.filter(
+        b => b.probablePitcherId === selectedPitcher.id && !scoredIds.has(b.id)
+      );
+      const unscoredRows = facing.map(b => ({
+        batterId:      b.id,
+        batterName:    b.name,
+        batterPos:     b.position ?? null,
+        batterHand:    b.hand ?? null,
+        batterAVG:     null,
+        splitAVG:      null,
+        headshotUrl:   b.headshotUrl,
+        teamAbbrev:    b.team,
+        pitcherId:     selectedPitcher.id,
+        pitcherName:   selectedPitcher.name,
+        pitcherHand:   selectedPitcher.hand ?? 'R',
+        pitcherTeam:   selectedPitcher.teamAbbrev ?? null,
+        mismatchScore: 50,
+        verdict:       'Neutral',
+        topEdgePitch:  '',
+        topEdgeValue:  0,
+        gameTime:      b.gameTime ?? null,
+        isLive:        false,
+        rank:          scored.length + 1,
+      }));
+      return [...scored, ...unscoredRows];
+    }
+    if (selectedBatter) return allMatchups.filter(m => m.batterId === selectedBatter.id);
     return allMatchups;
-  }, [allMatchups, selectedPitcher, selectedBatter]);
+  }, [allMatchups, pitcherData, selectedPitcher, selectedBatter, todayPlayers.batters]);
+
+  const isListLoading = selectedPitcher ? loadingPitcher : loading;
 
   const canAnalyze = !!(selectedBatter && selectedPitcher);
 
@@ -361,10 +410,10 @@ export default function MatchupLandingView({ isPro }) {
         </div>
 
         {/* Loading skeletons */}
-        {loading && Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} />)}
+        {isListLoading && Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} />)}
 
         {/* Error state */}
-        {!loading && error && (
+        {!isListLoading && error && !selectedPitcher && (
           <div className="py-12 text-center">
             <p className="text-gray-500 text-sm">{error}</p>
             <button onClick={() => { setLoading(true); fetch(`/api/matchup/top20?season=${season}`).then(r=>r.json()).then(d=>{setData(d);setLoading(false);}).catch(()=>setLoading(false)); }}
@@ -375,7 +424,7 @@ export default function MatchupLandingView({ isPro }) {
         )}
 
         {/* No games */}
-        {!loading && !error && matchups.length === 0 && (
+        {!isListLoading && (!error || selectedPitcher) && matchups.length === 0 && (
           <div className="py-12 text-center">
             <p className="text-gray-500 font-semibold">
               {selectedPitcher || selectedBatter
@@ -391,7 +440,7 @@ export default function MatchupLandingView({ isPro }) {
         )}
 
         {/* Matchup rows */}
-        {!loading && !error && matchups.map(m => (
+        {!isListLoading && matchups.map(m => (
           <button key={`${m.pitcherId}-${m.batterId}`}
             onClick={() => handleRowClick(m)}
             className="w-full text-left hover:bg-gray-800/50 transition-colors border-b border-gray-800/40 last:border-0 group">
@@ -467,7 +516,7 @@ export default function MatchupLandingView({ isPro }) {
         ))}
       </div>
 
-      {!loading && !error && matchups.length > 0 && (
+      {!isListLoading && matchups.length > 0 && (
         <p className="mt-3 text-[11px] text-gray-600 text-right">
           Scores based on pitch-type wOBA mismatch (2025 Savant data) · Click any row for full breakdown
         </p>

@@ -36,6 +36,10 @@ export const LEAGUE_AVG_WOBA_BY_PITCH = {
  * Full pitch-type mismatch score — requires Savant pitch data for both
  * pitcher arsenal and batter vs pitch type.
  *
+ * Uses a dual-signal edge formula:
+ *   combinedEdge = (batter.woba_vs_pitch − leagueAvg) + (pitcher.woba_allowed − leagueAvg)
+ * Both signals align when the batter crushes a pitch the pitcher already gets hit hard on.
+ *
  * Returns { score, topEdgePitch, topEdgeValue, verdict }
  * score: 0–100 (65+ = Batter Edge, 36–64 = Neutral, 0–35 = Pitcher Edge)
  */
@@ -59,19 +63,24 @@ export function calculateMismatchScore(batterPitchStats, pitcherPitchStats) {
     if (!batterVsPitch) continue;
 
     const leagueAvg = LEAGUE_AVG_WOBA_BY_PITCH[pitch.type] ?? 0.300;
-    const edge = batterVsPitch.woba - leagueAvg;
-    weightedEdge += edge * pitch.usagePct;
+    // Dual signal: how much better the batter hits this pitch + how much the pitcher allows on it
+    const batterEdge  = batterVsPitch.woba - leagueAvg; // >0 = batter above avg vs this pitch type
+    const pitcherEdge = pitch.woba - leagueAvg;          // >0 = pitcher allows more than avg on this pitch
+    const combinedEdge = batterEdge + pitcherEdge;
+
+    weightedEdge += combinedEdge * pitch.usagePct;
     totalWeight  += pitch.usagePct;
 
-    if (Math.abs(edge) > Math.abs(topEdgeValue)) {
-      topEdgeValue = edge;
+    if (Math.abs(combinedEdge) > Math.abs(topEdgeValue)) {
+      topEdgeValue = combinedEdge;
       topEdgePitch = pitch.type;
     }
   }
 
   const normalizedEdge = totalWeight > 0 ? weightedEdge / totalWeight : 0;
-  // Scale: edge -0.150 → score 0, edge +0.150 → score 100
-  const score = Math.round(((normalizedEdge + 0.150) / 0.300) * 100);
+  // Dual signal range: each component up to ~±0.150, combined up to ~±0.250
+  // Scale: combined edge ≤ −0.200 → score 0, ≥ +0.200 → score 100
+  const score = Math.round(((normalizedEdge + 0.200) / 0.400) * 100);
   const clamped = Math.max(0, Math.min(100, score));
 
   const verdict = clamped >= 65
@@ -95,18 +104,18 @@ export function calculateSimplifiedMismatchScore(batterSplitAVG, batterSeasonAVG
   // Platoon component: how much better/worse batter hits vs this pitcher's hand
   if (batterSplitAVG != null && batterSeasonAVG != null && batterSeasonAVG > 0) {
     const platoonEdge = (batterSplitAVG - batterSeasonAVG) / batterSeasonAVG;
-    score += Math.max(-12, Math.min(12, platoonEdge * 60));
+    score += Math.max(-18, Math.min(18, platoonEdge * 80));
   }
 
   // Pitcher quality component: ERA-based (league avg ~4.20)
   if (pitcherERA != null) {
-    score += Math.max(-10, Math.min(10, (pitcherERA - 4.20) * 3));
+    score += Math.max(-15, Math.min(15, (pitcherERA - 4.20) * 4.5));
   }
 
   // H2H component (reliable sample only)
   if (h2hAvg != null && h2hAB >= 10 && batterSeasonAVG > 0) {
     const h2hEdge = (h2hAvg - batterSeasonAVG) / batterSeasonAVG;
-    score += Math.max(-6, Math.min(6, h2hEdge * 20));
+    score += Math.max(-8, Math.min(8, h2hEdge * 28));
   }
 
   const clamped = Math.max(0, Math.min(100, Math.round(score)));

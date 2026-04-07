@@ -229,7 +229,8 @@ async function getPitcherInfo(pitcherId, season) {
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
-  const season = searchParams.get('season') || '2026';
+  const season     = searchParams.get('season')   || '2026';
+  const pitcherFilter = searchParams.get('pitcherId') ? parseInt(searchParams.get('pitcherId')) : null;
   const date   = todayEST();
 
   try {
@@ -358,6 +359,46 @@ export async function GET(request) {
       }
     }
 
+    // When pitcher filter is active, patch in any roster batters that were excluded
+    // from pairs (e.g. no 2026/2025 stats yet). Done before Savant enrichment so
+    // patched batters also get Savant scores when available.
+    if (pitcherFilter) {
+      const pairedBatterIds = new Set(
+        pairs.filter(p => p.pitcherId === pitcherFilter).map(p => p.batterId)
+      );
+      const pitcher = pitcherMap[String(pitcherFilter)];
+      if (pitcher) {
+        const missingBatters = (pitcherBatters[String(pitcherFilter)] ?? [])
+          .filter(b => b.id && !pairedBatterIds.has(b.id));
+        for (const batter of missingBatters) {
+          const stats = seasonStatsMap[batter.id];
+          const defaultScore = calcMismatchScore(null, null, pitcher.era ?? null, null, 0);
+          pairs.push({
+            batterId:    batter.id,
+            batterName:  stats?.name ?? batter.name,
+            batterHand:  stats?.hand ?? null,
+            batterPos:   stats?.position ?? batter.position ?? null,
+            batterAVG:   null,
+            splitAVG:    null,
+            headshotUrl: stats?.headshotUrl ?? `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_213,q_auto:best/v1/people/${batter.id}/headshot/67/current`,
+            teamAbbrev:  pitcher.oppAbbrev,
+            pitcherId:    pitcherFilter,
+            pitcherName:  pitcher.name,
+            pitcherHand:  pitcher.hand ?? 'R',
+            pitcherTeam:  pitcher.teamAbbrev,
+            pitcherERA:   pitcher.era ?? null,
+            pitcherWHIP:  pitcher.whip ?? null,
+            mismatchScore: defaultScore,
+            verdict:       verdictFromScore(defaultScore),
+            topEdgePitch:  '',
+            topEdgeValue:  0,
+            gameTime: pitcher.gameTime,
+            isLive:   pitcher.isLive,
+          });
+        }
+      }
+    }
+
     // ── Savant enrichment: 3 leaderboard calls total (vs 60+ per-player calls) ──
     // pitcher vs LHB, pitcher vs RHB, batter overall (no hand filter)
     const [pitcherVsLMap, pitcherVsRMap, batterMap] = await Promise.all([
@@ -389,14 +430,15 @@ export async function GET(request) {
       }
     }
 
-    // Sort by accurate score — take top 20
-    const top20 = pairs
-      .sort((a, b) => b.mismatchScore - a.mismatchScore)
-      .slice(0, 20)
-      .map((p, i) => ({ ...p, rank: i + 1 }));
+    // Sort by score — return all for a specific pitcher, else top 20
+    const sorted = pairs.sort((a, b) => b.mismatchScore - a.mismatchScore);
+    const filtered = pitcherFilter
+      ? sorted.filter(p => p.pitcherId === pitcherFilter)
+      : sorted.slice(0, 20);
+    const matchups = filtered.map((p, i) => ({ ...p, rank: i + 1 }));
 
     return NextResponse.json(
-      { matchups: top20, date, gamesCount: games.length },
+      { matchups, date, gamesCount: games.length },
       { headers: { 'Cache-Control': 'public, max-age=7200' } }
     );
   } catch (err) {
