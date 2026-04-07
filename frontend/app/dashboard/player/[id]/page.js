@@ -1856,6 +1856,12 @@ function buildHittingCtx(gameLog, seasonStats, splits, statcast, pitcher, spPitc
 
   const pitcherERA = parseFloat(pitcher?.stats?.era) || LG.era;
   const pitcherAdj = (pitcherERA - LG.era) * 0.012;  // positive = bad pitcher = more hits
+  const pitcherHRAllowed = pitcher?.stats?.homeRunsAllowed ?? null;
+  const pitcherIP        = parseFloat(pitcher?.stats?.inningsPitched) || null;
+  // HR/9 for facing pitcher — league avg ~1.25; used to improve HR model signal over ERA alone
+  const pitcherHR9 = pitcherHRAllowed != null && pitcherIP != null && pitcherIP > 0
+    ? (pitcherHRAllowed / pitcherIP) * 9
+    : null;
 
   const relSplit  = spPitcherHand === 'L' ? splits?.vsLeftHandedPitching : splits?.vsRightHandedPitching;
   const splitAVG  = parseFloat(relSplit?.avg) || null;
@@ -1884,7 +1890,7 @@ function buildHittingCtx(gameLog, seasonStats, splits, statcast, pitcher, spPitc
   return {
     seasonAVG, seasonOBP, seasonSLG, seasonPA, seasonGP, avgPA,
     L5, L10, l5Avg, l10Avg,
-    pitcherERA, pitcherAdj,
+    pitcherERA, pitcherAdj, pitcherHR9, pitcherHRAllowed,
     relSplit, splitAVG, splitOBP, splitSLG, handFactor,
     homeAbbrev, park,
     xwobaFactor, barrelPct, powerEdge, exitVelo, evoFactor,
@@ -2043,7 +2049,11 @@ function useHRProjection(gameLog, seasonStats, splits, statcast, pitcher, spPitc
     // Base Poisson probability from blended rate
     const baseLambda = Math.max(0, hrRate * c.avgPA);
     const pHR_base   = 1 - Math.exp(-baseLambda);
-    const pitcherShift = Math.max(-0.03, Math.min(0.03, (c.pitcherERA - LG.era) * 0.0075));
+    // Prefer HR/9 over ERA — more direct signal for HR tendency (lg avg ~1.25 HR/9)
+    const LG_HR9 = 1.25;
+    const pitcherShift = c.pitcherHR9 != null
+      ? Math.max(-0.04, Math.min(0.04, (c.pitcherHR9 - LG_HR9) * 0.025))
+      : Math.max(-0.03, Math.min(0.03, (c.pitcherERA - LG.era) * 0.0075));
     const parkHR       = c.park?.hr || 1.0;
     const parkShift    = Math.max(-0.06, Math.min(0.10, (parkHR - 1.0) * 0.50));
     const barrelShift  = Math.max(-0.03, Math.min(0.05, (c.barrelPct - LG.barrel) / 200));

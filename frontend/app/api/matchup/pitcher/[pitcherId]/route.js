@@ -110,12 +110,15 @@ async function fetchMLBSeasonStats(pitcherId, year) {
     const ip = parseFloat(stat.inningsPitched) || 0;
     const k  = parseInt(stat.strikeOuts) || 0;
     const pa = parseInt(stat.battersFaced) || (ip > 0 ? Math.round(ip * 4.3) : 0);
+    const hr = parseInt(stat.homeRuns) || 0;
     return {
       era:    parseFloat(stat.era)    || null,
       whip:   parseFloat(stat.whip)   || null,
       kPct:   pa > 0 ? (k / pa) : null,
       bbPct:  pa > 0 ? (parseInt(stat.baseOnBalls) / pa) : null,
       k9:     parseFloat(stat.strikeoutsPer9Inn) || null,
+      hr9:    parseFloat(stat.homeRunsPer9Inn) || (ip > 0 ? (hr / ip) * 9 : null),
+      hrAllowed: hr,
       ip,
     };
   } catch {
@@ -179,6 +182,8 @@ export async function GET(request, { params }) {
       kPct:        seasonStats?.kPct       ?? null,
       bbPct:       seasonStats?.bbPct      ?? null,
       k9:          seasonStats?.k9         ?? null,
+      hr9:         seasonStats?.hr9        ?? null,
+      hrAllowed:   seasonStats?.hrAllowed  ?? null,
       pitchData:   pitchData ?? [],
       hasPitchData: (pitchData?.length ?? 0) > 0,
       usingFallbackSeason,
