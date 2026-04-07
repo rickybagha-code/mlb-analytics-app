@@ -984,7 +984,7 @@ class ProjectionErrorBoundary extends React.Component {
   }
 }
 
-function useKProjection(pitcherStarts, seasonStats, oppTeamAbbrev, pitcherSavant, homeAbbrev) {
+function useKProjection(pitcherStarts, seasonStats, seasonStats25, oppTeamAbbrev, pitcherSavant, homeAbbrev) {
   return useMemo(() => {
     if (!pitcherStarts?.length) return null;
     const last5  = pitcherStarts.slice(-5);
@@ -993,12 +993,18 @@ function useKProjection(pitcherStarts, seasonStats, oppTeamAbbrev, pitcherSavant
     const l5K  = l5Ks.reduce((a,b)=>a+b,0) / l5Ks.length;
     const l5IP = last5.map(s => parseFloat(s.inningsPitched)||0);
     const avgL5IP = Math.max(1, l5IP.reduce((a,b)=>a+b,0) / l5IP.length);
-    const k9 = parseFloat(seasonStats?.strikeoutsPer9Inn) || null;
-    const seasonK = k9 != null ? k9 / 9 * avgL5IP : null;
     const leagueK = 5.5;
-    // Early-season blend: ramp L5 weight 0.30→0.60 over first 5 starts in 2026
     const starts26  = pitcherStarts.filter(s => s.date?.startsWith('2026')).length;
-    const l5Weight  = Math.min(0.60, 0.30 + (starts26 / 5) * 0.30);
+    // Blend 2026 and 2025 K/9 — weight toward 2026 as starts accumulate (fully 2026 at 15 starts)
+    const k9_26 = parseFloat(seasonStats?.strikeoutsPer9Inn)   || null;
+    const k9_25 = parseFloat(seasonStats25?.strikeoutsPer9Inn) || null;
+    const w_szn = Math.min(1.0, starts26 / 15);
+    const blendedK9 = k9_26 != null && k9_25 != null
+      ? w_szn * k9_26 + (1 - w_szn) * k9_25
+      : k9_26 ?? k9_25;
+    const seasonK = blendedK9 != null ? blendedK9 / 9 * avgL5IP : null;
+    // L5 weight ramps 0.30→0.60 over first 10 starts in 2026
+    const l5Weight  = Math.min(0.60, 0.30 + (starts26 / 10) * 0.30);
     const sznWeight = 0.90 - l5Weight;
     const raw = l5K * l5Weight + (seasonK ?? leagueK) * sznWeight + leagueK * 0.10;
     // Savant additive shifts
@@ -1029,7 +1035,8 @@ function useKProjection(pitcherStarts, seasonStats, oppTeamAbbrev, pitcherSavant
     const projectedOuts = Math.round(avgL5IP * 3 * 10) / 10;
     const outLower = Math.max(0, Math.round((avgL5IP - 1.2) * 3));
     const outUpper = Math.round((avgL5IP + 1.2) * 3);
-    const confidence = pitcherStarts.length >= 10 ? 'High' : pitcherStarts.length >= 5 ? 'Medium' : 'Low';
+    const confidence = (pitcherStarts.length >= 10 || (starts26 >= 3 && k9_25 != null)) ? 'High'
+      : (pitcherStarts.length >= 5  || (starts26 >= 1 && k9_25 != null)) ? 'Medium' : 'Low';
     const savantNote = pitcherSavant
       ? `WhiffRate ${pitcherSavant.whiffPct != null ? pitcherSavant.whiffPct.toFixed(1)+'%' : 'n/a'} · K% ${pitcherSavant.kPct != null ? pitcherSavant.kPct.toFixed(1)+'%' : 'n/a'}`
       : null;
@@ -1048,7 +1055,7 @@ function useKProjection(pitcherStarts, seasonStats, oppTeamAbbrev, pitcherSavant
       confidence, restFactor, daysRest, l5Ks, l5IPValues: l5IP,
       factorImpacts, hasSeasStats: seasonK != null, oppKFactor, oppKRate,
     };
-  }, [pitcherStarts, seasonStats, oppTeamAbbrev, pitcherSavant, homeAbbrev]);
+  }, [pitcherStarts, seasonStats, seasonStats25, oppTeamAbbrev, pitcherSavant, homeAbbrev]);
 }
 
 function PoissonBarChart({ lambda, bookLine }) {
@@ -1107,7 +1114,7 @@ function EVGaugeSVG({ evPct }) {
   );
 }
 
-function ProjectionEVCard({ pitcherStarts, seasonStats, oppTeamAbbrev, homeAbbrev, pitcherSavant, playerName, onLineAutoFill }) {
+function ProjectionEVCard({ pitcherStarts, seasonStats, seasonStats25, oppTeamAbbrev, homeAbbrev, pitcherSavant, playerName, onLineAutoFill }) {
   const [bookLine,  setBookLine]  = useState('');
   const [overOdds,  setOverOdds]  = useState('-115');
   const [underOdds, setUnderOdds] = useState('-115');
@@ -1175,7 +1182,7 @@ function ProjectionEVCard({ pitcherStarts, seasonStats, oppTeamAbbrev, homeAbbre
     return () => clearTimeout(t);
   }, [bookLine]);
 
-  const proj   = useKProjection(pitcherStarts, seasonStats, oppTeamAbbrev, pitcherSavant, homeAbbrev);
+  const proj   = useKProjection(pitcherStarts, seasonStats, seasonStats25, oppTeamAbbrev, pitcherSavant, homeAbbrev);
   const line   = parseFloat(debLine) || null;
   const oOdds  = parseInt(overOdds)  || -115;
   const uOdds  = parseInt(underOdds) || -115;
@@ -2517,9 +2524,10 @@ export default function PlayerDetailPage() {
   const [chartLoading,setChartLoading]= useState(true);
 
   // ── Pitcher-specific state ─────────────────────────────────────────────
-  const [pitcherStarts,  setPitcherStarts]  = useState([]);
-  const [pitcherSplits,  setPitcherSplits]  = useState(null);
-  const [pitcherSavant,  setPitcherSavant]  = useState(null);
+  const [pitcherStarts,   setPitcherStarts]   = useState([]);
+  const [pitcherSplits,   setPitcherSplits]   = useState(null);
+  const [pitcherSavant,   setPitcherSavant]   = useState(null);
+  const [seasonStats25,   setSeasonStats25]   = useState(null);
   const [pitcherChartCat,  setPitcherChartCat]  = useState('k');
   const [pitcherChartLine, setPitcherChartLine] = useState(4.5);
   const [pitcherChartWin,  setPitcherChartWin]  = useState(10);
@@ -2604,14 +2612,22 @@ export default function PlayerDetailPage() {
         const glRes = await fetch(`${API_URL}/pitcher/${id}/gamelog?season=${SEASON}`);
         if (glRes.ok) {
           const d = await glRes.json();
-          let starts = d.starts || [];
-          if (starts.length < 3) {
-            try {
-              const gl25 = await fetch(`${API_URL}/pitcher/${id}/gamelog?season=2025`);
-              if (gl25.ok) { const d25 = await gl25.json(); starts = d25.starts || starts; }
-            } catch {}
+          const starts26 = d.starts || [];
+          try {
+            const gl25 = await fetch(`${API_URL}/pitcher/${id}/gamelog?season=2025`);
+            if (gl25.ok) {
+              const d25 = await gl25.json();
+              const starts25 = d25.starts || [];
+              // Always blend: pad with 2025 tail so L5/L10 stay meaningful early in season
+              const needed = Math.max(0, 10 - starts26.length);
+              const combined = [...starts25.slice(-needed), ...starts26];
+              setPitcherStarts(combined.length > 0 ? combined : starts25);
+            } else {
+              setPitcherStarts(starts26);
+            }
+          } catch {
+            setPitcherStarts(starts26);
           }
-          setPitcherStarts(starts);
         }
         setChartLoading(false);
 
@@ -2635,15 +2651,20 @@ export default function PlayerDetailPage() {
               pitchHand:  p.pitchHand?.code || '',
             });
             const st26 = p.stats?.find(s => s.group?.displayName === 'pitching')?.splits?.[0]?.stat;
-            // Use 2025 stats if 2026 has < 3 GS (more reliable ERA/K9 signal)
             const gs26 = parseInt(st26?.gamesStarted) || 0;
-            if (st26 && gs26 >= 3) {
-              setSeasonStats(st26);
-            } else if (mlbRes25.status === 'fulfilled' && mlbRes25.value?.ok) {
+            if (st26 && gs26 >= 1) setSeasonStats(st26);
+            // Always fetch 2025 for blending — provides reliable prior for K/9, ERA, etc.
+            if (mlbRes25.status === 'fulfilled' && mlbRes25.value?.ok) {
               const d25 = await mlbRes25.value.json();
               const st25 = d25.people?.[0]?.stats?.find(s => s.group?.displayName === 'pitching')?.splits?.[0]?.stat;
-              if (st25) setSeasonStats(st25);
-              else if (st26) setSeasonStats(st26);
+              if (st25) {
+                setSeasonStats25(st25);
+                if (!st26 || gs26 === 0) setSeasonStats(st25); // fallback if no 2026 data yet
+              } else if (!st26 || gs26 === 0) {
+                // no data at all — leave null
+              }
+            } else if (!st26 || gs26 === 0) {
+              // mlbRes25 failed and no 2026 data
             }
           }
         }
@@ -2945,7 +2966,7 @@ export default function PlayerDetailPage() {
 
   // Page-level K projection (mirrors ProjectionEVCard)
   const pitcherHomeAbbrev = effectiveIsHome ? normAbbrev(playerInfo.teamAbbrev || spTeamAbbrev) : normAbbrev(effectiveOppAbbrev);
-  const pageKProj = useKProjection(isPitcherView ? pitcherStarts : [], isPitcherView ? seasonStats : null, effectiveOppAbbrev, isPitcherView ? pitcherSavant : null, isPitcherView ? pitcherHomeAbbrev : null);
+  const pageKProj = useKProjection(isPitcherView ? pitcherStarts : [], isPitcherView ? seasonStats : null, isPitcherView ? seasonStats25 : null, effectiveOppAbbrev, isPitcherView ? pitcherSavant : null, isPitcherView ? pitcherHomeAbbrev : null);
   const kProjScore = useMemo(() => {
     if (!isPitcherView || !pageKProj) return null;
     return pitcherScoreFromKProj(pageKProj.projected, pitcherChartLine > 0 ? pitcherChartLine : null);
@@ -3188,6 +3209,7 @@ export default function PlayerDetailPage() {
               <ProjectionEVCard
                 pitcherStarts={pitcherStarts}
                 seasonStats={seasonStats}
+                seasonStats25={seasonStats25}
                 oppTeamAbbrev={effectiveOppAbbrev}
                 homeAbbrev={pitcherHomeAbbrev}
                 pitcherSavant={pitcherSavant}
