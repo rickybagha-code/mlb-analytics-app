@@ -180,10 +180,13 @@ async function getBatchSeasonStats(playerIds, season) {
     for (const p of people) {
       const stat = p.stats?.[0]?.splits?.[0]?.stat ?? null;
       if (stat && (parseFloat(stat.avg) || 0) > 0) {
+        const k  = parseInt(stat.strikeOuts)       || 0;
+        const pa = parseInt(stat.plateAppearances) || parseInt(stat.atBats) || 0;
         map[p.id] = {
-          avg: parseFloat(stat.avg) || null,
-          obp: parseFloat(stat.obp) || null,
-          slg: parseFloat(stat.slg) || null,
+          avg:  parseFloat(stat.avg) || null,
+          obp:  parseFloat(stat.obp) || null,
+          slg:  parseFloat(stat.slg) || null,
+          kPct: pa > 0 ? k / pa : null,
           name: p.fullName,
           hand: p.batSide?.code ?? null,
           position: p.primaryPosition?.abbreviation ?? null,
@@ -192,7 +195,7 @@ async function getBatchSeasonStats(playerIds, season) {
       } else {
         missingIds.push(p.id);
         // Store name/hand/position even without stats so fallback can reuse
-        map[p.id] = { avg: null, name: p.fullName, hand: p.batSide?.code ?? null, position: p.primaryPosition?.abbreviation ?? null,
+        map[p.id] = { avg: null, kPct: null, name: p.fullName, hand: p.batSide?.code ?? null, position: p.primaryPosition?.abbreviation ?? null,
           headshotUrl: `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_213,q_auto:best/v1/people/${p.id}/headshot/67/current` };
       }
     }
@@ -205,7 +208,9 @@ async function getBatchSeasonStats(playerIds, season) {
       for (const p of fbResults.flat()) {
         const stat = p.stats?.[0]?.splits?.[0]?.stat ?? null;
         if (stat && (parseFloat(stat.avg) || 0) > 0 && map[p.id]) {
-          map[p.id] = { ...map[p.id], avg: parseFloat(stat.avg) || null, obp: parseFloat(stat.obp) || null, slg: parseFloat(stat.slg) || null };
+          const k  = parseInt(stat.strikeOuts)       || 0;
+          const pa = parseInt(stat.plateAppearances) || parseInt(stat.atBats) || 0;
+          map[p.id] = { ...map[p.id], avg: parseFloat(stat.avg) || null, obp: parseFloat(stat.obp) || null, slg: parseFloat(stat.slg) || null, kPct: pa > 0 ? k / pa : null };
         }
       }
     }
@@ -337,6 +342,7 @@ export async function GET(request) {
           batterHand:  stats.hand ?? null,
           batterPos:   stats.position ?? batter.position ?? null,
           batterAVG:   stats.avg,
+          batterKPct:  stats.kPct ?? null,
           splitAVG:    relevantSplit?.avg ?? null,
           headshotUrl: stats.headshotUrl,
           teamAbbrev:  pitcher.oppAbbrev,
@@ -427,6 +433,16 @@ export async function GET(request) {
         pair.topEdgePitch  = mismatch.topEdgePitch;
         pair.topEdgeValue  = mismatch.topEdgeValue;
         pair.verdict       = mismatch.verdict;
+      }
+
+      // K% penalty: high-strikeout batters are suppressed since wOBA rewards
+      // quality of contact but not frequency — a 35% K batter hitting .400 wOBA
+      // on contact is less valuable than their raw score suggests.
+      // League avg K% ~0.22; penalty kicks in above that, capped at 12 points.
+      if (pair.batterKPct != null) {
+        const kPenalty = Math.max(0, Math.min(12, (pair.batterKPct - 0.22) * 60));
+        pair.mismatchScore = Math.max(0, Math.round(pair.mismatchScore - kPenalty));
+        pair.verdict = pair.mismatchScore >= 65 ? 'Batter Edge' : pair.mismatchScore <= 35 ? 'Pitcher Edge' : 'Neutral';
       }
     }
 
