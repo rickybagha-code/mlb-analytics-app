@@ -129,13 +129,19 @@ async function getTeamRoster(teamId, season) {
 async function getBatchPlatoonSplits(playerIds, season) {
   if (!playerIds.length) return {};
   try {
-    const ids = playerIds.slice(0, 60).join(','); // MLB API limit
-    const url = `${MLB_API}/people?personIds=${ids}&hydrate=stats(group=%5Bhitting%5D,type=%5BstatSplits%5D,sitCodes=%5Bvl,vr%5D,season=${season})`;
-    const res = await fetch(url, { next: { revalidate: 3600 } });
-    if (!res.ok) return {};
-    const data = await res.json();
+    // Chunk into 60s and merge
+    const chunks = [];
+    for (let i = 0; i < playerIds.length; i += 60) chunks.push(playerIds.slice(i, i + 60));
+    const allPeople = (await Promise.all(chunks.map(async chunk => {
+      const ids = chunk.join(',');
+      const url = `${MLB_API}/people?personIds=${ids}&hydrate=stats(group=%5Bhitting%5D,type=%5BstatSplits%5D,sitCodes=%5Bvl,vr%5D,season=${season})`;
+      const res = await fetch(url, { next: { revalidate: 3600 } });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.people ?? [];
+    }))).flat();
     const map = {};
-    for (const p of (data.people ?? [])) {
+    for (const p of allPeople) {
       const stats = p.stats ?? [];
       let splits = [];
       for (const sg of stats) { if (sg.splits?.length) { splits = sg.splits; break; } }
@@ -151,18 +157,29 @@ async function getBatchPlatoonSplits(playerIds, season) {
   } catch { return {}; }
 }
 
+async function fetchStatsBatch(ids, season) {
+  const url = `${MLB_API}/people?personIds=${ids.join(',')}&hydrate=stats(group=%5Bhitting%5D,type=%5Bseason%5D,season=${season})`;
+  const res = await fetch(url, { next: { revalidate: 3600 } });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.people ?? [];
+}
+
 async function getBatchSeasonStats(playerIds, season) {
   if (!playerIds.length) return {};
   try {
-    const ids = playerIds.slice(0, 60).join(',');
-    const url = `${MLB_API}/people?personIds=${ids}&hydrate=stats(group=%5Bhitting%5D,type=%5Bseason%5D,season=${season})`;
-    const res = await fetch(url, { next: { revalidate: 3600 } });
-    if (!res.ok) return {};
-    const data = await res.json();
+    // Chunk into groups of 60 (MLB API limit) and fetch all in parallel
+    const chunks = [];
+    for (let i = 0; i < playerIds.length; i += 60) chunks.push(playerIds.slice(i, i + 60));
+    const results = await Promise.all(chunks.map(chunk => fetchStatsBatch(chunk, season)));
+    const people  = results.flat();
+
+    // Also fetch 2025 fallback for anyone missing current-season stats
     const map = {};
-    for (const p of (data.people ?? [])) {
+    const missingIds = [];
+    for (const p of people) {
       const stat = p.stats?.[0]?.splits?.[0]?.stat ?? null;
-      if (stat) {
+      if (stat && (parseFloat(stat.avg) || 0) > 0) {
         map[p.id] = {
           avg: parseFloat(stat.avg) || null,
           obp: parseFloat(stat.obp) || null,
@@ -172,8 +189,27 @@ async function getBatchSeasonStats(playerIds, season) {
           position: p.primaryPosition?.abbreviation ?? null,
           headshotUrl: `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_213,q_auto:best/v1/people/${p.id}/headshot/67/current`,
         };
+      } else {
+        missingIds.push(p.id);
+        // Store name/hand/position even without stats so fallback can reuse
+        map[p.id] = { avg: null, name: p.fullName, hand: p.batSide?.code ?? null, position: p.primaryPosition?.abbreviation ?? null,
+          headshotUrl: `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_213,q_auto:best/v1/people/${p.id}/headshot/67/current` };
       }
     }
+
+    // Fallback: fetch 2025 stats for players with no current-season data
+    if (missingIds.length && season !== '2025') {
+      const fbChunks = [];
+      for (let i = 0; i < missingIds.length; i += 60) fbChunks.push(missingIds.slice(i, i + 60));
+      const fbResults = await Promise.all(fbChunks.map(chunk => fetchStatsBatch(chunk, '2025')));
+      for (const p of fbResults.flat()) {
+        const stat = p.stats?.[0]?.splits?.[0]?.stat ?? null;
+        if (stat && (parseFloat(stat.avg) || 0) > 0 && map[p.id]) {
+          map[p.id] = { ...map[p.id], avg: parseFloat(stat.avg) || null, obp: parseFloat(stat.obp) || null, slg: parseFloat(stat.slg) || null };
+        }
+      }
+    }
+
     return map;
   } catch { return {}; }
 }

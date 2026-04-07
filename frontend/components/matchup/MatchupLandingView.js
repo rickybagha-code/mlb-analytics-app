@@ -244,7 +244,15 @@ export default function MatchupLandingView({ isPro }) {
     }
   }
 
-  const matchups = data?.matchups ?? [];
+  const allMatchups = data?.matchups ?? [];
+  // When pitcher is selected, filter list to only their matchups
+  // When batter is selected (no pitcher), filter to that batter's matchups
+  const matchups = useMemo(() => {
+    if (selectedPitcher) return allMatchups.filter(m => m.pitcherId === selectedPitcher.id);
+    if (selectedBatter)  return allMatchups.filter(m => m.batterId  === selectedBatter.id);
+    return allMatchups;
+  }, [allMatchups, selectedPitcher, selectedBatter]);
+
   const canAnalyze = !!(selectedBatter && selectedPitcher);
 
   function handleRowClick(m) {
@@ -317,6 +325,25 @@ export default function MatchupLandingView({ isPro }) {
         )}
       </div>
 
+      {/* List header — changes label when filtered */}
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-xs font-bold uppercase tracking-widest text-gray-600">
+          {selectedPitcher
+            ? `${selectedPitcher.name} — today's matchups`
+            : selectedBatter
+            ? `${selectedBatter.name} — today's matchups`
+            : "Today's Top 20 Mismatches"}
+        </p>
+        {(selectedPitcher || selectedBatter) && (
+          <button
+            onClick={() => { setSelectedPitcher(null); setSelectedBatter(null); }}
+            className="text-xs text-gray-600 hover:text-gray-300 transition-colors"
+          >
+            Clear filter ×
+          </button>
+        )}
+      </div>
+
       {/* Top 20 list */}
       <div className="relative rounded-xl border border-gray-800 bg-gray-900 overflow-hidden">
         {/* Pro gate overlay */}
@@ -351,7 +378,9 @@ export default function MatchupLandingView({ isPro }) {
         {!loading && !error && matchups.length === 0 && (
           <div className="py-12 text-center">
             <p className="text-gray-500 font-semibold">
-              {data?.note ?? 'No matchups available yet'}
+              {selectedPitcher || selectedBatter
+                ? 'Not in today\'s top matchups'
+                : data?.note ?? 'No matchups available yet'}
             </p>
             <p className="text-sm text-gray-600 mt-1">
               {data?.gamesCount === 0
