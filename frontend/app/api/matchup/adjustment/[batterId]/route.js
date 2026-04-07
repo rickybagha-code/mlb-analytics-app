@@ -40,8 +40,11 @@ export async function GET(request, { params }) {
   const pitcherId = searchParams.get('pitcherId');
   const propType  = searchParams.get('prop') || 'hits';
 
-  if (!batterId || !pitcherId) {
-    return NextResponse.json({ applied: false, multiplier: 1, adjustedPoints: 0, direction: 'neutral' });
+  if (!batterId || !/^\d+$/.test(String(batterId))) {
+    return NextResponse.json({ error: 'Invalid batterId' }, { status: 400 });
+  }
+  if (!pitcherId || !/^\d+$/.test(String(pitcherId))) {
+    return NextResponse.json({ error: 'Invalid pitcherId' }, { status: 400 });
   }
 
   try {

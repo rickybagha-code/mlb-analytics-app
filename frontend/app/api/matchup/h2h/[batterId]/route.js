@@ -11,8 +11,11 @@ export async function GET(request, { params }) {
   const { searchParams } = new URL(request.url);
   const pitcherId = searchParams.get('pitcherId');
 
-  if (!batterId || !pitcherId) {
-    return NextResponse.json({ error: 'Missing batterId or pitcherId' }, { status: 400 });
+  if (!batterId || !/^\d+$/.test(String(batterId))) {
+    return NextResponse.json({ error: 'Invalid batterId' }, { status: 400 });
+  }
+  if (!pitcherId || !/^\d+$/.test(String(pitcherId))) {
+    return NextResponse.json({ error: 'Invalid pitcherId' }, { status: 400 });
   }
 
   try {

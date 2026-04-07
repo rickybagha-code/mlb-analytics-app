@@ -157,8 +157,8 @@ export async function GET(request, { params }) {
   const year        = searchParams.get('season')      || '2026';
   const pitcherHand = searchParams.get('pitcherHand') || '';
 
-  if (!batterId) {
-    return NextResponse.json({ error: 'Missing batterId' }, { status: 400 });
+  if (!batterId || !/^\d+$/.test(String(batterId))) {
+    return NextResponse.json({ error: 'Invalid batterId' }, { status: 400 });
   }
 
   const [savantData, mlbStats, platoon, playerInfo] = await Promise.all([

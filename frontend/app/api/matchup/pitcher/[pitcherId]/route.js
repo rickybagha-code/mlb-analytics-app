@@ -152,8 +152,8 @@ export async function GET(request, { params }) {
   // 'hand' = batting hand of the opposing batter (for platoon split filtering)
   const vsHand  = searchParams.get('hand') || '';
 
-  if (!pitcherId) {
-    return NextResponse.json({ error: 'Missing pitcherId' }, { status: 400 });
+  if (!pitcherId || !/^\d+$/.test(String(pitcherId))) {
+    return NextResponse.json({ error: 'Invalid pitcherId' }, { status: 400 });
   }
 
   const [savantData, seasonStats, playerInfo] = await Promise.all([
