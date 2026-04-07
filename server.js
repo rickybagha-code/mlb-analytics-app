@@ -2,6 +2,7 @@ require('dotenv').config();
 console.log("RUNNING MLB ANALYTICS SERVER");
 
 const express = require('express');
+const { rateLimit } = require('express-rate-limit');
 const { calculateRecencyScore } = require('./services/recencyLogic');
 const { calculateMatchupScore } = require('./services/matchupLogic');
 const { calculateWeatherAdjustment } = require('./services/weatherLogic');
@@ -14,6 +15,28 @@ const OPENING_DAY    = new Date('2026-03-24');
 const DEFAULT_SEASON = process.env.DEFAULT_SEASON || (new Date() >= OPENING_DAY ? '2026' : '2025');
 
 const app = express();
+
+// ─── Rate limiting ────────────────────────────────────────────────────────────
+// General: 120 requests per minute per IP across all routes
+const generalLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again in a minute.' },
+});
+
+// Player/matchup data: 60 requests per minute per IP — these hit external APIs
+const dataLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again in a minute.' },
+});
+
+app.use(generalLimiter);
+app.use(['/player', '/pitcher', '/matchup', '/career-matchup', '/statcast', '/auto-matchup'], dataLimiter);
 
 // Allow Next.js frontend (local dev + Vercel production/preview)
 const ALLOWED_ORIGINS = [
