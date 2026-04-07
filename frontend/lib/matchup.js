@@ -63,10 +63,11 @@ export function calculateMismatchScore(batterPitchStats, pitcherPitchStats) {
     if (!batterVsPitch) continue;
 
     const leagueAvg = LEAGUE_AVG_WOBA_BY_PITCH[pitch.type] ?? 0.300;
-    // Dual signal: how much better the batter hits this pitch + how much the pitcher allows on it
+    // Dual signal: batter skill is the primary driver (65%), pitcher quality is a modifier (35%).
+    // Equal weighting caused weak pitchers to push every batter to 100 regardless of ability.
     const batterEdge  = batterVsPitch.woba - leagueAvg; // >0 = batter above avg vs this pitch type
     const pitcherEdge = pitch.woba - leagueAvg;          // >0 = pitcher allows more than avg on this pitch
-    const combinedEdge = batterEdge + pitcherEdge;
+    const combinedEdge = batterEdge * 0.65 + pitcherEdge * 0.35;
 
     weightedEdge += combinedEdge * pitch.usagePct;
     totalWeight  += pitch.usagePct;
