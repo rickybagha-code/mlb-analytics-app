@@ -19,11 +19,21 @@ export default function ResetPasswordPage() {
   const [ready,           setReady]           = useState(false);
 
   useEffect(() => {
-    // Supabase puts the session in the URL hash after redirect
-    const supabase = createClient();
-    supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') setReady(true);
-    });
+    // After PKCE flow the callback route already exchanged the code for a session.
+    // Just confirm an active session exists — no need to wait for PASSWORD_RECOVERY event.
+    async function checkSession() {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        setReady(true);
+      } else {
+        // Fallback: listen for PASSWORD_RECOVERY (older hash-based flow)
+        supabase.auth.onAuthStateChange((event) => {
+          if (event === 'PASSWORD_RECOVERY') setReady(true);
+        });
+      }
+    }
+    checkSession();
   }, []);
 
   async function handleSubmit(e) {
