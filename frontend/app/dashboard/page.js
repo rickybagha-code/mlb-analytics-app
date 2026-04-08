@@ -1526,7 +1526,7 @@ export default function DashboardPage() {
       try {
         const r = await fetch(`${MLB_API}/teams/${selectedTeamId}/roster?rosterType=active&season=${SEASON}`);
         const d = await r.json();
-        const list = (d.roster||[]).map(p=>({id:p.person.id,fullName:p.person.fullName,position:p.position?.abbreviation??''})).sort((a,b)=>a.fullName.localeCompare(b.fullName));
+        const list = (d.roster||[]).filter(p=>!['P','SP','RP','CP'].includes(p.position?.abbreviation)).map(p=>({id:p.person.id,fullName:p.person.fullName,position:p.position?.abbreviation??''})).sort((a,b)=>a.fullName.localeCompare(b.fullName));
         setCached(key, list);
         setRoster(list);
         setSelectedPlayerId('');
