@@ -153,8 +153,10 @@ function computeProjectionScore(player, category) {
     const h2hHitShift = h2hAVG != null && avg > 0 && h2hAB >= 15
       ? Math.max(-8, Math.min(10, (h2hAVG / avg - 1.0) * 20 * Math.min(1.0, (h2hAB - 15) / 45)))
       : 0;
+    // Park hits factor: e.g. Coors +14% → +7 pts, Petco -5% → -2.5 pts
+    const parkHitBonus = player.parkHits != null ? Math.max(-5, Math.min(8, (player.parkHits - 1.0) * 50)) : 0;
     // Weather scaled to 35% for hits — wind affects HR carry, not singles/doubles
-    base = 53 + wComp - kPenalty + bbBonus + hardBonus + pitcherMod + splitBonus + weatherBonus * 0.35 + h2hHitShift;
+    base = 53 + wComp - kPenalty + bbBonus + hardBonus + pitcherMod + splitBonus + weatherBonus * 0.35 + h2hHitShift + parkHitBonus;
   } else if (category === 'hr') {
     if (pa < 100) return 55;
     // Poisson base: blends L10 HR rate (if loaded) with season rate
@@ -206,7 +208,9 @@ function computeProjectionScore(player, category) {
       : 0;
     const ORDER_RUNS = { 1:8, 2:5, 3:2, 4:0, 5:-2, 6:-4, 7:-7, 8:-9, 9:-10 };
     const orderRunsBonus = player.battingOrder != null ? (ORDER_RUNS[player.battingOrder] ?? 0) : 0;
-    base = 40 + rComp + obpComp + hardBonus + pitcherMod + splitOBPbonus + weatherBonus + orderRunsBonus;
+    // Park runs factor: Coors +18% → +7 pts, petco -7% → -3 pts
+    const parkRunBonus = player.parkRuns != null ? Math.max(-5, Math.min(8, (player.parkRuns - 1.0) * 45)) : 0;
+    base = 40 + rComp + obpComp + hardBonus + pitcherMod + splitOBPbonus + weatherBonus + orderRunsBonus + parkRunBonus;
   } else if (category === 'rbi') {
     const rbiComp    = Math.max(-15, Math.min(35, (rbi / gp - 0.45) * 70));
     const slgComp    = Math.max(0,   Math.min(15, (slg - 0.400) / 0.200 * 15));
@@ -218,7 +222,9 @@ function computeProjectionScore(player, category) {
       : 0;
     const ORDER_RBI = { 1:-7, 2:-3, 3:5, 4:8, 5:5, 6:2, 7:0, 8:-3, 9:-5 };
     const orderRbiBonus = player.battingOrder != null ? (ORDER_RBI[player.battingOrder] ?? 0) : 0;
-    base = 38 + rbiComp + slgComp + hrComp + xwobaBonus + pitcherMod + splitSLGbonus + weatherBonus + orderRbiBonus;
+    // Park runs env affects RBI opportunity (runners scoring ahead)
+    const parkRbiBonus = player.parkRuns != null ? Math.max(-4, Math.min(6, (player.parkRuns - 1.0) * 40)) : 0;
+    base = 38 + rbiComp + slgComp + hrComp + xwobaBonus + pitcherMod + splitSLGbonus + weatherBonus + orderRbiBonus + parkRbiBonus;
   }
   // Shrink score toward 50 for thin sample sizes.
   // HR is exempt: pHR already has three internal shrinkage layers (sampleWeight, hrSampleWeight,
@@ -1503,6 +1509,9 @@ function BaseballDiamondCard({ spTeamAbbrev, spOppAbbrev, spIsHome, activeCat, w
   const pctStr = v => `${v >= 1 ? '+' : ''}${Math.round((v-1)*100)}%`;
   const valCls = v => v >= 1.03 ? 'text-emerald-400' : v <= 0.97 ? 'text-red-400' : 'text-gray-400';
   const valBg  = v => v >= 1.03 ? 'bg-emerald-500/15 border-emerald-500/30' : v <= 0.97 ? 'bg-red-500/10 border-red-500/25' : 'bg-gray-800/50 border-gray-700/50';
+  // Active category: strong boost (≥+8%) → green, strong suppress (≤-8%) → red, else blue
+  const activePillBg  = v => v >= 1.08 ? 'border-emerald-500/50 bg-emerald-500/15' : v <= 0.92 ? 'border-red-500/40 bg-red-500/10' : 'border-blue-500/40 bg-blue-500/10';
+  const activePillCls = v => v >= 1.08 ? 'text-emerald-400' : v <= 0.92 ? 'text-red-400' : 'text-blue-400';
 
   // SVG field layout — larger H for more presence
   const W = 300, H = 278;
@@ -1747,8 +1756,8 @@ function BaseballDiamondCard({ spTeamAbbrev, spOppAbbrev, spIsHome, activeCat, w
               { label:'Runs', val:park.runs, cat:'runs' },
               { label:'K',    val:park.k,    cat:'k'    },
             ].map(r => (
-              <div key={r.label} className={`rounded-lg border p-3 text-center transition-colors ${r.cat===activeCat ? 'border-blue-500/40 bg-blue-500/10' : valBg(r.val)}`}>
-                <div className={`text-base font-black tabular-nums ${r.cat===activeCat ? 'text-blue-400' : valCls(r.val)}`}>{pctStr(r.val)}</div>
+              <div key={r.label} className={`rounded-lg border p-3 text-center transition-colors ${r.cat===activeCat ? activePillBg(r.val) : valBg(r.val)}`}>
+                <div className={`text-base font-black tabular-nums ${r.cat===activeCat ? activePillCls(r.val) : valCls(r.val)}`}>{pctStr(r.val)}</div>
                 <div className="text-xs text-gray-600 mt-0.5">{r.label}</div>
               </div>
             ))}
@@ -3027,10 +3036,19 @@ export default function PlayerDetailPage() {
         const rel  = hand && splits
           ? (hand === 'L' ? splits.vsLeftHandedPitching : splits.vsRightHandedPitching)
           : null;
+        // Park factors for hits/runs/rbi models
+        const homeAbbrev = normAbbrev(
+          effectiveIsHome
+            ? (playerInfo.teamAbbrev || spTeamAbbrev)
+            : (effectiveOppAbbrev || '')
+        );
+        const park = homeAbbrev ? PARK_FACTORS[homeAbbrev] : null;
         return {
           splitAVG: rel ? (parseFloat(rel.avg) || null) : null,
           splitOBP: rel ? (parseFloat(rel.obp) || null) : null,
           splitSLG: rel ? (parseFloat(rel.slg) || null) : null,
+          parkHits: park?.hits ?? null,
+          parkRuns: park?.runs ?? null,
         };
       })()),
     }, modelCat);
