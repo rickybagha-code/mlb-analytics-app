@@ -84,16 +84,26 @@ function todayEST() {
 const ABBREV_MAP = { TB:'TBR', KC:'KCR', SD:'SDP', SF:'SFG', WSH:'WSN', CHW:'CWS', AZ:'ARI' };
 function normAbbrev(a) { return a ? (ABBREV_MAP[a] || a) : a; }
 
-// Simplified mismatch score (platoon + pitcher ERA + H2H)
-function calcMismatchScore(batterAvg, batterSplitAvg, pitcherERA, h2hAvg, h2hAB) {
+// Simplified mismatch score (platoon + pitcher ERA/WHIP + batter OPS quality + H2H)
+function calcMismatchScore(batterAvg, batterSplitAvg, pitcherERA, h2hAvg, h2hAB, batterOPS, pitcherWHIP) {
   let score = 50;
+  // Platoon component
   if (batterSplitAvg != null && batterAvg != null && batterAvg > 0) {
     const platoonEdge = (batterSplitAvg - batterAvg) / batterAvg;
     score += Math.max(-12, Math.min(12, platoonEdge * 60));
   }
+  // Pitcher quality: ERA primary, WHIP fallback when ERA is null (new/fringe pitchers)
   if (pitcherERA != null) {
     score += Math.max(-10, Math.min(10, (pitcherERA - 4.20) * 3));
+  } else if (pitcherWHIP != null) {
+    score += Math.max(-10, Math.min(10, (1.25 - pitcherWHIP) * 33));
   }
+  // Batter quality baseline: OPS vs league avg (~0.710)
+  // Ensures elite hitters score higher than avg hitters even with no pitch data
+  if (batterOPS != null && batterOPS > 0) {
+    score += Math.max(-10, Math.min(14, (batterOPS - 0.710) / 0.100 * 5.3));
+  }
+  // H2H component (reliable sample only)
   if (h2hAvg != null && h2hAB >= 10 && batterAvg != null && batterAvg > 0) {
     score += Math.max(-6, Math.min(6, ((h2hAvg - batterAvg) / batterAvg) * 20));
   }
@@ -328,11 +338,14 @@ export async function GET(request) {
         if (!stats?.avg) continue;
 
         const relevantSplit = pitcher.hand === 'L' ? splits?.vsLeft : splits?.vsRight;
+        const batterOPS = (stats.obp != null && stats.slg != null) ? stats.obp + stats.slg : null;
         const score = calcMismatchScore(
           stats.avg,
           relevantSplit?.avg ?? null,
           pitcher.era ?? null,
-          null, 0 // H2H not fetched for speed; shown in deep dive
+          null, 0, // H2H not fetched for speed; shown in deep dive
+          batterOPS,
+          pitcher.whip ?? null
         );
         const verdict = verdictFromScore(score);
 
@@ -378,7 +391,7 @@ export async function GET(request) {
           .filter(b => b.id && !pairedBatterIds.has(b.id));
         for (const batter of missingBatters) {
           const stats = seasonStatsMap[batter.id];
-          const defaultScore = calcMismatchScore(null, null, pitcher.era ?? null, null, 0);
+          const defaultScore = calcMismatchScore(null, null, pitcher.era ?? null, null, 0, null, pitcher.whip ?? null);
           pairs.push({
             batterId:    batter.id,
             batterName:  stats?.name ?? batter.name,

@@ -99,7 +99,7 @@ export function calculateMismatchScore(batterPitchStats, pitcherPitchStats) {
  *
  * Returns { score, topEdgePitch: '', topEdgeValue: 0, verdict }
  */
-export function calculateSimplifiedMismatchScore(batterSplitAVG, batterSeasonAVG, pitcherERA, h2hAvg, h2hAB) {
+export function calculateSimplifiedMismatchScore(batterSplitAVG, batterSeasonAVG, pitcherERA, h2hAvg, h2hAB, batterOPS, pitcherWHIP) {
   let score = 50;
 
   // Platoon component: how much better/worse batter hits vs this pitcher's hand
@@ -108,9 +108,17 @@ export function calculateSimplifiedMismatchScore(batterSplitAVG, batterSeasonAVG
     score += Math.max(-18, Math.min(18, platoonEdge * 80));
   }
 
-  // Pitcher quality component: ERA-based (league avg ~4.20)
+  // Pitcher quality: ERA primary, WHIP fallback when ERA is null (new/fringe pitchers)
   if (pitcherERA != null) {
     score += Math.max(-15, Math.min(15, (pitcherERA - 4.20) * 4.5));
+  } else if (pitcherWHIP != null) {
+    score += Math.max(-10, Math.min(10, (1.25 - pitcherWHIP) * 33));
+  }
+
+  // Batter quality baseline: OPS vs league avg (~0.710)
+  // Ensures elite hitters score higher than avg hitters even with no pitch data
+  if (batterOPS != null && batterOPS > 0) {
+    score += Math.max(-10, Math.min(14, (batterOPS - 0.710) / 0.100 * 5.3));
   }
 
   // H2H component (reliable sample only)

@@ -37,7 +37,10 @@ export default function MatchupSummaryCard({ pitcher, batter, h2h, loading }) {
   } else {
     const splitAvg = batter.splitAVG ?? null;
     const seasonAvg = parseFloat(batter.seasonStat?.avg) || null;
-    mismatch = calculateSimplifiedMismatchScore(splitAvg, seasonAvg, pitcher.era, h2h?.avg ?? null, h2h?.ab ?? 0);
+    const seasonOBP = parseFloat(batter.seasonStat?.obp) || null;
+    const seasonSLG = parseFloat(batter.seasonStat?.slg) || null;
+    const batterOPS = (seasonOBP != null && seasonSLG != null) ? seasonOBP + seasonSLG : null;
+    mismatch = calculateSimplifiedMismatchScore(splitAvg, seasonAvg, pitcher.era, h2h?.avg ?? null, h2h?.ab ?? 0, batterOPS, pitcher.whip ?? null);
   }
 
   const summary = generateMatchupSummary(
