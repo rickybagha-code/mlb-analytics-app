@@ -1770,7 +1770,7 @@ function BaseballDiamondCard({ spTeamAbbrev, spOppAbbrev, spIsHome, activeCat, w
   );
 }
 
-function LineupPositionCard({ games, loading, todayLineup, todaySlot }) {
+function LineupPositionCard({ games, loading, todayLineup, todaySlot, pitcher }) {
   if (loading) return (
     <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
       <div className="flex items-center gap-2 mb-4">
@@ -1813,6 +1813,32 @@ function LineupPositionCard({ games, loading, todayLineup, todaySlot }) {
             </div>
           </div>
         )}
+
+        {/* Opposing pitcher strip */}
+        {(() => {
+          const sp = todayLineup.batters[0];
+          const pitcherName = pitcher?.name || sp?.probablePitcherName;
+          const pitcherHand = pitcher?.hand || sp?.probablePitcherHand;
+          const pitcherTeam = sp?.probablePitcherTeam;
+          const era  = pitcher?.stats?.era  != null ? parseFloat(pitcher.stats.era).toFixed(2)  : null;
+          const whip = pitcher?.stats?.whip != null ? parseFloat(pitcher.stats.whip).toFixed(2) : null;
+          if (!pitcherName) return null;
+          return (
+            <div className="flex items-center gap-3 mb-3 px-2.5 py-2 rounded-lg bg-gray-800/50 border border-gray-700/40">
+              <PlayerHeadshot playerId={sp?.probablePitcherId} name={pitcherName} size={32}/>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-white truncate">{pitcherName}</p>
+                <p className="text-xs text-gray-500">{pitcherTeam}{pitcherHand ? ` · ${pitcherHand}HP` : ''}</p>
+              </div>
+              {(era || whip) && (
+                <div className="flex gap-3 flex-shrink-0">
+                  {era  && <div className="text-center"><p className="text-xs font-bold text-white tabular-nums">{era}</p><p className="text-[10px] text-gray-600">ERA</p></div>}
+                  {whip && <div className="text-center"><p className="text-xs font-bold text-white tabular-nums">{whip}</p><p className="text-[10px] text-gray-600">WHIP</p></div>}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         <div className="space-y-1">
           {todayLineup.batters.map((batter, idx) => {
@@ -3647,7 +3673,7 @@ export default function PlayerDetailPage() {
                 activeCat={cat}
                 weather={weather}
               />
-              <LineupPositionCard games={gameLog} loading={chartLoading} todayLineup={todayLineup} todaySlot={battingOrder}/>
+              <LineupPositionCard games={gameLog} loading={chartLoading} todayLineup={todayLineup} todaySlot={battingOrder} pitcher={pitcher}/>
             </div>
 
           </>
