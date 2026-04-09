@@ -1770,7 +1770,7 @@ function BaseballDiamondCard({ spTeamAbbrev, spOppAbbrev, spIsHome, activeCat, w
   );
 }
 
-function LineupPositionCard({ games, loading }) {
+function LineupPositionCard({ games, loading, todayLineup, todaySlot }) {
   if (loading) return (
     <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
       <div className="flex items-center gap-2 mb-4">
@@ -1781,12 +1781,73 @@ function LineupPositionCard({ games, loading }) {
     </div>
   );
 
+  const slotLabel = s => !s ? '' : s <= 2 ? 'Table setter' : s <= 5 ? 'Run producer' : 'Bottom order';
+  const slotCls   = s => !s ? 'text-gray-500' : s <= 2 ? 'text-blue-400' : s <= 5 ? 'text-emerald-400' : 'text-gray-400';
+
+  // ── Confirmed lineup view ──────────────────────────────────────────────────
+  const confirmed = todayLineup?.confirmed && todayLineup.batters.length > 0;
+  const activeSlot = todayLineup?.mySlot ?? todaySlot;
+
+  if (confirmed) {
+    return (
+      <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <span className="text-base">📍</span>
+            <h3 className="text-sm font-bold text-white">Lineup Position</h3>
+          </div>
+          <span className="inline-flex items-center gap-1 text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/25 rounded-full px-2 py-0.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"/>
+            Confirmed
+          </span>
+        </div>
+
+        {activeSlot && (
+          <div className="flex items-center gap-3 mb-4">
+            <div className={`flex items-center justify-center w-12 h-12 rounded-xl border-2 bg-gray-800/50 font-black text-xl tabular-nums flex-shrink-0 ${activeSlot<=2?'border-blue-500/40 text-blue-400':activeSlot<=5?'border-emerald-500/40 text-emerald-400':'border-gray-700 text-gray-400'}`}>
+              #{activeSlot}
+            </div>
+            <div>
+              <p className={`text-sm font-bold ${slotCls(activeSlot)}`}>{slotLabel(activeSlot)}</p>
+              <p className="text-xs text-gray-600">Today's batting slot</p>
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-1">
+          {todayLineup.batters.map((batter, idx) => {
+            const slot = idx + 1;
+            const isMe = batter.id === todayLineup.batters[todayLineup.mySlot - 1]?.id;
+            const lastName = batter.name?.split(' ').slice(1).join(' ') || batter.name;
+            return (
+              <div key={batter.id} className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg ${isMe ? 'bg-blue-600/20 border border-blue-500/30' : 'border border-transparent'}`}>
+                <span className={`text-xs font-black tabular-nums w-4 flex-shrink-0 ${isMe ? 'text-blue-400' : 'text-gray-700'}`}>{slot}</span>
+                <span className={`text-xs font-medium flex-1 truncate ${isMe ? 'text-white' : 'text-gray-400'}`}>{lastName}</span>
+                {batter.position && (
+                  <span className={`text-xs tabular-nums flex-shrink-0 ${isMe ? 'text-blue-400/70' : 'text-gray-700'}`}>{batter.position}</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {activeSlot && (
+          <p className="text-xs text-gray-600 leading-relaxed pt-3 mt-2 border-t border-gray-800/60">
+            Batting <span className="font-bold text-white">#{activeSlot}</span>{' '}
+            {activeSlot<=2 ? '— high PA volume, fewer RBI spots ahead.'
+              : activeSlot<=5 ? '— prime RBI opportunity with runners expected on base.'
+              : '— fewer PA but lineup context can still generate R/RBI.'}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  // ── Historical / pre-lineup fallback ──────────────────────────────────────
   const bOrders = games.slice(-10)
     .map(g => g.battingOrder ? Math.ceil(parseInt(g.battingOrder) / 100) : null)
     .filter(v => v != null && v >= 1 && v <= 9);
-  const avgSlot = bOrders.length ? Math.round(bOrders.reduce((a,b)=>a+b,0)/bOrders.length) : null;
-  const slotLabel = s => !s ? '' : s <= 2 ? 'Table setter' : s <= 5 ? 'Run producer' : 'Bottom order';
-  const slotCls   = s => !s ? 'text-gray-500' : s <= 2 ? 'text-blue-400' : s <= 5 ? 'text-emerald-400' : 'text-gray-400';
+  const avgSlot = activeSlot ?? (bOrders.length ? Math.round(bOrders.reduce((a,b)=>a+b,0)/bOrders.length) : null);
 
   return (
     <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
@@ -1802,7 +1863,7 @@ function LineupPositionCard({ games, loading }) {
             </div>
             <div>
               <p className={`text-sm font-bold ${slotCls(avgSlot)}`}>{slotLabel(avgSlot)}</p>
-              <p className="text-xs text-gray-600">L10 avg batting slot</p>
+              <p className="text-xs text-gray-600">{activeSlot ? "Today's batting slot" : 'L10 avg batting slot'}</p>
             </div>
           </div>
           <div className="flex items-center gap-1 mb-2">
@@ -2548,6 +2609,7 @@ export default function PlayerDetailPage() {
   const [resolvedOppAbbrev,   setResolvedOppAbbrev]   = useState('');
   const [resolvedIsHome,      setResolvedIsHome]      = useState(false);
   const [battingOrder,        setBattingOrder]        = useState(null);
+  const [todayLineup,         setTodayLineup]         = useState({ batters: [], confirmed: false, mySlot: null });
 
   // Effective matchup context — URL params take priority; resolved values used when navigating directly
   const effectivePitcherId   = spPitcherId   || resolvedPitcherId;
@@ -2597,6 +2659,29 @@ export default function PlayerDetailPage() {
     setLoading(true);
     setChartLoading(true);
     loadData();
+  }, [id]);
+
+  // ── Today's confirmed lineup (non-blocking, for LineupPositionCard) ────────
+  useEffect(() => {
+    if (!id) return;
+    async function fetchTodayLineup() {
+      try {
+        const res = await fetch('/api/matchup/batters-today');
+        if (!res.ok) return;
+        const data = await res.json();
+        const playerId = parseInt(id);
+        const allConfirmed = (data.batters ?? []).filter(b => b.fromLineup);
+        const myEntry = allConfirmed.find(b => b.id === playerId);
+        if (!myEntry) return;
+        // Get full team lineup (same team + same opposing pitcher = same game)
+        const teamLineup = allConfirmed.filter(
+          b => b.team === myEntry.team && b.probablePitcherId === myEntry.probablePitcherId
+        );
+        const mySlot = teamLineup.findIndex(b => b.id === playerId) + 1;
+        setTodayLineup({ batters: teamLineup, confirmed: true, mySlot: mySlot || null });
+      } catch {}
+    }
+    fetchTodayLineup();
   }, [id]);
 
   async function loadData() {
@@ -3562,7 +3647,7 @@ export default function PlayerDetailPage() {
                 activeCat={cat}
                 weather={weather}
               />
-              <LineupPositionCard games={gameLog} loading={chartLoading}/>
+              <LineupPositionCard games={gameLog} loading={chartLoading} todayLineup={todayLineup} todaySlot={battingOrder}/>
             </div>
 
           </>
