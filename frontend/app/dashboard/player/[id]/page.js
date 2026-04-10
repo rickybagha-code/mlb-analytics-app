@@ -150,8 +150,8 @@ function computeProjectionScore(player, category) {
     // H2H history vs today's pitcher — sample-weighted, 15 AB minimum
     const h2hAB  = player.h2hAB  ?? 0;
     const h2hAVG = player.h2hAVG ?? null;
-    const h2hHitShift = h2hAVG != null && avg > 0 && h2hAB >= 15
-      ? Math.max(-8, Math.min(10, (h2hAVG / avg - 1.0) * 20 * Math.min(1.0, (h2hAB - 15) / 45)))
+    const h2hHitShift = h2hAVG != null && avg > 0 && h2hAB >= 10
+      ? Math.max(-8, Math.min(10, (h2hAVG / avg - 1.0) * 20 * Math.min(1.0, (h2hAB - 10) / 50)))
       : 0;
     // Park hits factor: e.g. Coors +14% → +7 pts, Petco -5% → -2.5 pts
     const parkHitBonus = player.parkHits != null ? Math.max(-5, Math.min(8, (player.parkHits - 1.0) * 50)) : 0;
@@ -231,7 +231,7 @@ function computeProjectionScore(player, category) {
   // 10% LG anchor) — a fourth confidence pull double-penalises early-season elite power hitters.
   const effectiveConf = category === 'hr' ? 1.0 : confidence;
   const adjusted = 50 + (base - 50) * effectiveConf;
-  const recencyCap  = ab < 30 ? 4 : ab < 100 ? 7 : 12;
+  const recencyCap  = ab < 30 ? 4 : ab < 100 ? 10 : 12;
   const safeRecency = Math.max(-recencyCap, Math.min(recencyCap, recencyBoost));
   return Math.round(Math.max(5, Math.min(99, adjusted + safeRecency)));
 }
