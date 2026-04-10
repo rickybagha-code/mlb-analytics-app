@@ -48,7 +48,7 @@ async function fetchSavantLeaderboard(type, year, hand = '') {
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ProprStats/1.0)' },
       signal: AbortSignal.timeout(20000),
-      next: { revalidate: 86400 },
+      next: { revalidate: 3600 },
     });
     if (!res.ok) return {};
     const text = await res.text();
@@ -465,7 +465,10 @@ export async function GET(request) {
       : sorted.slice(0, 20);
     const matchups = filtered.map((p, i) => ({ ...p, rank: i + 1 }));
 
-    return NextResponse.json({ matchups, date, gamesCount: games.length });
+    return NextResponse.json(
+      { matchups, date, gamesCount: games.length },
+      { headers: { 'Cache-Control': 'no-store' } }
+    );
   } catch (err) {
     console.error('Top20 route error:', err.message);
     return NextResponse.json({ matchups: [], date, error: err.message }, { status: 500 });
