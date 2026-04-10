@@ -253,12 +253,6 @@ function Hero() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6"/>
                 </svg>
               </Link>
-              <a
-                href="#features"
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-700 px-7 py-3.5 text-base font-semibold text-gray-300 hover:border-gray-500 hover:text-white transition-all"
-              >
-                See all features →
-              </a>
             </div>
             <p className="mt-3 text-xs text-gray-600">No credit card required · Free to start</p>
             <p className="mt-4 text-xs italic text-gray-600 text-center sm:text-left max-w-sm">
@@ -439,9 +433,9 @@ const features = [
 
 function FeaturesSection() {
   return (
-    <section id="features" className="py-24 relative">
+    <section id="features" className="py-16 sm:py-24 relative">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="mb-14 text-center">
+        <div className="mb-8 sm:mb-14 text-center">
           <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/10 px-4 py-1.5">
             <span className="h-1.5 w-1.5 rounded-full bg-blue-400"/>
             <span className="text-xs font-semibold uppercase tracking-widest text-blue-400">Platform Features</span>
@@ -449,12 +443,25 @@ function FeaturesSection() {
           <h2 className="mt-4 text-3xl font-bold text-white sm:text-4xl">
             Every Edge. Already Done For You.
           </h2>
-          <p className="mt-3 text-gray-400 max-w-2xl mx-auto">
+          <p className="hidden sm:block mt-3 text-gray-400 max-w-2xl mx-auto">
             Stop opening six tabs before every bet. ProprStats does the research — Statcast, matchups, trends, weather, and the book line — and hands you one number: your edge.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {/* Mobile — compact icon + title grid */}
+        <div className="grid grid-cols-2 gap-2 sm:hidden">
+          {features.map((f) => (
+            <div key={f.num} className="flex items-center gap-3 rounded-xl border border-gray-800 bg-gray-900/60 px-3 py-3">
+              <div className="flex-shrink-0 inline-flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400">
+                {f.icon}
+              </div>
+              <span className="text-xs font-bold text-white leading-tight">{f.title.split('—')[0].trim()}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Desktop — full cards */}
+        <div className="hidden sm:grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {features.map((f) => (
             <div
               key={f.num}
@@ -1156,10 +1163,25 @@ export default function LandingPage() {
         <Hero/>
         <HowItWorks/>
         <FeaturesSection/>
-        <ComparisonTable/>
-        <EVSection/>
+
+        {/* Mobile: Pricing right after Features */}
+        <div className="sm:hidden">
+          <PricingSection/>
+        </div>
+
+        {/* Desktop-only: Comparison table + EV demo */}
+        <div className="hidden sm:block">
+          <ComparisonTable/>
+          <EVSection/>
+        </div>
+
         <TestimonialsSection/>
-        <PricingSection/>
+
+        {/* Desktop: Pricing in original position */}
+        <div className="hidden sm:block">
+          <PricingSection/>
+        </div>
+
         <BottomCTA/>
       </main>
       <Footer/>
