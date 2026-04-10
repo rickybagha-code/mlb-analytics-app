@@ -463,10 +463,7 @@ export async function GET(request) {
       : sorted.slice(0, 20);
     const matchups = filtered.map((p, i) => ({ ...p, rank: i + 1 }));
 
-    return NextResponse.json(
-      { matchups, date, gamesCount: games.length },
-      { headers: { 'Cache-Control': 'public, max-age=7200' } }
-    );
+    return NextResponse.json({ matchups, date, gamesCount: games.length });
   } catch (err) {
     console.error('Top20 route error:', err.message);
     return NextResponse.json({ matchups: [], date, error: err.message }, { status: 500 });
