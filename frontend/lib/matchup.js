@@ -85,7 +85,7 @@ export function calculateMismatchScore(batterPitchStats, pitcherPitchStats, cont
     // pitcherEdge: positive = pitcher gives up more than avg = batter-friendly
     // negative = pitcher dominates this pitch = batter-hostile
     const pitcherEdge  = pitch.woba - leagueAvg;
-    const combinedEdge = finalBatterEdge * 0.60 + pitcherEdge * 0.40;
+    const combinedEdge = finalBatterEdge + (pitcherEdge * 0.30);
 
     weightedSum += combinedEdge * usageWeight;
     totalUsage  += usageWeight; // always counted — preserves true frequency weighting
@@ -99,7 +99,7 @@ export function calculateMismatchScore(batterPitchStats, pitcherPitchStats, cont
 
   const normalizedEdge = totalUsage > 0 ? weightedSum / totalUsage : 0;
   // ±0.175 range — tighter than old ±0.200, reflects realistic per-pitch edge spreads
-  let matrixScore = Math.round(((normalizedEdge + 0.175) / 0.350) * 100);
+  let matrixScore = Math.round(((normalizedEdge + 0.150) / 0.300) * 100);
   matrixScore     = Math.max(0, Math.min(100, matrixScore));
 
   // ─── Layer 1: Platoon ─────────────────────────────────────────────────────
