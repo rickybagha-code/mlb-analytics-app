@@ -5,6 +5,7 @@ import ProprStatsLogo from '../components/ProprStatsLogo';
 
 // ─── Navbar ───────────────────────────────────────────────────────────────────
 function Navbar() {
+  const [mobileOpen, setMobileOpen] = useState(false);
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 border-b border-white/5 bg-gray-950/80 backdrop-blur-xl">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -27,13 +28,41 @@ function Navbar() {
             </Link>
             <Link
               href="/#pricing"
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 transition-all shadow-lg shadow-blue-500/20 hover:-translate-y-px"
+              className="hidden sm:inline-flex rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 transition-all shadow-lg shadow-blue-500/20 hover:-translate-y-px"
             >
               Sign Up
             </Link>
+            <button
+              onClick={() => setMobileOpen(o => !o)}
+              className="md:hidden inline-flex items-center justify-center w-9 h-9 rounded-lg border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 transition-all"
+              aria-label="Toggle menu"
+            >
+              {mobileOpen ? (
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
+                </svg>
+              )}
+            </button>
           </div>
         </div>
       </div>
+      {/* Mobile menu */}
+      {mobileOpen && (
+        <div className="md:hidden border-t border-white/5 bg-gray-950/95 backdrop-blur-xl px-4 py-4 flex flex-col gap-1">
+          <a href="#how-it-works" onClick={() => setMobileOpen(false)} className="px-3 py-2.5 rounded-lg text-sm text-gray-300 hover:bg-gray-800 hover:text-white transition-all">How It Works</a>
+          <a href="#pricing" onClick={() => setMobileOpen(false)} className="px-3 py-2.5 rounded-lg text-sm text-gray-300 hover:bg-gray-800 hover:text-white transition-all">Pricing</a>
+          <Link href="/dashboard" onClick={() => setMobileOpen(false)} className="px-3 py-2.5 rounded-lg text-sm text-gray-300 hover:bg-gray-800 hover:text-white transition-all">Dashboard</Link>
+          <div className="pt-2 border-t border-gray-800 mt-1">
+            <Link href="/#pricing" onClick={() => setMobileOpen(false)} className="block w-full rounded-xl bg-blue-600 py-3 text-center text-sm font-bold text-white hover:bg-blue-500 transition-all">
+              Sign Up Free
+            </Link>
+          </div>
+        </div>
+      )}
     </nav>
   );
 }
