@@ -1530,8 +1530,14 @@ function BaseballDiamondCard({ spTeamAbbrev, spOppAbbrev, spIsHome, activeCat, w
   const windClr  = windAdj > 0 ? '#34d399' : windAdj < 0 ? '#f87171' : '#9ca3af';
   const windLabel = windAdj > 0 ? 'Blowing Out' : windAdj < 0 ? 'Blowing In' : 'Crosswind';
 
-  // arrowToDir: wind coming FROM this compass direction (flip 180° so arrow points with wind)
+  // Compass — larger for pop
+  const CS = 96, CCX = 48, CCY = 48, CR = 34;
   const arrowToDir = wx.windDir != null ? (wx.windDir + 180) % 360 : null;
+  const aRad  = arrowToDir != null ? (arrowToDir - 90) * Math.PI / 180 : 0;
+  const tipX  = CCX + (CR - 2) * Math.cos(aRad);
+  const tipY  = CCY + (CR - 2) * Math.sin(aRad);
+  const tailX = CCX - CR * 0.52 * Math.cos(aRad);
+  const tailY = CCY - CR * 0.52 * Math.sin(aRad);
 
   const catVal = activeCat === 'hits' ? park?.hits : activeCat === 'hr' ? park?.hr :
                  activeCat === 'runs' ? park?.runs : null;
@@ -1630,81 +1636,6 @@ function BaseballDiamondCard({ spTeamAbbrev, spOppAbbrev, spIsHome, activeCat, w
                 </text>
               </g>
 
-              {/* ── Weather overlay on field ── */}
-
-              {/* Wind streaks across outfield — only when actionable (≥8 mph) */}
-              {hasWind && [
-                [88, 138, 68, 54],
-                [118, 116, 108, 37],
-                [150, 106, 150, 26],
-                [182, 116, 192, 37],
-                [212, 138, 232, 54],
-              ].map(([x1,y1,x2,y2], i) => {
-                const [sx1,sy1,sx2,sy2] = windAdj > 0 ? [x1,y1,x2,y2] : [x2,y2,x1,y1];
-                return (
-                  <g key={i} opacity="0.5">
-                    <line x1={sx1} y1={sy1} x2={sx2} y2={sy2}
-                      stroke={windClr} strokeWidth="1.5" strokeDasharray="5 3.5" strokeLinecap="round"/>
-                    <circle cx={sx2} cy={sy2} r="2" fill={windClr} opacity="0.7"/>
-                  </g>
-                );
-              })}
-
-              {/* Wind label in outfield */}
-              {hasWind && (
-                <g>
-                  <rect x={W/2-52} y="53" width="104" height="16" rx="4" fill="#0d1117" fillOpacity="0.80"/>
-                  <text x={W/2} y="64" textAnchor="middle" fontSize="8.5" fill={windClr} fontWeight="700">
-                    {windLabel} · {Math.round(wx.windSpeed)} mph
-                  </text>
-                </g>
-              )}
-
-              {/* Compact compass rose — top-right corner */}
-              {arrowToDir != null && wx.windSpeed > 0 && (() => {
-                const r = 19, cx = W - 26, cy = 26;
-                const aRad2 = (arrowToDir - 90) * Math.PI / 180;
-                const tx2 = cx + (r - 3) * Math.cos(aRad2);
-                const ty2 = cy + (r - 3) * Math.sin(aRad2);
-                const lx2 = cx - r * 0.48 * Math.cos(aRad2);
-                const ly2 = cy - r * 0.48 * Math.sin(aRad2);
-                return (
-                  <g>
-                    <circle cx={cx} cy={cy} r={r + 2} fill="#0d1117" fillOpacity="0.96" stroke="#1f2937" strokeWidth="1"/>
-                    <circle cx={cx} cy={cy} r={r}     fill="none"    stroke="#374151"   strokeWidth="1"/>
-                    {[0, 90, 180, 270].map(d => {
-                      const rad = (d - 90) * Math.PI / 180;
-                      return <line key={d}
-                        x1={cx + (r - 5) * Math.cos(rad)} y1={cy + (r - 5) * Math.sin(rad)}
-                        x2={cx + (r - 1) * Math.cos(rad)} y2={cy + (r - 1) * Math.sin(rad)}
-                        stroke="#4b5563" strokeWidth="1"/>;
-                    })}
-                    <text x={cx}   y={cy - r + 7}  textAnchor="middle" fontSize="6" fill="white"   fontWeight="800">N</text>
-                    <text x={cx}   y={cy + r - 1}  textAnchor="middle" fontSize="6" fill="#6b7280" fontWeight="600">S</text>
-                    <text x={cx + r - 2} y={cy + 2.5} textAnchor="middle" fontSize="6" fill="#6b7280" fontWeight="600">E</text>
-                    <text x={cx - r + 2} y={cy + 2.5} textAnchor="middle" fontSize="6" fill="#6b7280" fontWeight="600">W</text>
-                    {/* Arrow glow */}
-                    <line x1={lx2} y1={ly2} x2={tx2} y2={ty2}
-                      stroke={windClr} strokeWidth="5" opacity="0.15" strokeLinecap="round"/>
-                    <line x1={lx2} y1={ly2} x2={tx2} y2={ty2}
-                      stroke={windClr} strokeWidth="2" strokeLinecap="round"/>
-                    <circle cx={cx} cy={cy} r="3" fill={windClr}/>
-                    <circle cx={cx} cy={cy} r="1.2" fill="#0d1117"/>
-                  </g>
-                );
-              })()}
-
-              {/* Temperature badge — top-left corner */}
-              {wx.temp != null && (
-                <g>
-                  <rect x="5" y="5" width="44" height="19" rx="4" fill="#0d1117" fillOpacity="0.92"/>
-                  <text x="27" y="18" textAnchor="middle" fontSize="9.5" fontWeight="800"
-                    fill={wx.temp >= 29 ? '#fb923c' : wx.temp <= 13 ? '#60a5fa' : '#d1d5db'}>
-                    {Math.round(wx.temp * 9/5 + 32)}°F
-                  </text>
-                </g>
-              )}
-
               {/* ── Bases ── */}
               {[B1, B2, B3].map((b, i) => (
                 <rect key={i} x={b.x-6} y={b.y-6} width="12" height="12" rx="2"
@@ -1717,53 +1648,104 @@ function BaseballDiamondCard({ spTeamAbbrev, spOppAbbrev, spIsHome, activeCat, w
             </svg>
           </div>
 
-          {/* ── Weather strip ── */}
+          {/* ── Weather section ── */}
           {weather ? (
-            <div className="flex items-center gap-3 mb-4 px-1">
-              {/* Wind speed + compass direction */}
-              {wx.windSpeed > 0 ? (
-                <div className="flex items-baseline gap-1.5">
-                  <span className="text-2xl font-black tabular-nums leading-none"
-                    style={{ color: hasWind ? windClr : '#9ca3af' }}>
-                    {Math.round(wx.windSpeed)}
-                  </span>
-                  <span className="text-xs font-bold text-gray-600">mph</span>
-                  {wx.windDir != null && (
-                    <span className="text-xs font-bold text-gray-500 tabular-nums">
-                      {degToCompass(wx.windDir)}
-                    </span>
+            <div className="mb-4 rounded-lg bg-gray-800/30 border border-gray-700/30 p-4">
+              <div className="flex items-center gap-5">
+                {/* Compass rose — larger, more prominent */}
+                {arrowToDir != null && wx.windSpeed > 0 && (
+                  <div className="flex-shrink-0 flex flex-col items-center gap-1.5">
+                    <svg width={CS} height={CS} viewBox={`0 0 ${CS} ${CS}`} xmlns="http://www.w3.org/2000/svg">
+                      <defs>
+                        <marker id="compassHead" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                          <path d="M0,0.5 L7,4 L0,7.5 Z" fill={windClr}/>
+                        </marker>
+                        {/* Glow filter for arrow */}
+                        <filter id="arrowGlow" x="-50%" y="-50%" width="200%" height="200%">
+                          <feGaussianBlur stdDeviation="2.5" result="blur"/>
+                          <feFlood floodColor={windClr} floodOpacity="0.4" result="color"/>
+                          <feComposite in="color" in2="blur" operator="in" result="glow"/>
+                          <feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>
+                        </filter>
+                      </defs>
+                      {/* Outer ring */}
+                      <circle cx={CCX} cy={CCY} r={CR+2} fill="#0d1117" stroke="#1f2937" strokeWidth="1"/>
+                      <circle cx={CCX} cy={CCY} r={CR} fill="none" stroke="#374151" strokeWidth="1.5"/>
+                      {/* 8-direction ticks — cardinals longer */}
+                      {[0,45,90,135,180,225,270,315].map(deg => {
+                        const isCard = deg % 90 === 0;
+                        const r1 = isCard ? CR - 6 : CR - 3;
+                        const r2 = CR - 0.5;
+                        const rad = (deg - 90) * Math.PI / 180;
+                        return <line key={deg}
+                          x1={CCX + r1*Math.cos(rad)} y1={CCY + r1*Math.sin(rad)}
+                          x2={CCX + r2*Math.cos(rad)} y2={CCY + r2*Math.sin(rad)}
+                          stroke={isCard ? '#6b7280' : '#374151'} strokeWidth={isCard ? 1.5 : 1}/>;
+                      })}
+                      {/* Cardinal labels — N highlighted */}
+                      <text x={CCX}   y="9"        textAnchor="middle" fontSize="9" fill="white"   fontWeight="800">N</text>
+                      <text x={CCX}   y={CS-1.5}   textAnchor="middle" fontSize="9" fill="#6b7280" fontWeight="600">S</text>
+                      <text x={CS-2}  y={CCY+3.5}  textAnchor="middle" fontSize="9" fill="#6b7280" fontWeight="600">E</text>
+                      <text x="3"     y={CCY+3.5}  textAnchor="middle" fontSize="9" fill="#6b7280" fontWeight="600">W</text>
+                      {/* Arrow glow shadow */}
+                      <line x1={tailX} y1={tailY} x2={tipX} y2={tipY}
+                        stroke={windClr} strokeWidth="5" opacity="0.2" strokeLinecap="round"/>
+                      {/* Arrow */}
+                      <line x1={tailX} y1={tailY} x2={tipX} y2={tipY}
+                        stroke={windClr} strokeWidth="2.5" markerEnd="url(#compassHead)"
+                        filter="url(#arrowGlow)" strokeLinecap="round"/>
+                      {/* Center dot */}
+                      <circle cx={CCX} cy={CCY} r="3.5" fill={windClr}/>
+                      <circle cx={CCX} cy={CCY} r="1.5" fill="#0d1117"/>
+                    </svg>
+                    <span className="text-xs font-bold text-gray-400 tracking-wide">{degToCompass(wx.windDir)}</span>
+                  </div>
+                )}
+
+                {/* Wind + temp — fills remaining space */}
+                <div className="flex-1 min-w-0">
+                  {wx.windSpeed > 0 && (
+                    <>
+                      <div className="flex items-baseline gap-2 mb-1">
+                        <span className="text-3xl font-black tabular-nums leading-none"
+                          style={{color: hasWind ? windClr : '#9ca3af'}}>
+                          {Math.round(wx.windSpeed)}
+                        </span>
+                        <span className="text-sm font-bold text-gray-500">mph</span>
+                      </div>
+                      {hasWind && (
+                        <span className={`inline-block text-xs font-bold px-2.5 py-0.5 rounded-full border mb-2 ${
+                          windAdj > 0 ? 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10'
+                                      : windAdj < 0 ? 'text-red-400 border-red-500/30 bg-red-500/10'
+                                      : 'text-gray-400 border-gray-600/30 bg-gray-700/20'}`}>
+                          {windLabel}
+                        </span>
+                      )}
+                    </>
+                  )}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {wx.temp != null && (
+                      <span className={`text-sm font-bold tabular-nums ${wx.temp >= 29 ? 'text-orange-400' : wx.temp <= 13 ? 'text-blue-400' : 'text-gray-300'}`}>
+                        {Math.round(wx.temp * 9/5 + 32)}°F
+                        <span className="text-xs font-normal text-gray-600 ml-1">/ {Math.round(wx.temp)}°C</span>
+                      </span>
+                    )}
+                    {wx.adjustment !== 0 && (
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded border ${wx.adjustment > 0 ? 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10' : 'text-red-400 border-red-500/30 bg-red-500/10'}`}>
+                        {wx.adjustment > 0 ? '+' : ''}{wx.adjustment} score adj
+                      </span>
+                    )}
+                  </div>
+                  {wx.notes?.length > 0 && (
+                    <p className="text-xs text-gray-600 mt-1">{wx.notes.join(' · ')}</p>
                   )}
                 </div>
-              ) : (
-                <span className="text-xs text-gray-600">No wind</span>
-              )}
-
-              {/* Direction label badge */}
-              {hasWind && (
-                <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full border ${
-                  windAdj > 0 ? 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10'
-                              : windAdj < 0 ? 'text-red-400 border-red-500/30 bg-red-500/10'
-                              : 'text-gray-400 border-gray-600/30 bg-gray-700/20'}`}>
-                  {windLabel}
-                </span>
-              )}
-
-              {/* Score adjustment + temp pushed right */}
-              <div className="flex items-center gap-2 ml-auto">
-                {wx.adjustment !== 0 && (
-                  <span className={`text-xs font-bold px-2 py-0.5 rounded border ${wx.adjustment > 0 ? 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10' : 'text-red-400 border-red-500/30 bg-red-500/10'}`}>
-                    {wx.adjustment > 0 ? '+' : ''}{wx.adjustment} adj
-                  </span>
-                )}
-                {wx.temp != null && (
-                  <span className={`text-xs font-bold tabular-nums ${wx.temp >= 29 ? 'text-orange-400' : wx.temp <= 13 ? 'text-blue-400' : 'text-gray-500'}`}>
-                    {Math.round(wx.temp * 9/5 + 32)}°F
-                  </span>
-                )}
               </div>
             </div>
           ) : (
-            <div className="mb-4"><p className="text-xs text-gray-700 italic">Weather loading…</p></div>
+            <div className="mb-4 rounded-lg bg-gray-800/30 border border-gray-700/30 p-3">
+              <p className="text-xs text-gray-700 italic">Weather loading…</p>
+            </div>
           )}
 
           {/* ── Park factor pills ── */}
