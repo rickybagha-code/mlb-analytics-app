@@ -1717,25 +1717,51 @@ function BaseballDiamondCard({ spTeamAbbrev, spOppAbbrev, spIsHome, activeCat, w
             </svg>
           </div>
 
-          {/* ── Compact weather strip ── */}
+          {/* ── Weather strip ── */}
           {weather ? (
-            (wx.adjustment !== 0 || wx.temp != null) && (
-              <div className="flex items-center gap-2 flex-wrap mb-4 px-0.5">
+            <div className="flex items-center gap-3 mb-4 px-1">
+              {/* Wind speed + compass direction */}
+              {wx.windSpeed > 0 ? (
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-2xl font-black tabular-nums leading-none"
+                    style={{ color: hasWind ? windClr : '#9ca3af' }}>
+                    {Math.round(wx.windSpeed)}
+                  </span>
+                  <span className="text-xs font-bold text-gray-600">mph</span>
+                  {wx.windDir != null && (
+                    <span className="text-xs font-bold text-gray-500 tabular-nums">
+                      {degToCompass(wx.windDir)}
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <span className="text-xs text-gray-600">No wind</span>
+              )}
+
+              {/* Direction label badge */}
+              {hasWind && (
+                <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full border ${
+                  windAdj > 0 ? 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10'
+                              : windAdj < 0 ? 'text-red-400 border-red-500/30 bg-red-500/10'
+                              : 'text-gray-400 border-gray-600/30 bg-gray-700/20'}`}>
+                  {windLabel}
+                </span>
+              )}
+
+              {/* Score adjustment + temp pushed right */}
+              <div className="flex items-center gap-2 ml-auto">
                 {wx.adjustment !== 0 && (
-                  <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${wx.adjustment > 0 ? 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10' : 'text-red-400 border-red-500/30 bg-red-500/10'}`}>
-                    {wx.adjustment > 0 ? '+' : ''}{wx.adjustment} score adj
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded border ${wx.adjustment > 0 ? 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10' : 'text-red-400 border-red-500/30 bg-red-500/10'}`}>
+                    {wx.adjustment > 0 ? '+' : ''}{wx.adjustment} adj
                   </span>
                 )}
-                {wx.notes?.length > 0 && (
-                  <span className="text-xs text-gray-500">{wx.notes.join(' · ')}</span>
-                )}
                 {wx.temp != null && (
-                  <span className={`text-xs tabular-nums ml-auto ${wx.temp >= 29 ? 'text-orange-400' : wx.temp <= 13 ? 'text-blue-400' : 'text-gray-500'}`}>
-                    {Math.round(wx.temp)}°C
+                  <span className={`text-xs font-bold tabular-nums ${wx.temp >= 29 ? 'text-orange-400' : wx.temp <= 13 ? 'text-blue-400' : 'text-gray-500'}`}>
+                    {Math.round(wx.temp * 9/5 + 32)}°F
                   </span>
                 )}
               </div>
-            )
+            </div>
           ) : (
             <div className="mb-4"><p className="text-xs text-gray-700 italic">Weather loading…</p></div>
           )}
