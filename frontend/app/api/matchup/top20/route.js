@@ -437,21 +437,22 @@ export async function GET(request) {
       const batterPitches = batterMap[String(pair.batterId)];
 
       if (pitcherPitches?.length && batterPitches?.length) {
-        const mismatch = calculateMismatchScore(batterPitches, pitcherPitches);
+        // Pass platoon + ERA context so dashboard score matches player card matrix
+        // H2H omitted here for speed (not batch-fetched); shown in deep dive
+        const context = {
+          splitAVG:    pair.splitAVG   ?? null,
+          seasonAVG:   pair.batterAVG  ?? null,
+          pitcherERA:  pair.pitcherERA ?? null,
+          pitcherWHIP: pair.pitcherWHIP ?? null,
+          h2hAvg: null,
+          h2hAB:  0,
+        };
+        const mismatch = calculateMismatchScore(batterPitches, pitcherPitches, context);
         pair.mismatchScore = mismatch.score;
         pair.topEdgePitch  = mismatch.topEdgePitch;
         pair.topEdgeValue  = mismatch.topEdgeValue;
         pair.verdict       = mismatch.verdict;
-      }
-
-      // K% penalty: high-strikeout batters are suppressed since wOBA rewards
-      // quality of contact but not frequency — a 35% K batter hitting .400 wOBA
-      // on contact is less valuable than their raw score suggests.
-      // League avg K% ~0.22; penalty kicks in above that, capped at 12 points.
-      if (pair.batterKPct != null) {
-        const kPenalty = Math.max(0, Math.min(12, (pair.batterKPct - 0.22) * 60));
-        pair.mismatchScore = Math.max(0, Math.round(pair.mismatchScore - kPenalty));
-        pair.verdict = pair.mismatchScore >= 65 ? 'Batter Edge' : pair.mismatchScore <= 35 ? 'Pitcher Edge' : 'Neutral';
+        // K% penalty removed — now handled per-pitch inside calculateMismatchScore
       }
     }
 
