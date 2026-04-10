@@ -26,21 +26,31 @@ export default function MatchupSummaryCard({ pitcher, batter, h2h, loading }) {
 
   if (!pitcher || !batter) return null;
 
-  const top4 = (pitcher.pitchData ?? []).slice(0, 4);
+  const top4 = (pitcher.pitchData ?? []).slice(0, 4); // still used for insight/summary text
   const kVuln   = findKVulnerability(batter.pitchData, top4);
   const threat  = findPrimaryThreat(batter.pitchData, top4);
 
+  const seasonAVG = parseFloat(batter.seasonStat?.avg) || null;
+  const seasonOBP = parseFloat(batter.seasonStat?.obp) || null;
+  const seasonSLG = parseFloat(batter.seasonStat?.slg) || null;
+  const batterOPS = (seasonOBP != null && seasonSLG != null) ? seasonOBP + seasonSLG : null;
+
   // Calculate mismatch score from available data
   let mismatch;
-  if ((batter.pitchData ?? []).length > 0 && top4.length > 0) {
-    mismatch = calculateMismatchScore(batter.pitchData, top4);
+  if ((batter.pitchData ?? []).length > 0 && (pitcher.pitchData ?? []).length > 0) {
+    // Full matrix: pass all pitcher pitches + platoon/H2H/ERA context as layers
+    const context = {
+      splitAVG:    batter.splitAVG ?? null,
+      seasonAVG,
+      h2hAvg:      h2h?.avg ?? null,
+      h2hAB:       h2h?.ab  ?? 0,
+      pitcherERA:  pitcher.era  ?? null,
+      pitcherWHIP: pitcher.whip ?? null,
+    };
+    mismatch = calculateMismatchScore(batter.pitchData, pitcher.pitchData, context);
   } else {
-    const splitAvg = batter.splitAVG ?? null;
-    const seasonAvg = parseFloat(batter.seasonStat?.avg) || null;
-    const seasonOBP = parseFloat(batter.seasonStat?.obp) || null;
-    const seasonSLG = parseFloat(batter.seasonStat?.slg) || null;
-    const batterOPS = (seasonOBP != null && seasonSLG != null) ? seasonOBP + seasonSLG : null;
-    mismatch = calculateSimplifiedMismatchScore(splitAvg, seasonAvg, pitcher.era, h2h?.avg ?? null, h2h?.ab ?? 0, batterOPS, pitcher.whip ?? null);
+    // Simplified fallback — no Savant data, capped at 75, shows 'Limited Data'
+    mismatch = calculateSimplifiedMismatchScore(batter.splitAVG ?? null, seasonAVG, pitcher.era, h2h?.avg ?? null, h2h?.ab ?? 0, batterOPS, pitcher.whip ?? null);
   }
 
   const summary = generateMatchupSummary(

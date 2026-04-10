@@ -84,28 +84,24 @@ function todayEST() {
 const ABBREV_MAP = { TB:'TBR', KC:'KCR', SD:'SDP', SF:'SFG', WSH:'WSN', CHW:'CWS', AZ:'ARI' };
 function normAbbrev(a) { return a ? (ABBREV_MAP[a] || a) : a; }
 
-// Simplified mismatch score (platoon + pitcher ERA/WHIP + batter OPS quality + H2H)
+// Simplified mismatch score for dashboard ranking (platoon + ERA/WHIP + OPS + H2H)
+// Caps reduced so score cannot reach 100 — max realistic output ~87
 function calcMismatchScore(batterAvg, batterSplitAvg, pitcherERA, h2hAvg, h2hAB, batterOPS, pitcherWHIP) {
   let score = 50;
-  // Platoon component
   if (batterSplitAvg != null && batterAvg != null && batterAvg > 0) {
     const platoonEdge = (batterSplitAvg - batterAvg) / batterAvg;
-    score += Math.max(-12, Math.min(12, platoonEdge * 60));
+    score += Math.max(-10, Math.min(10, platoonEdge * 50));
   }
-  // Pitcher quality: ERA primary, WHIP fallback when ERA is null (new/fringe pitchers)
   if (pitcherERA != null) {
-    score += Math.max(-10, Math.min(10, (pitcherERA - 4.20) * 3));
+    score += Math.max(-8, Math.min(8, (pitcherERA - 4.20) * 2.5));
   } else if (pitcherWHIP != null) {
-    score += Math.max(-10, Math.min(10, (1.25 - pitcherWHIP) * 33));
+    score += Math.max(-7, Math.min(7, (1.25 - pitcherWHIP) * 28));
   }
-  // Batter quality baseline: OPS vs league avg (~0.710)
-  // Ensures elite hitters score higher than avg hitters even with no pitch data
   if (batterOPS != null && batterOPS > 0) {
-    score += Math.max(-10, Math.min(14, (batterOPS - 0.710) / 0.100 * 5.3));
+    score += Math.max(-8, Math.min(12, (batterOPS - 0.710) / 0.100 * 4.5));
   }
-  // H2H component (reliable sample only)
   if (h2hAvg != null && h2hAB >= 10 && batterAvg != null && batterAvg > 0) {
-    score += Math.max(-6, Math.min(6, ((h2hAvg - batterAvg) / batterAvg) * 20));
+    score += Math.max(-5, Math.min(5, ((h2hAvg - batterAvg) / batterAvg) * 18));
   }
   return Math.max(0, Math.min(100, Math.round(score)));
 }

@@ -36,100 +36,135 @@ export const LEAGUE_AVG_WOBA_BY_PITCH = {
  * Full pitch-type mismatch score — requires Savant pitch data for both
  * pitcher arsenal and batter vs pitch type.
  *
- * Uses a dual-signal edge formula:
- *   combinedEdge = (batter.woba_vs_pitch − leagueAvg) + (pitcher.woba_allowed − leagueAvg)
- * Both signals align when the batter crushes a pitch the pitcher already gets hit hard on.
+ * Architecture:
+ *   1. MATRIX BASE: For every pitch in the pitcher's arsenal (weighted by usage frequency),
+ *      measure how the batter performs vs that specific pitch vs league average.
+ *      Missing batter data = neutral (0 edge), not excluded — so unmatched pitches
+ *      still dilute the score proportional to how often they're thrown.
+ *      Small samples (<30 pitches seen) are confidence-weighted toward neutral.
+ *      K% penalty applied: high strikeout rate vs a pitch reduces batter edge.
+ *   2. PLATOON LAYER: splitAVG vs seasonAVG differential (±10 pts)
+ *   3. H2H LAYER: career history vs this pitcher, sample-weighted (±8 pts)
+ *   4. ERA LAYER: overall pitcher quality context (±7 pts)
  *
  * Returns { score, topEdgePitch, topEdgeValue, verdict }
  * score: 0–100 (65+ = Batter Edge, 36–64 = Neutral, 0–35 = Pitcher Edge)
  */
-export function calculateMismatchScore(batterPitchStats, pitcherPitchStats) {
-  if (!batterPitchStats?.length || !pitcherPitchStats?.length) {
+export function calculateMismatchScore(batterPitchStats, pitcherPitchStats, context = {}) {
+  if (!pitcherPitchStats?.length) {
     return { score: 50, topEdgePitch: '', topEdgeValue: 0, verdict: 'Neutral' };
   }
 
-  // Top 4 pitches by usage
-  const top4 = [...pitcherPitchStats]
-    .sort((a, b) => b.usagePct - a.usagePct)
-    .slice(0, 4);
+  // All pitcher pitches sorted by usage — frequency IS the weighting mechanism
+  const arsenal = [...pitcherPitchStats].sort((a, b) => b.usagePct - a.usagePct);
 
-  let weightedEdge = 0;
-  let totalWeight   = 0;
-  let topEdgePitch  = '';
-  let topEdgeValue  = -999;
+  let weightedSum  = 0;
+  let totalUsage   = 0;
+  let topEdgePitch = '';
+  let topEdgeValue = -999;
 
-  for (const pitch of top4) {
-    const batterVsPitch = batterPitchStats.find(p => p.type === pitch.type);
-    if (!batterVsPitch) continue;
+  for (const pitch of arsenal) {
+    const usageWeight = pitch.usagePct / 100;
+    if (usageWeight <= 0) continue;
 
-    const leagueAvg = LEAGUE_AVG_WOBA_BY_PITCH[pitch.type] ?? 0.300;
-    // Dual signal: batter skill is the primary driver (65%), pitcher quality is a modifier (35%).
-    // Equal weighting caused weak pitchers to push every batter to 100 regardless of ability.
-    const batterEdge  = batterVsPitch.woba - leagueAvg; // >0 = batter above avg vs this pitch type
-    const pitcherEdge = pitch.woba - leagueAvg;          // >0 = pitcher allows more than avg on this pitch
-    const combinedEdge = batterEdge * 0.65 + pitcherEdge * 0.35;
+    const leagueAvg     = LEAGUE_AVG_WOBA_BY_PITCH[pitch.type] ?? 0.300;
+    const batterVsPitch = batterPitchStats?.find(p => p.type === pitch.type);
 
-    weightedEdge += combinedEdge * pitch.usagePct;
-    totalWeight  += pitch.usagePct;
+    let finalBatterEdge = 0; // default: neutral when no data — pitch still counts toward denominator
 
-    if (Math.abs(combinedEdge) > Math.abs(topEdgeValue)) {
+    if (batterVsPitch && (batterVsPitch.pitches ?? 0) >= 3) {
+      // Confidence ramp: 3 pitches = 10% signal, 30 pitches = 100% signal
+      const sampleConf    = Math.min(1.0, (batterVsPitch.pitches ?? 0) / 30);
+      const rawBatterEdge = batterVsPitch.woba - leagueAvg;
+      // K% penalty: kPct stored as 0–100; league avg ~22% K rate on pitches
+      // A 35% K rate = −0.078 penalty on top of wOBA edge
+      const kPenalty      = Math.max(0, ((batterVsPitch.kPct ?? 0) / 100 - 0.22) * 0.60);
+      finalBatterEdge     = (rawBatterEdge - kPenalty) * sampleConf;
+    }
+
+    // pitcherEdge: positive = pitcher gives up more than avg = batter-friendly
+    // negative = pitcher dominates this pitch = batter-hostile
+    const pitcherEdge  = pitch.woba - leagueAvg;
+    const combinedEdge = finalBatterEdge * 0.60 + pitcherEdge * 0.40;
+
+    weightedSum += combinedEdge * usageWeight;
+    totalUsage  += usageWeight; // always counted — preserves true frequency weighting
+
+    // Only set topEdge for pitches where batter has actual data
+    if (batterVsPitch && Math.abs(combinedEdge) > Math.abs(topEdgeValue)) {
       topEdgeValue = combinedEdge;
       topEdgePitch = pitch.type;
     }
   }
 
-  const normalizedEdge = totalWeight > 0 ? weightedEdge / totalWeight : 0;
-  // Dual signal range: each component up to ~±0.150, combined up to ~±0.250
-  // Scale: combined edge ≤ −0.200 → score 0, ≥ +0.200 → score 100
-  const score = Math.round(((normalizedEdge + 0.200) / 0.400) * 100);
-  const clamped = Math.max(0, Math.min(100, score));
+  const normalizedEdge = totalUsage > 0 ? weightedSum / totalUsage : 0;
+  // ±0.175 range — tighter than old ±0.200, reflects realistic per-pitch edge spreads
+  let matrixScore = Math.round(((normalizedEdge + 0.175) / 0.350) * 100);
+  matrixScore     = Math.max(0, Math.min(100, matrixScore));
 
-  const verdict = clamped >= 65
-    ? 'Batter Edge'
-    : clamped <= 35
-    ? 'Pitcher Edge'
+  // ─── Layer 1: Platoon ─────────────────────────────────────────────────────
+  const { splitAVG, seasonAVG, h2hAvg, h2hAB, pitcherERA, pitcherWHIP } = context;
+  let platoonAdj = 0;
+  if (splitAVG != null && seasonAVG != null && seasonAVG > 0) {
+    platoonAdj = Math.max(-10, Math.min(10, ((splitAVG - seasonAVG) / seasonAVG) * 50));
+  }
+
+  // ─── Layer 2: H2H career history ─────────────────────────────────────────
+  let h2hAdj = 0;
+  if (h2hAvg != null && (h2hAB ?? 0) >= 10 && seasonAVG != null && seasonAVG > 0) {
+    // Sample-weight: ramps from 0 at 10 AB → full weight at 50 AB
+    const sampleW = Math.min(1.0, ((h2hAB ?? 0) - 10) / 40);
+    h2hAdj = Math.max(-8, Math.min(8, ((h2hAvg - seasonAVG) / seasonAVG) * 35 * sampleW));
+  }
+
+  // ─── Layer 3: ERA/WHIP context ────────────────────────────────────────────
+  let eraAdj = 0;
+  if (pitcherERA != null) {
+    eraAdj = Math.max(-7, Math.min(7, (pitcherERA - 4.20) * 2.0));
+  } else if (pitcherWHIP != null) {
+    eraAdj = Math.max(-5, Math.min(5, (pitcherWHIP - 1.25) * 15));
+  }
+
+  const finalScore = Math.max(0, Math.min(100, Math.round(matrixScore + platoonAdj + h2hAdj + eraAdj)));
+
+  const verdict = finalScore >= 65 ? 'Batter Edge'
+    : finalScore <= 35 ? 'Pitcher Edge'
     : 'Neutral';
 
-  return { score: clamped, topEdgePitch, topEdgeValue, verdict };
+  return { score: finalScore, topEdgePitch, topEdgeValue, verdict };
 }
 
 /**
- * Simplified mismatch score using platoon splits and ERA — used when
- * pitch type data is unavailable (early season, API failure, etc.)
- *
- * Returns { score, topEdgePitch: '', topEdgeValue: 0, verdict }
+ * Simplified mismatch score — fallback when Savant pitch data is unavailable.
+ * Uses platoon splits, ERA/WHIP, batter OPS, and H2H only.
+ * Capped at 75 and always returns verdict: 'Limited Data' to distinguish
+ * from the full matrix score.
  */
 export function calculateSimplifiedMismatchScore(batterSplitAVG, batterSeasonAVG, pitcherERA, h2hAvg, h2hAB, batterOPS, pitcherWHIP) {
   let score = 50;
 
-  // Platoon component: how much better/worse batter hits vs this pitcher's hand
   if (batterSplitAVG != null && batterSeasonAVG != null && batterSeasonAVG > 0) {
     const platoonEdge = (batterSplitAVG - batterSeasonAVG) / batterSeasonAVG;
-    score += Math.max(-18, Math.min(18, platoonEdge * 80));
+    score += Math.max(-14, Math.min(14, platoonEdge * 70));
   }
 
-  // Pitcher quality: ERA primary, WHIP fallback when ERA is null (new/fringe pitchers)
   if (pitcherERA != null) {
-    score += Math.max(-15, Math.min(15, (pitcherERA - 4.20) * 4.5));
+    score += Math.max(-12, Math.min(12, (pitcherERA - 4.20) * 3.5));
   } else if (pitcherWHIP != null) {
-    score += Math.max(-10, Math.min(10, (1.25 - pitcherWHIP) * 33));
+    score += Math.max(-8, Math.min(8, (1.25 - pitcherWHIP) * 28));
   }
 
-  // Batter quality baseline: OPS vs league avg (~0.710)
-  // Ensures elite hitters score higher than avg hitters even with no pitch data
   if (batterOPS != null && batterOPS > 0) {
     score += Math.max(-10, Math.min(14, (batterOPS - 0.710) / 0.100 * 5.3));
   }
 
-  // H2H component (reliable sample only)
   if (h2hAvg != null && h2hAB >= 10 && batterSeasonAVG > 0) {
     const h2hEdge = (h2hAvg - batterSeasonAVG) / batterSeasonAVG;
-    score += Math.max(-8, Math.min(8, h2hEdge * 28));
+    score += Math.max(-6, Math.min(6, h2hEdge * 24));
   }
 
-  const clamped = Math.max(0, Math.min(100, Math.round(score)));
-  const verdict = clamped >= 65 ? 'Batter Edge' : clamped <= 35 ? 'Pitcher Edge' : 'Neutral';
-  return { score: clamped, topEdgePitch: '', topEdgeValue: 0, verdict };
+  const clamped = Math.max(0, Math.min(75, Math.round(score)));
+  return { score: clamped, topEdgePitch: '', topEdgeValue: 0, verdict: 'Limited Data' };
 }
 
 /**
@@ -258,8 +293,9 @@ export function findPrimaryThreat(batterPitchStats, top4Pitches) {
 
 // Verdict label + color
 export function verdictStyle(verdict) {
-  if (verdict === 'Batter Edge') return { text: 'text-emerald-400', bg: 'bg-emerald-500/15 border-emerald-500/30', dot: 'bg-emerald-400' };
-  if (verdict === 'Pitcher Edge') return { text: 'text-red-400', bg: 'bg-red-500/15 border-red-500/30', dot: 'bg-red-400' };
+  if (verdict === 'Batter Edge')  return { text: 'text-emerald-400', bg: 'bg-emerald-500/15 border-emerald-500/30', dot: 'bg-emerald-400' };
+  if (verdict === 'Pitcher Edge') return { text: 'text-red-400',     bg: 'bg-red-500/15 border-red-500/30',         dot: 'bg-red-400'     };
+  if (verdict === 'Limited Data') return { text: 'text-amber-400',   bg: 'bg-amber-500/15 border-amber-500/30',     dot: 'bg-amber-400'   };
   return { text: 'text-gray-400', bg: 'bg-gray-700/40 border-gray-600/30', dot: 'bg-gray-400' };
 }
 
