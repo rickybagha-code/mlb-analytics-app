@@ -250,7 +250,7 @@ function Hero() {
               </span>
             </h1>
 
-            <p className="mt-6 text-base leading-relaxed text-gray-400">
+            <p className="mt-6 text-[17px] sm:text-lg leading-relaxed text-gray-400">
               Stop relying on gut feel. ProprStats gives you an EdgeScore on every MLB prop, a LineCheck on every book line, and a full MatchupFile on every batter — so you know exactly where the edge is before the market closes.
             </p>
 
