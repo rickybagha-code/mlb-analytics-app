@@ -54,7 +54,6 @@ function Navbar() {
       {mobileOpen && (
         <div className="md:hidden border-t border-white/5 bg-gray-950/95 backdrop-blur-xl px-4 py-4 flex flex-col gap-1">
           <a href="#how-it-works" onClick={() => setMobileOpen(false)} className="px-3 py-2.5 rounded-lg text-sm text-gray-300 hover:bg-gray-800 hover:text-white transition-all">How It Works</a>
-          <a href="#features" onClick={() => setMobileOpen(false)} className="px-3 py-2.5 rounded-lg text-sm text-gray-300 hover:bg-gray-800 hover:text-white transition-all">Features</a>
           <a href="#pricing" onClick={() => setMobileOpen(false)} className="px-3 py-2.5 rounded-lg text-sm text-gray-300 hover:bg-gray-800 hover:text-white transition-all">Pricing</a>
           <Link href="/dashboard" onClick={() => setMobileOpen(false)} className="px-3 py-2.5 rounded-lg text-sm text-gray-300 hover:bg-gray-800 hover:text-white transition-all">Dashboard</Link>
           <div className="pt-2 border-t border-gray-800 mt-1">
