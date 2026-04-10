@@ -250,12 +250,8 @@ function Hero() {
               </span>
             </h1>
 
-            <p className="mt-6 text-sm sm:text-base leading-relaxed text-gray-500 max-w-md">
-              Stop relying on gut feel.{' '}
-              <span className="text-gray-300 font-medium">EdgeScore</span> on every prop.{' '}
-              <span className="text-gray-300 font-medium">LineCheck</span> on every book line.{' '}
-              <span className="text-gray-300 font-medium">Full MatchupFile</span> on every batter.{' '}
-              <span className="text-gray-400">Know your edge before the market closes.</span>
+            <p className="mt-6 text-base leading-relaxed text-gray-400">
+              Stop relying on gut feel. ProprStats gives you an EdgeScore on every MLB prop, a LineCheck on every book line, and a full MatchupFile on every batter — so you know exactly where the edge is before the market closes.
             </p>
 
             {/* 3-col trust row — desktop only */}
