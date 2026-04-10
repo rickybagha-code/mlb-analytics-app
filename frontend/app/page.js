@@ -5,6 +5,7 @@ import ProprStatsLogo from '../components/ProprStatsLogo';
 
 // ─── Navbar ───────────────────────────────────────────────────────────────────
 function Navbar() {
+  const [mobileOpen, setMobileOpen] = useState(false);
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 border-b border-white/5 bg-gray-950/80 backdrop-blur-xl">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -27,13 +28,42 @@ function Navbar() {
             </Link>
             <Link
               href="/#pricing"
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 transition-all shadow-lg shadow-blue-500/20 hover:-translate-y-px"
+              className="hidden sm:inline-flex rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 transition-all shadow-lg shadow-blue-500/20 hover:-translate-y-px"
             >
               Sign Up
             </Link>
+            <button
+              onClick={() => setMobileOpen(o => !o)}
+              className="md:hidden inline-flex items-center justify-center w-9 h-9 rounded-lg border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 transition-all"
+              aria-label="Toggle menu"
+            >
+              {mobileOpen ? (
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
+                </svg>
+              )}
+            </button>
           </div>
         </div>
       </div>
+      {/* Mobile menu */}
+      {mobileOpen && (
+        <div className="md:hidden border-t border-white/5 bg-gray-950/95 backdrop-blur-xl px-4 py-4 flex flex-col gap-1">
+          <a href="#how-it-works" onClick={() => setMobileOpen(false)} className="px-3 py-2.5 rounded-lg text-sm text-gray-300 hover:bg-gray-800 hover:text-white transition-all">How It Works</a>
+          <a href="#features" onClick={() => setMobileOpen(false)} className="px-3 py-2.5 rounded-lg text-sm text-gray-300 hover:bg-gray-800 hover:text-white transition-all">Features</a>
+          <a href="#pricing" onClick={() => setMobileOpen(false)} className="px-3 py-2.5 rounded-lg text-sm text-gray-300 hover:bg-gray-800 hover:text-white transition-all">Pricing</a>
+          <Link href="/dashboard" onClick={() => setMobileOpen(false)} className="px-3 py-2.5 rounded-lg text-sm text-gray-300 hover:bg-gray-800 hover:text-white transition-all">Dashboard</Link>
+          <div className="pt-2 border-t border-gray-800 mt-1">
+            <Link href="/#pricing" onClick={() => setMobileOpen(false)} className="block w-full rounded-xl bg-blue-600 py-3 text-center text-sm font-bold text-white hover:bg-blue-500 transition-all">
+              Sign Up Free
+            </Link>
+          </div>
+        </div>
+      )}
     </nav>
   );
 }
@@ -214,7 +244,7 @@ function Hero() {
               <span className="text-sm font-medium text-blue-300">Live slate · Powered by Statcast</span>
             </div>
 
-            <h1 className="text-5xl font-black leading-[1.08] tracking-tight text-white sm:text-6xl lg:text-7xl">
+            <h1 className="text-4xl font-black leading-[1.08] tracking-tight text-white sm:text-6xl lg:text-7xl">
               The Prop Model<br/>
               <span className="bg-gradient-to-r from-blue-400 via-blue-300 to-cyan-400 bg-clip-text text-transparent">
                 Built for Sharp Bettors.
@@ -225,8 +255,8 @@ function Hero() {
               Stop relying on gut feel. ProprStats gives you an EdgeScore on every MLB prop, a LineCheck on every book line, and a full MatchupFile on every batter — so you know exactly where the edge is before the market closes.
             </p>
 
-            {/* 3-col trust row */}
-            <div className="mt-6 grid grid-cols-3 gap-3">
+            {/* 3-col trust row — desktop only */}
+            <div className="mt-6 hidden sm:grid grid-cols-3 gap-3">
               {[
                 { label: '6-Prop EdgeScore', sub: 'Every prop scored and ranked before first pitch — so you see the edge at a glance.',
                   icon: <svg className="w-5 h-5 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 5-5"/></svg> },
@@ -235,10 +265,12 @@ function Hero() {
                 { label: 'TrueContact™', sub: 'Strips luck out of batting stats. Know who\'s genuinely hot — not just getting good bounces.',
                   icon: <svg className="w-5 h-5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> },
               ].map(p => (
-                <div key={p.label} className="rounded-xl border border-gray-800 bg-gray-900/60 p-3 text-center">
-                  <div className="flex justify-center mb-1.5">{p.icon}</div>
-                  <div className="text-xs font-bold text-white">{p.label}</div>
-                  <div className="text-gray-600 mt-0.5 leading-tight" style={{fontSize:9}}>{p.sub}</div>
+                <div key={p.label} className="rounded-xl border border-gray-800 bg-gray-900/60 p-3 flex items-center gap-3 sm:flex-col sm:items-center sm:text-center">
+                  <div className="flex-shrink-0">{p.icon}</div>
+                  <div>
+                    <div className="text-xs font-bold text-white">{p.label}</div>
+                    <div className="text-gray-600 mt-0.5 leading-tight hidden sm:block" style={{fontSize:9}}>{p.sub}</div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -255,13 +287,13 @@ function Hero() {
               </Link>
               <a
                 href="#features"
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-700 px-7 py-3.5 text-base font-semibold text-gray-300 hover:border-gray-500 hover:text-white transition-all"
+                className="hidden sm:inline-flex items-center justify-center gap-2 rounded-xl border border-gray-700 px-7 py-3.5 text-base font-semibold text-gray-300 hover:border-gray-500 hover:text-white transition-all"
               >
                 See all features →
               </a>
             </div>
             <p className="mt-3 text-xs text-gray-600">No credit card required · Free to start</p>
-            <p className="mt-4 text-xs italic text-gray-600 text-center sm:text-left max-w-sm">
+            <p className="hidden sm:block mt-4 text-xs italic text-gray-600 text-center sm:text-left max-w-sm">
               &ldquo;Stopped using five tabs the same day I found this.&rdquo; — @baseballbettingpro
             </p>
           </div>
@@ -270,7 +302,9 @@ function Hero() {
           <div className="flex justify-center lg:justify-end">
             <div className="w-full max-w-sm">
               <SamplePlayerCard/>
-              <SampleSideCards/>
+              <div className="hidden sm:block">
+                <SampleSideCards/>
+              </div>
             </div>
           </div>
         </div>
@@ -715,8 +749,8 @@ function InteractiveDemoCard({ propKey }) {
       </div>
 
       {/* Poisson chart + EV gauge */}
-      <div className="grid grid-cols-5 gap-2 mb-3">
-        <div className="col-span-3 rounded-xl bg-gray-950/60 border border-gray-800/50 px-1 pt-1 pb-0.5">
+      <div className="grid grid-cols-1 sm:grid-cols-5 gap-2 mb-3">
+        <div className="sm:col-span-3 rounded-xl bg-gray-950/60 border border-gray-800/50 px-1 pt-1 pb-0.5">
           <svg viewBox={`0 0 ${W} ${H}`} width="100%" preserveAspectRatio="xMidYMid meet">
             <text x={W*0.28} y={13} textAnchor="middle" fill="#60a5fb" fontSize="8" fontWeight="700">P(Under) {prop.pUnder}%</text>
             <text x={W*0.72} y={13} textAnchor="middle" fill="#f59e0b" fontSize="8" fontWeight="700">P(Over) {prop.pOver}%</text>
@@ -738,7 +772,7 @@ function InteractiveDemoCard({ propKey }) {
           </svg>
         </div>
 
-        <div className="col-span-2 flex items-center justify-center">
+        <div className="sm:col-span-2 flex items-center justify-center">
           <svg width={cx*2} height={cy+20} viewBox={`0 0 ${cx*2} ${cy+20}`} style={{overflow:'visible'}}>
             <path d={`M ${cx-R} ${cy} A ${R} ${R} 0 0 1 ${cx+R} ${cy}`}
               fill="none" stroke="#1f2937" strokeWidth={sw} strokeLinecap="round"/>
@@ -1053,7 +1087,7 @@ function BottomCTA() {
       <div className="mx-auto max-w-5xl">
 
         {/* CTA card */}
-        <div className="relative rounded-3xl border border-blue-500/20 bg-gradient-to-br from-blue-950/40 via-gray-900 to-gray-900 p-12 text-center overflow-hidden shadow-2xl shadow-blue-500/5">
+        <div className="relative rounded-3xl border border-blue-500/20 bg-gradient-to-br from-blue-950/40 via-gray-900 to-gray-900 p-6 sm:p-12 text-center overflow-hidden shadow-2xl shadow-blue-500/5">
           <div className="absolute inset-0 hero-grid opacity-50 pointer-events-none"/>
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-80 h-40 bg-blue-500/10 blur-3xl rounded-full pointer-events-none"/>
           <div className="absolute -inset-px rounded-3xl ring-1 ring-blue-500/15 pointer-events-none"/>
@@ -1154,12 +1188,28 @@ export default function LandingPage() {
       <Navbar/>
       <main>
         <Hero/>
+
+        {/* Mobile: Pricing immediately after hero for fast conversion */}
+        <div className="sm:hidden">
+          <PricingSection/>
+        </div>
+
         <HowItWorks/>
-        <FeaturesSection/>
-        <ComparisonTable/>
-        <EVSection/>
+
+        {/* Desktop-only sections — too much scroll on mobile */}
+        <div className="hidden sm:block">
+          <FeaturesSection/>
+          <ComparisonTable/>
+          <EVSection/>
+        </div>
+
         <TestimonialsSection/>
-        <PricingSection/>
+
+        {/* Desktop: Pricing in original position */}
+        <div className="hidden sm:block">
+          <PricingSection/>
+        </div>
+
         <BottomCTA/>
       </main>
       <Footer/>
