@@ -70,6 +70,8 @@ async function fetchSavantLeaderboard(type, year, hand = '') {
         type:     pitchName,
         woba:     parseFloat(row.woba)        || 0,
         usagePct: parseFloat(row.pitch_usage) || 0,
+        pitches,
+        kPct:     parseFloat(row.k_percent)   || 0,
       });
     }
     return map;
