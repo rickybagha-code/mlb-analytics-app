@@ -58,8 +58,9 @@ export function calculateMismatchScore(batterPitchStats, pitcherPitchStats, cont
   // All pitcher pitches sorted by usage — frequency IS the weighting mechanism
   const arsenal = [...pitcherPitchStats].sort((a, b) => b.usagePct - a.usagePct);
 
-  let weightedSum  = 0;
-  let totalUsage   = 0;
+  let batterWeightedSum  = 0;
+  let pitcherWeightedSum = 0;
+  let totalUsage         = 0;
   let topEdgePitch = '';
   let topEdgeValue = -999;
 
@@ -84,22 +85,32 @@ export function calculateMismatchScore(batterPitchStats, pitcherPitchStats, cont
 
     // pitcherEdge: positive = pitcher gives up more than avg = batter-friendly
     // negative = pitcher dominates this pitch = batter-hostile
-    const pitcherEdge  = pitch.woba - leagueAvg;
-    const combinedEdge = finalBatterEdge + (pitcherEdge * 0.30);
+    const pitcherEdge = pitch.woba - leagueAvg;
 
-    weightedSum += combinedEdge * usageWeight;
-    totalUsage  += usageWeight; // always counted — preserves true frequency weighting
+    batterWeightedSum  += finalBatterEdge * usageWeight;
+    pitcherWeightedSum += pitcherEdge     * usageWeight;
+    totalUsage         += usageWeight;
 
     // Only set topEdge for pitches where batter has actual data
-    if (batterVsPitch && Math.abs(combinedEdge) > Math.abs(topEdgeValue)) {
-      topEdgeValue = combinedEdge;
+    if (batterVsPitch && Math.abs(finalBatterEdge) > Math.abs(topEdgeValue)) {
+      topEdgeValue = finalBatterEdge;
       topEdgePitch = pitch.type;
     }
   }
 
-  const normalizedEdge = totalUsage > 0 ? weightedSum / totalUsage : 0;
-  // ±0.175 range — tighter than old ±0.200, reflects realistic per-pitch edge spreads
-  let matrixScore = Math.round(((normalizedEdge + 0.150) / 0.300) * 100);
+  // Two-signal blend: normalize each independently, then combine 65/35.
+  // Batter performance is the primary question; pitcher quality is context.
+  // Keeps signals from stacking — a great batter vs a neutral pitcher scores
+  // on the strength of the batter alone, not inflated by the pitcher's hittability.
+  const batterNorm  = totalUsage > 0 ? batterWeightedSum  / totalUsage : 0;
+  const pitcherNorm = totalUsage > 0 ? pitcherWeightedSum / totalUsage : 0;
+
+  let batterScore  = Math.round(((batterNorm  + 0.150) / 0.300) * 100); // ±0.150 batter scale
+  let pitcherScore = Math.round(((pitcherNorm + 0.100) / 0.200) * 100); // ±0.100 pitcher scale
+  batterScore  = Math.max(0, Math.min(100, batterScore));
+  pitcherScore = Math.max(0, Math.min(100, pitcherScore));
+
+  let matrixScore = Math.round(batterScore * 0.65 + pitcherScore * 0.35);
   matrixScore     = Math.max(0, Math.min(100, matrixScore));
 
   // ─── Layer 1: Platoon ─────────────────────────────────────────────────────
