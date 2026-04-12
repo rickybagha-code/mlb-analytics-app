@@ -439,8 +439,7 @@ export async function GET(request) {
       const batterPitches = batterMap[String(pair.batterId)];
 
       if (pitcherPitches?.length && batterPitches?.length) {
-        // Pass platoon + ERA context so dashboard score matches player card matrix
-        // H2H omitted here for speed (not batch-fetched); shown in deep dive
+        // Pass platoon + ERA context; H2H applied in post-enrichment step below
         const context = {
           splitAVG:    pair.splitAVG   ?? null,
           seasonAVG:   pair.batterAVG  ?? null,
@@ -457,6 +456,46 @@ export async function GET(request) {
         // K% penalty removed — now handled per-pitch inside calculateMismatchScore
       }
     }
+
+    // ── H2H enrichment: batch-fetch for top 40 pairs, apply same ±8 pt layer ──
+    // Takes the top 40 by current score, fetches real H2H avg/AB in parallel,
+    // and re-scores so the dashboard matches the player card signal.
+    const preSorted = [...pairs].sort((a, b) => b.mismatchScore - a.mismatchScore);
+    const h2hCandidates = pitcherFilter
+      ? pairs.filter(p => p.pitcherId === pitcherFilter)
+      : preSorted.slice(0, 40);
+
+    const h2hResults = await Promise.allSettled(
+      h2hCandidates.map(pair =>
+        fetch(
+          `${MLB_API}/people/${pair.batterId}/stats?stats=vsPlayer&group=hitting&season=${season}&sportId=1&opposingPlayerId=${pair.pitcherId}`,
+          { next: { revalidate: 3600 } }
+        )
+          .then(r => r.ok ? r.json() : null)
+          .then(data => {
+            const split = data?.stats?.[0]?.splits?.[0]?.stat ?? null;
+            if (!split) return null;
+            return {
+              avg: parseFloat(split.avg) || null,
+              ab:  parseInt(split.atBats) || 0,
+            };
+          })
+          .catch(() => null)
+      )
+    );
+
+    h2hCandidates.forEach((pair, i) => {
+      const h2h = h2hResults[i].status === 'fulfilled' ? h2hResults[i].value : null;
+      if (!h2h?.avg || h2h.ab < 10 || !pair.batterAVG) return;
+      const sampleWeight = Math.min(1, Math.max(0, (h2h.ab - 10) / 40));
+      const h2hAdj = Math.max(-8, Math.min(8, ((h2h.avg - pair.batterAVG) / pair.batterAVG) * 25)) * sampleWeight;
+      if (h2hAdj === 0) return;
+      pair.mismatchScore = Math.max(0, Math.min(100, Math.round(pair.mismatchScore + h2hAdj)));
+      pair.verdict = verdictFromScore(pair.mismatchScore);
+      // Surface H2H data for display
+      pair.h2hAvg = h2h.avg;
+      pair.h2hAB  = h2h.ab;
+    });
 
     // Sort by score — return all for a specific pitcher, else top 20
     const sorted = pairs.sort((a, b) => b.mismatchScore - a.mismatchScore);
