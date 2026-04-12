@@ -2143,9 +2143,12 @@ function useHRProjection(gameLog, seasonStats, splits, statcast, pitcher, spPitc
     const sampleWeight   = Math.min(1.0, c.seasonPA / 200);
     const effectiveHRpa  = sampleWeight * seasonHRpa + (1 - sampleWeight) * talentHRpa;
     const l10HRpa        = l10HRpa_raw ?? effectiveHRpa;
-    // hrSampleWeight scales the L10 contribution — pa/300 matches updated blend speed
+    // hrSampleWeight scales the L10 contribution.
+    // When ≥25 PA of L10 data exists, give it its full 35% weight immediately —
+    // a 10-game hot streak is meaningful signal regardless of season PA.
+    // Without L10 data, ramp over 150 PA (half-season) as a stabilising anchor.
     const pa26Raw        = parseInt(seasonStats?._pa26) || 0;
-    const hrSampleWeight = Math.min(1.0, pa26Raw / 300);
+    const hrSampleWeight = l10HRpa_raw != null ? 1.0 : Math.min(1.0, pa26Raw / 150);
     const l10Weight      = 0.35 * hrSampleWeight;
     const seasonHRWeight = 0.55 + (0.35 - l10Weight);
     const hrRate = l10HRpa * l10Weight + effectiveHRpa * seasonHRWeight + LG_HRPA * 0.10;
@@ -2996,7 +2999,7 @@ export default function PlayerDetailPage() {
       const seasonAVG = parseFloat(st.avg) || 0;
       let h2hShift = 0;
       if (h2hAB >= 8 && seasonAVG > 0) {
-        h2hShift = Math.max(-0.06, Math.min(0.03, ((h2hAVG ?? 0) - seasonAVG) / seasonAVG * 0.10));
+        h2hShift = Math.max(-0.06, Math.min(0.05, ((h2hAVG ?? 0) - seasonAVG) / seasonAVG * 0.15));
       }
       // Raised cap (0.30→0.40) + lower multiplier (175→130) reserves 80+ for genuine elite
       const adjustedPHR = Math.min(0.40, Math.max(0.005, pHR + h2hShift));
