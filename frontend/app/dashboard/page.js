@@ -230,8 +230,10 @@ function computeProjectionScore(player, category) {
     // Direct HR signal: each career HR off this pitcher adds +0.015 (capped at 2 HRs)
     const h2hHRBonus = Math.min(2, h2hHR) * 0.015;
     const h2hHRShift = h2hAvgShift + h2hHRBonus;
-    // Cold-start penalty — fires from first game, ramps to -0.08 by 80 PA if 0 HR in 2026
-    const hr26  = player.stats26?.homeRuns ?? null;
+    // Cold-start penalty — fires only when blended HR count is 0 (true no-power history).
+    // Use blended homeRuns (player.homeRuns) rather than raw 2026 stats so established
+    // HR hitters aren't penalized for a slow start — the blended rate already reflects 2025.
+    const hr26  = player.homeRuns ?? player.stats26?.homeRuns ?? null;
     const pa26r = player.pa26Raw ?? 0;
     const coldStartShift = (hr26 === 0 && pa26r >= 3)
       ? Math.max(-0.08, -(pa26r / 80) * 0.08)
@@ -1218,11 +1220,10 @@ export default function DashboardPage() {
           .slice(0,40)
           .forEach(p=>topIds.add(p.playerId));
       }
-      // Top HR players for H2H enrichment
-      const topHRPlayers = [...dedupedPlayers]
-        .filter(p => p.scores.hr > 0)
-        .sort((a, b) => b.scores.hr - a.scores.hr)
-        .slice(0, 40);
+      // All eligible batters for H2H enrichment — batched 10 at a time.
+      // No rank filter: initial scores can be suppressed by missing statcast/splits,
+      // so we enrich everyone and let the re-score sort it out.
+      const topHRPlayers = dedupedPlayers.filter(p => p.position !== 'SP');
 
       // Statcast loads fast (1 request), streaks load progressively (batched)
       fetchStatcastData();
