@@ -184,11 +184,12 @@ function computeProjectionScore(player, category) {
     const wxWindSpd = Number(wxWind?.windSpeed ?? 0);
     const wxWindDir = Number(wxWind?.windDir ?? 0);
     const windShift = (() => {
-      if (!wxWind || wxWindSpd < 10) return 0;
-      const isOut = wxWindDir >= 225 && wxWindDir <= 315;
-      const isIn  = wxWindDir >= 45  && wxWindDir <= 135;
-      if (!isOut && !isIn) return 0;
-      const speedFactor = Math.min(0.04, ((wxWindSpd - 10) / 5) * 0.01 + 0.01);
+      if (!wxWind || wxWindSpd < 8) return 0;
+      const isOut   = wxWindDir >= 215 && wxWindDir <= 325;
+      const isIn    = wxWindDir >= 35  && wxWindDir <= 145;
+      const isCross = !isOut && !isIn;
+      if (isCross) return Math.min(0.01, (wxWindSpd - 8) / 50);
+      const speedFactor = Math.min(0.06, ((wxWindSpd - 8) / 5) * 0.012 + 0.012);
       return isOut ? speedFactor : -speedFactor;
     })();
     // Cap total situational shift at +0.14/−0.08; h2h kept separate (earned signal)
@@ -1530,6 +1531,25 @@ function BaseballDiamondCard({ spTeamAbbrev, spOppAbbrev, spIsHome, activeCat, w
   const windClr  = windAdj > 0 ? '#34d399' : windAdj < 0 ? '#f87171' : '#9ca3af';
   const windLabel = windAdj > 0 ? 'Blowing Out' : windAdj < 0 ? 'Blowing In' : 'Crosswind';
 
+  // Wind HR factor — converts windShift to park-factor-equivalent so the HR label
+  // on the diamond and pill reflect the combined park + wind environment for today.
+  // Mirrors useHRProjection: parkShift = (parkHR - 1.0) * 0.50, so windHRFactor = windShift / 0.50.
+  const wxWindSpd    = Number(wx.windSpeed ?? 0);
+  const wxWindDir    = Number(wx.windDir   ?? 0);
+  const windHRFactor = (() => {
+    if (wxWindSpd < 8 || !park) return 0;
+    const isOut = wxWindDir >= 215 && wxWindDir <= 325;
+    const isIn  = wxWindDir >= 35  && wxWindDir <= 145;
+    if (!isOut && !isIn) return 0;
+    const sf = Math.min(0.06, ((wxWindSpd - 8) / 5) * 0.012 + 0.012);
+    return (isOut ? sf : -sf) / 0.50;
+  })();
+  // Only surface the combined factor when wind contributes ≥4% to HR rate
+  const hasWindHREffect  = Math.abs(windHRFactor) >= 0.04;
+  const adjustedHRFactor = hasWindHREffect && park
+    ? Math.round((park.hr + windHRFactor) * 100) / 100
+    : null;
+
   // Compass — larger for pop
   const CS = 96, CCX = 48, CCY = 48, CR = 34;
   const arrowToDir = wx.windDir != null ? (wx.windDir + 180) % 360 : null;
@@ -1539,8 +1559,9 @@ function BaseballDiamondCard({ spTeamAbbrev, spOppAbbrev, spIsHome, activeCat, w
   const tailX = CCX - CR * 0.52 * Math.cos(aRad);
   const tailY = CCY - CR * 0.52 * Math.sin(aRad);
 
-  const catVal = activeCat === 'hits' ? park?.hits : activeCat === 'hr' ? park?.hr :
-                 activeCat === 'runs' ? park?.runs : null;
+  const catVal = activeCat === 'hits' ? park?.hits
+               : activeCat === 'hr'   ? (hasWindHREffect && adjustedHRFactor != null ? adjustedHRFactor : park?.hr)
+               : activeCat === 'runs' ? park?.runs : null;
 
   return (
     <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
@@ -1599,10 +1620,14 @@ function BaseballDiamondCard({ spTeamAbbrev, spOppAbbrev, spIsHome, activeCat, w
               {/* HR — center field */}
               <g>
                 <rect x={W/2-32} y="6" width="64" height="32" rx="5" fill="#0d1117" fillOpacity="0.96"/>
-                <text x={W/2} y="18" textAnchor="middle" fontSize="8" fill="#4b5563" fontWeight="600" letterSpacing="0.5">HR</text>
+                <text x={W/2} y="18" textAnchor="middle" fontSize="8"
+                  fill={hasWindHREffect ? windClr : '#4b5563'} fontWeight="600" letterSpacing="0.5">
+                  {hasWindHREffect ? 'HR+WIND' : 'HR'}
+                </text>
                 <text x={W/2} y="33" textAnchor="middle" fontSize="13" fontWeight="800"
-                  fill={park.hr >= 1.03 ? '#34d399' : park.hr <= 0.97 ? '#f87171' : '#6b7280'}>
-                  {pctStr(park.hr)}
+                  fill={(hasWindHREffect ? adjustedHRFactor : park.hr) >= 1.03 ? '#34d399'
+                      : (hasWindHREffect ? adjustedHRFactor : park.hr) <= 0.97 ? '#f87171' : '#6b7280'}>
+                  {pctStr(hasWindHREffect ? adjustedHRFactor : park.hr)}
                 </text>
               </g>
 
@@ -1751,8 +1776,8 @@ function BaseballDiamondCard({ spTeamAbbrev, spOppAbbrev, spIsHome, activeCat, w
           {/* ── Park factor pills ── */}
           <div className="grid grid-cols-4 gap-2">
             {[
-              { label:'Hits', val:park.hits, cat:'hits' },
-              { label:'HR',   val:park.hr,   cat:'hr'   },
+              { label:'Hits',                             val:park.hits,                                        cat:'hits' },
+              { label:hasWindHREffect ? 'HR+Wind' : 'HR', val:hasWindHREffect ? adjustedHRFactor : park.hr,  cat:'hr'   },
               { label:'Runs', val:park.runs, cat:'runs' },
               { label:'K',    val:park.k,    cat:'k'    },
             ].map(r => (
@@ -1766,11 +1791,19 @@ function BaseballDiamondCard({ spTeamAbbrev, spOppAbbrev, spIsHome, activeCat, w
           {/* Active cat summary */}
           {catVal != null && (
             <p className="mt-3 text-xs text-gray-500 leading-relaxed">
-              {park.name} {catVal >= 1.03 ? 'boosts' : catVal <= 0.97 ? 'suppresses' : 'is neutral for'}{' '}
-              <span className={`font-bold ${valCls(catVal)}`}>
+              {park.name} {park.hr >= 1.03 ? 'boosts' : park.hr <= 0.97 ? 'suppresses' : 'is neutral for'}{' '}
+              <span className={`font-bold ${valCls(activeCat === 'hr' ? park.hr : catVal)}`}>
                 {activeCat === 'hits' ? 'hits' : activeCat === 'hr' ? 'home runs' : activeCat === 'runs' ? 'runs' : activeCat}
               </span>{' '}
-              by <span className="font-bold tabular-nums">{pctStr(catVal)}</span> vs league avg.
+              by <span className="font-bold tabular-nums">{pctStr(activeCat === 'hr' ? park.hr : catVal)}</span> vs league avg
+              {activeCat === 'hr' && hasWindHREffect && adjustedHRFactor != null ? (
+                <>{'. '}Today&apos;s {Math.round(wxWindSpd)} mph wind adds{' '}
+                  <span className={`font-bold ${windHRFactor > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {windHRFactor > 0 ? '+' : ''}{Math.round(windHRFactor * 100)}%
+                  </span>{' '}— combined HR environment:{' '}
+                  <span className={`font-bold tabular-nums ${valCls(adjustedHRFactor)}`}>{pctStr(adjustedHRFactor)}</span>
+                </>
+              ) : '.'}
             </p>
           )}
         </>
@@ -2169,11 +2202,12 @@ function useHRProjection(gameLog, seasonStats, splits, statcast, pitcher, spPitc
     const wxWindSpd = Number(weather?.windSpeed ?? 0);
     const wxWindDir = Number(weather?.windDir ?? 0);
     const windShift = (() => {
-      if (!weather || wxWindSpd < 10) return 0;
-      const isOut = wxWindDir >= 225 && wxWindDir <= 315;
-      const isIn  = wxWindDir >= 45  && wxWindDir <= 135;
-      if (!isOut && !isIn) return 0;
-      const speedFactor = Math.min(0.04, ((wxWindSpd - 10) / 5) * 0.01 + 0.01);
+      if (!weather || wxWindSpd < 8) return 0;
+      const isOut   = wxWindDir >= 215 && wxWindDir <= 325;
+      const isIn    = wxWindDir >= 35  && wxWindDir <= 145;
+      const isCross = !isOut && !isIn;
+      if (isCross) return Math.min(0.01, (wxWindSpd - 8) / 50);
+      const speedFactor = Math.min(0.06, ((wxWindSpd - 8) / 5) * 0.012 + 0.012);
       return isOut ? speedFactor : -speedFactor;
     })();
     // Cold-start penalty — fires from first game, ramps to -0.08 by 80 PA if 0 HR in 2026
