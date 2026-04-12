@@ -125,7 +125,7 @@ function computeProjectionScore(player, category) {
       else if (streak === 0) recencyBoost -= 4;
     }
     if (l10Avg != null && avg > 0) {
-      const l10Contribution = Math.max(-6, Math.min(6, ((l10Avg - avg) / avg) * 18));
+      const l10Contribution = Math.max(-6, Math.min(10, ((l10Avg - avg) / avg) * 14));
       // Don't penalize a currently-hot player with cold early-window games
       recencyBoost += (streak >= 3 && l10Contribution < 0) ? 0 : l10Contribution;
     }
@@ -231,7 +231,7 @@ function computeProjectionScore(player, category) {
   // 10% LG anchor) — a fourth confidence pull double-penalises early-season elite power hitters.
   const effectiveConf = category === 'hr' ? 1.0 : confidence;
   const adjusted = 50 + (base - 50) * effectiveConf;
-  const recencyCap  = ab < 30 ? 4 : ab < 100 ? 10 : 12;
+  const recencyCap  = ab < 30 ? 4 : ab < 100 ? 10 : 14;
   const safeRecency = Math.max(-recencyCap, Math.min(recencyCap, recencyBoost));
   return Math.round(Math.max(5, Math.min(99, adjusted + safeRecency)));
 }
