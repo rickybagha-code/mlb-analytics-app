@@ -220,12 +220,16 @@ function computeProjectionScore(player, category) {
       const speedFactor = Math.min(0.04, ((wxWindSpd - 10) / 5) * 0.01 + 0.01);
       return isOut ? speedFactor : -speedFactor;
     })();
-    // H2H — poor history vs today's specific pitcher pulls pHR down
+    // H2H — history vs today's specific pitcher
     const h2hAB  = player.h2hAB  ?? 0;
     const h2hAVG = player.h2hAVG ?? null;
-    const h2hHRShift = h2hAB >= 8
-      ? Math.max(-0.06, Math.min(0.03, ((h2hAVG ?? 0) - avg) / Math.max(avg, 0.01) * 0.10))
+    const h2hHR  = player.h2hHR  ?? 0;
+    const h2hAvgShift = h2hAB >= 8
+      ? Math.max(-0.06, Math.min(0.09, ((h2hAVG ?? 0) - avg) / Math.max(avg, 0.01) * 0.15))
       : 0;
+    // Direct HR signal: each career HR off this pitcher adds +0.015 (capped at 2 HRs)
+    const h2hHRBonus = Math.min(2, h2hHR) * 0.015;
+    const h2hHRShift = h2hAvgShift + h2hHRBonus;
     // Cold-start penalty — fires from first game, ramps to -0.08 by 80 PA if 0 HR in 2026
     const hr26  = player.stats26?.homeRuns ?? null;
     const pa26r = player.pa26Raw ?? 0;
@@ -1387,7 +1391,7 @@ export default function DashboardPage() {
         if (!h2h || h2h.error) return;
         setBoardPlayers(prev => prev.map(bp => {
           if (bp.playerId !== p.playerId) return bp;
-          const updated = { ...bp, h2hAB: h2h.ab ?? 0, h2hAVG: h2h.avg ?? null };
+          const updated = { ...bp, h2hAB: h2h.ab ?? 0, h2hAVG: h2h.avg ?? null, h2hHR: h2h.hr ?? 0 };
           const newScores = { ...bp.scores };
           for (const cat of ['hitting', 'hr']) {
             if (newScores[cat] > 0) newScores[cat] = computeProjectionScore(updated, cat);

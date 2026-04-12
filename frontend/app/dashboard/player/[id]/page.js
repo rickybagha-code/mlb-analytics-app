@@ -176,8 +176,11 @@ function computeProjectionScore(player, category) {
     const h2hShift     = (() => {
       const hAB  = player.h2hAB  ?? 0;
       const hAVG = player.h2hAVG ?? null;
+      const hHR  = player.h2hHR  ?? 0;
       if (hAB < 8) return 0;
-      return Math.max(-0.06, Math.min(0.03, ((hAVG ?? 0) - avg) / Math.max(avg, 0.01) * 0.10));
+      const avgShift = Math.max(-0.06, Math.min(0.09, ((hAVG ?? 0) - avg) / Math.max(avg, 0.01) * 0.15));
+      const hrBonus  = Math.min(2, hHR) * 0.015;
+      return avgShift + hrBonus;
     })();
     const pitcherHRShift = Math.max(-0.03, Math.min(0.03, pitcherMod * 0.003));
     const wxWind    = player.weather ?? null;
@@ -3028,12 +3031,15 @@ export default function PlayerDetailPage() {
       // hrProj.pHR already includes barrel/park/platoon/wind from useHRProjection
       const pHR = Math.min(0.40, hrProj.pHR / 100);
       const h2hMatch  = h2hData?.careerMatchup;
-      const h2hAB     = h2hMatch ? (parseInt(h2hMatch.atBats) || 0) : 0;
-      const h2hAVG    = h2hMatch ? (parseFloat(h2hMatch.avg)  || null) : null;
+      const h2hAB     = h2hMatch ? (parseInt(h2hMatch.atBats)  || 0)    : 0;
+      const h2hAVG    = h2hMatch ? (parseFloat(h2hMatch.avg)   || null) : null;
+      const h2hHR     = h2hMatch ? (parseInt(h2hMatch.homeRuns)|| 0)    : 0;
       const seasonAVG = parseFloat(st.avg) || 0;
       let h2hShift = 0;
       if (h2hAB >= 8 && seasonAVG > 0) {
-        h2hShift = Math.max(-0.06, Math.min(0.05, ((h2hAVG ?? 0) - seasonAVG) / seasonAVG * 0.15));
+        const avgShift = Math.max(-0.06, Math.min(0.09, ((h2hAVG ?? 0) - seasonAVG) / seasonAVG * 0.15));
+        const hrBonus  = Math.min(2, h2hHR) * 0.015;
+        h2hShift = avgShift + hrBonus;
       }
       // Raised cap (0.30→0.40) + lower multiplier (175→130) reserves 80+ for genuine elite
       const adjustedPHR = Math.min(0.40, Math.max(0.005, pHR + h2hShift));
@@ -3064,8 +3070,9 @@ export default function PlayerDetailPage() {
       weather,
       streak:  recencyStreak,
       l10Avg:  recencyL10Avg,
-      h2hAB:        h2hData?.careerMatchup ? (parseInt(h2hData.careerMatchup.atBats)  || 0)    : 0,
+      h2hAB:        h2hData?.careerMatchup ? (parseInt(h2hData.careerMatchup.atBats)   || 0)    : 0,
       h2hAVG:       h2hData?.careerMatchup ? (parseFloat(h2hData.careerMatchup.avg)   || null) : null,
+      h2hHR:        h2hData?.careerMatchup ? (parseInt(h2hData.careerMatchup.homeRuns)|| 0)    : 0,
       battingOrder: battingOrder ?? null,
       ...((() => {
         // Effective hand: URL param → resolved auto-fetch → fetched pitcher object
